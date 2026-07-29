@@ -1,0 +1,292 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # BASE DE DATOS AUDITORÍA (PostgreSQL - Solo red interna + puerto opcional para debugging)
+  # =============================================================================
+  audit-db:
+    image: postgres:16-alpine
+    container_name: transvega-audit-db-staging
+    environment:
+      POSTGRES_DB: audit
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: ${AUDIT_DB_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - audit-db-data-staging:/var/lib/postgresql/data
+      - ./infrastructure/docker/init-audit-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "127.0.0.1:5433:5432"  # Puerto diferente para no colisionar con dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audit -d audit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - transvega-backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # =============================================================================
+  # REDIS (Solo red interna + puerto opcional para debugging)
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: transvega-redis-staging
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data-staging:/data
+    ports:
+      - "127.0.0.1:6380:6379"  # Puerto diferente para no colisionar con dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - transvega-backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # =============================================================================
+  # MOCK DOLIBARR (Staging usa mock para pruebas de integración)
+  # =============================================================================
+  mock-dolibarr:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.mock-dolibarr
+    container_name: transvega-mock-dolibarr-staging
+    environment:
+      - ENVIRONMENT=staging
+      - MOCK_DOLIBARR_API_KEY=mock-admin-key-123
+      - MOCK_DOLIBARR_AGENT_KEY=mock-agent-key-456
+      - MOCK_DOLIBARR_READONLY_KEY=mock-readonly-key-789
+    ports:
+      - "127.0.0.1:8011:8001"
+    volumes:
+      - ./tests/fixtures/dolibarr:/app/fixtures:ro
+    networks:
+      - transvega-backend
+    restart: unless-stopped
+
+  # =============================================================================
+  # API INTEGRACIÓN (FastAPI - Acceso via Cloudflare Tunnel en staging)
+  # =============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: transvega-api-staging
+    environment:
+      - ENVIRONMENT=staging
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - DOLIBARR_API_URL=http://mock-dolibarr:8001
+      - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - FERNET_KEY=${FERNET_KEY}
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
+      - MOCK_DOLIBARR_ENABLED=true
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+    ports:
+      - "127.0.0.1:8010:8000"  # Puerto local para debugging
+    volumes:
+      - ./services/integration-api:/app:ro
+      - ./adapters:/app/adapters:ro
+      - ./shared:/app/shared:ro
+    depends_on:
+      audit-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock-dolibarr:
+        condition: service_started
+    networks:
+      - transvega-backend
+      - transvega-frontend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # =============================================================================
+  # WORKER CELERY
+  # =============================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: transvega-worker-staging
+    environment:
+      - ENVIRONMENT=staging
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
+      - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
+      - DOLIBARR_API_URL=http://mock-dolibarr:8001
+      - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+    volumes:
+      - ./services/integration-api:/app:ro
+      - ./adapters:/app/adapters:ro
+      - ./shared:/app/shared:ro
+      - ./agents:/app/agents:ro
+      - ./services/task-queue:/app/tasks:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      audit-db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - transvega-backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  # =============================================================================
+  # SERVICIO APROBACIONES
+  # =============================================================================
+  approvals:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.approvals
+    container_name: transvega-approvals-staging
+    environment:
+      - ENVIRONMENT=staging
+      - APPROVALS_PORT=8002
+      - APPROVALS_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
+      - APPROVALS_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      - NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL}
+      - NOTIFICATION_WEBHOOK_SECRET=${NOTIFICATION_WEBHOOK_SECRET}
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+    ports:
+      - "127.0.0.1:8012:8002"
+    volumes:
+      - ./services/approval-service:/app:ro
+    depends_on:
+      audit-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - transvega-backend
+      - transvega-frontend
+    restart: unless-stopped
+
+  # =============================================================================
+  # DASHBOARD INTERNO
+  # =============================================================================
+  dashboard:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.dashboard
+    container_name: transvega-dashboard-staging
+    environment:
+      - ENVIRONMENT=staging
+      - DASHBOARD_PORT=3000
+      - DASHBOARD_API_URL=http://api:8000
+      - DASHBOARD_APPROVALS_URL=http://approvals:8002
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+    ports:
+      - "127.0.0.1:3010:3000"
+    volumes:
+      - ./services/dashboard:/app:ro
+    depends_on:
+      - api
+      - approvals
+    networks:
+      - transvega-frontend
+    restart: unless-stopped
+
+  # =============================================================================
+  # CLOUDFLARE TUNNEL (Staging)
+  # =============================================================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: transvega-cloudflared-staging
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+    environment:
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+    networks:
+      - transvega-frontend
+      - transvega-backend
+    restart: unless-stopped
+    depends_on:
+      - api
+      - approvals
+      - dashboard
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # =============================================================================
+  # OLLAMA (Modelos IA locales - recursos reducidos en staging)
+  # =============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: transvega-ollama-staging
+    volumes:
+      - ollama-data-staging:/root/.ollama
+    ports:
+      - "127.0.0.1:11435:11434"
+    environment:
+      - OLLAMA_MODELS=${OLLAMA_MODELS}
+    networks:
+      - transvega-backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+
+networks:
+  transvega-frontend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.1.0/24
+  transvega-backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.2.0/24
+  transvega-monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.3.0/24
+
+volumes:
+  audit-db-data-staging:
+  redis-data-staging:
+  prometheus-data-staging:
+  grafana-data-staging:
+  loki-data-staging:
+  alertmanager-data-staging:
+  ollama-data-staging:

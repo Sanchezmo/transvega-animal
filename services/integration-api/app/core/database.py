@@ -4,7 +4,8 @@ Configuración de base de datos - SQLAlchemy + asyncpg para auditoría.
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import MetaData
-from app.core.config import settings
+from redis.asyncio import Redis
+from app.core.config import settings, get_audit_db_url, get_redis_url
 
 
 # Convención de nombres para constraints (mejora migraciones Alembic)
@@ -25,7 +26,7 @@ class Base(DeclarativeBase):
 
 # Engine asíncrono para PostgreSQL
 engine = create_async_engine(
-    settings.AUDIT_DB_URL.replace("postgresql://", "postgresql+asyncpg://"),
+    get_audit_db_url(settings).replace("postgresql://", "postgresql+asyncpg://"),
     echo=settings.ENVIRONMENT == "development",
     pool_size=10,
     max_overflow=20,
@@ -53,6 +54,21 @@ async def get_db() -> AsyncSession:
             raise
         finally:
             await session.close()
+
+
+async def get_redis() -> Redis:
+    """Dependency para obtener cliente Redis."""
+    redis = Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=settings.REDIS_PASSWORD,
+        db=0,
+        decode_responses=True,
+    )
+    try:
+        yield redis
+    finally:
+        await redis.close()
 
 
 async def init_db():

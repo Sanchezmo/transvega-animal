@@ -2,8 +2,8 @@
 Esquemas Pydantic para validación de datos de entrada/salida.
 """
 from pydantic import BaseModel, Field, validator
-from typing import Optional, List, Dict, Any
-from datetime import date, datetime
+from typing import Optional, List, Dict, Any, TypeVar, Generic
+import datetime
 from uuid import UUID
 
 
@@ -11,38 +11,38 @@ from uuid import UUID
 # ESQUEMAS BASE
 # =============================================================================
 
+T = TypeVar('T')
+
+
 class BaseSchema(BaseModel):
     """Esquema base con configuración común."""
-    
-    class Config:
-        from_attributes = True
-        populate_by_name = True
-        use_enum_values = True
-        json_encoders = {
-            datetime: lambda v: v.isoformat(),
-            date: lambda v: v.isoformat(),
-            UUID: lambda v: str(v),
-        }
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+        "use_enum_values": True,
+        # Note: json_encoders removed in Pydantic v2; handle serialization separately if needed.
+    }
 
 
 class PaginationParams(BaseModel):
     """Parámetros de paginación estándar."""
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
-    
+
     @property
     def page(self) -> int:
         return (self.offset // self.limit) + 1
 
 
-class PaginatedResponse(BaseModel):
+class PaginatedResponse(BaseModel, Generic[T]):
     """Respuesta paginada estándar."""
     success: bool = True
-    data: List[Any]
+    data: List[T]
     total: int
     limit: int
     offset: int
-    
+
     @property
     def has_more(self) -> bool:
         return self.offset + self.limit < self.total
@@ -97,8 +97,8 @@ class ThirdPartyResponse(ThirdPartyBase):
     ref: str
     ref_ext: Optional[str] = None
     canvas: Optional[str] = None
-    datec: datetime
-    datem: datetime
+    datec: datetime.datetime
+    datem: datetime.datetime
     fk_user_author: int = 1
     fk_user_modif: int = 1
 
@@ -114,11 +114,11 @@ class ProductBase(BaseModel):
     price: float = Field(default=0.0, ge=0)
     price_ttc: float = Field(default=0.0, ge=0)
     tva_tx: float = Field(default=21.0, ge=0, le=100)
-    buy_price: float = Field(default=0.0, ge=0)
-    weight: float = Field(default=0.0, ge=0)
-    weight_units: int = Field(default=1, ge=1)
-    status: int = Field(default=1, ge=0, le=1)
-    type: int = Field(default=0, ge=0, le=2)
+    prix_achat: float = Field(default=0.0, ge=0)
+    poids: float = Field(default=0.0, ge=0)
+    poids_unites: int = Field(default=1, ge=1)
+    statut: int = Field(default=1, ge=0, le=1)
+    type: int = Field(default=0, ge=0, le=2)  # renamed from 'product_type' to match Dolibarr field
     fk_product_type: Optional[int] = None
 
 
@@ -133,19 +133,19 @@ class ProductUpdate(BaseModel):
     price: Optional[float] = Field(None, ge=0)
     price_ttc: Optional[float] = Field(None, ge=0)
     tva_tx: Optional[float] = Field(None, ge=0, le=100)
-    buy_price: Optional[float] = Field(None, ge=0)
-    weight: Optional[float] = Field(None, ge=0)
-    weight_units: Optional[int] = Field(None, ge=1)
-    status: Optional[int] = Field(None, ge=0, le=1)
-    type: Optional[int] = Field(None, ge=0, le=2)
+    prix_achat: Optional[float] = Field(None, ge=0)
+    poids: Optional[float] = Field(None, ge=0)
+    poids_unites: Optional[int] = Field(None, ge=1)
+    statut: Optional[int] = Field(None, ge=0, le=1)
+    type: Optional[int] = Field(None, ge=0, le=2)  # renamed
     fk_product_type: Optional[int] = None
 
 
 class ProductResponse(ProductBase):
     id: int
     ref_ext: Optional[str] = None
-    datec: datetime
-    datem: datetime
+    datec: datetime.datetime
+    datem: datetime.datetime
 
 
 # =============================================================================
@@ -154,43 +154,43 @@ class ProductResponse(ProductBase):
 
 class VaccineRecord(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    date: date
+    date: datetime.date
     batch: Optional[str] = Field(None, max_length=50)
     vet: Optional[str] = Field(None, max_length=100)
-    next_due: Optional[date] = None
+    next_due: Optional[datetime.date] = None
 
 
 class DewormingRecord(BaseModel):
     product: str = Field(..., min_length=1, max_length=100)
-    date: date
-    next_due: Optional[date] = None
+    date: datetime.date
+    next_due: Optional[datetime.date] = None
     vet: Optional[str] = Field(None, max_length=100)
 
 
 class CertificateRecord(BaseModel):
-    type: str = Field(..., max_length=50)  # veterinary_health, genetic, pedigree, etc.
-    date: date
+    cert_type: str = Field(..., max_length=50)  # renamed from 'type'
+    date: datetime.date
     issuer: Optional[str] = Field(None, max_length=100)
     document_url: Optional[str] = None
-    expires_at: Optional[date] = None
+    expires_at: Optional[datetime.date] = None
 
 
 class IncidentRecord(BaseModel):
-    date: date
-    type: str = Field(..., max_length=50)
+    date: datetime.date
+    incident_type: str = Field(..., max_length=50)  # renamed from 'type'
     description: str
     severity: str = Field(default="low", pattern=r"^(low|medium|high|critical)$")
     resolved: bool = False
-    resolution_date: Optional[date] = None
+    resolution_date: Optional[datetime.date] = None
     resolution_notes: Optional[str] = None
 
 
 class PostSaleFollowupRecord(BaseModel):
-    date: date
-    type: str = Field(..., max_length=50)  # call, visit, email, vet_report
+    date: datetime.date
+    followup_type: str = Field(..., max_length=50)  # renamed from 'type'
     notes: str
     next_action: Optional[str] = None
-    next_action_date: Optional[date] = None
+    next_action_date: Optional[datetime.date] = None
 
 
 class ExpedienteAnimalBase(BaseModel):
@@ -198,7 +198,7 @@ class ExpedienteAnimalBase(BaseModel):
     species: str = Field(default="perro", max_length=50)
     breed: str = Field(..., min_length=1, max_length=100)
     sex: str = Field(..., pattern=r"^[MH]$")
-    birth_date: date
+    birth_date: datetime.date
     color: str = Field(..., max_length=50)
     weight_kg: float = Field(..., gt=0, le=100)
     microchip: str = Field(..., pattern=r"^\d{15}$")
@@ -222,15 +222,15 @@ class ExpedienteAnimalBase(BaseModel):
     associated_costs: float = Field(default=0.0, ge=0)
     commercial_status: str = Field(
         default="draft",
-        pattern=r"^(draft|pending_docs|pending_review|available|published|reserved|paid|preparing_transport|in_transport|delivered|post_sale|unavailable|archived)$"
+        pattern=r"^(draft|pending_docs|pending_review|available|published|reserved|paid|preparing_transport|in_transport|delivered|post_sale|unavailable|archived)$",
     )
     client_id: Optional[int] = None
     reservation_id: Optional[int] = None
     order_id: Optional[int] = None
     invoice_id: Optional[int] = None
     transport_id: Optional[int] = None
-    expected_delivery_date: Optional[date] = None
-    actual_delivery_date: Optional[date] = None
+    expected_delivery_date: Optional[datetime.date] = None
+    actual_delivery_date: Optional[datetime.date] = None
     incidents: List[IncidentRecord] = Field(default_factory=list)
     post_sale_followup: List[PostSaleFollowupRecord] = Field(default_factory=list)
 
@@ -254,18 +254,18 @@ class ExpedienteAnimalUpdate(BaseModel):
     associated_costs: Optional[float] = Field(None, ge=0)
     commercial_status: Optional[str] = Field(
         None,
-        pattern=r"^(draft|pending_docs|pending_review|available|published|reserved|paid|preparing_transport|in_transport|delivered|post_sale|unavailable|archived)$"
+        pattern=r"^(draft|pending_docs|pending_review|available|published|reserved|paid|preparing_transport|in_transport|delivered|post_sale|unavailable|archived)$",
     )
     client_id: Optional[int] = None
-    expected_delivery_date: Optional[date] = None
-    actual_delivery_date: Optional[date] = None
+    expected_delivery_date: Optional[datetime.date] = None
+    actual_delivery_date: Optional[datetime.date] = None
 
 
 class ExpedienteAnimalResponse(ExpedienteAnimalBase):
     id: int
     internal_id: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
     created_by: int = 1
     updated_by: int = 1
 
@@ -296,9 +296,8 @@ class InvoiceLineResponse(InvoiceLineBase):
 
 class InvoiceBase(BaseModel):
     thirdparty_id: int = Field(..., gt=0)
-    date: date = Field(default_factory=date.today)
+    date: datetime.date = Field(default_factory=datetime.date.today)
     lines: List[InvoiceLineCreate] = Field(..., min_length=1)
-    status: int = Field(default=0, ge=0, le=2)
     payment_term_id: Optional[int] = None
     cond_reglement_id: Optional[int] = None
     mode_reglement_id: Optional[int] = None
@@ -326,8 +325,8 @@ class InvoiceResponse(InvoiceBase):
     total_tva: float
     total_ttc: float
     lines: List[InvoiceLineResponse]
-    datec: datetime
-    datem: datetime
+    datec: datetime.datetime
+    datem: datetime.datetime
     fk_user_author: int = 1
     fk_user_modif: int = 1
 
@@ -350,14 +349,25 @@ class PublicationBase(BaseModel):
 class PublicationCreate(PublicationBase):
     pass
 
+class PublicationUpdate(BaseModel):
+    expediente_id: Optional[int] = Field(None, gt=0)
+    platform: Optional[str] = Field(None, max_length=50)
+    title: Optional[str] = Field(None, min_length=5, max_length=200)
+    description: Optional[str] = Field(None, min_length=20)
+    photos: Optional[List[str]] = None
+    price: Optional[float] = Field(None, ge=0)
+    external_id: Optional[str] = Field(None, max_length=100)
+    external_url: Optional[str] = None
+
+
 
 class PublicationResponse(PublicationBase):
     id: int
     status: str = Field(default="draft", pattern=r"^(draft|pending_approval|approved|published|expired|removed|failed)$")
-    published_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
+    published_at: Optional[datetime.datetime] = None
+    expires_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
     approval_id: Optional[UUID] = None
 
 
@@ -406,11 +416,11 @@ class LeadResponse(LeadBase):
     score: int = 0
     temperature: str = "cold"
     assigned_closer_id: Optional[int] = None
-    last_contact: Optional[datetime] = None
+    last_contact: Optional[datetime.datetime] = None
     next_action: Optional[str] = None
-    next_action_due: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
+    next_action_due: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
 
 # =============================================================================
@@ -426,7 +436,7 @@ class ApprovalRequestBase(BaseModel):
     proposed_state: Dict[str, Any] = Field(default_factory=dict)
     risks: Optional[str] = None
     evidence: Optional[List[str]] = None
-    expires_at: Optional[datetime] = None
+    expires_at: Optional[datetime.datetime] = None
 
 
 class ApprovalRequestCreate(ApprovalRequestBase):
@@ -442,9 +452,9 @@ class ApprovalResponse(ApprovalRequestBase):
     id: UUID
     status: str = Field(default="pending", pattern=r"^(pending|approved|rejected|expired|cancelled)$")
     requested_by: str
-    requested_at: datetime
+    requested_at: datetime.datetime
     reviewed_by: Optional[str] = None
-    reviewed_at: Optional[datetime] = None
+    reviewed_at: Optional[datetime.datetime] = None
     review_comment: Optional[str] = None
 
 
@@ -453,75 +463,32 @@ class ApprovalResponse(ApprovalRequestBase):
 # =============================================================================
 
 class TaskBase(BaseModel):
-    task_type: str = Field(..., max_length=100)
-    priority: int = Field(default=5, ge=1, le=10)
-    agent_id: Optional[str] = None
-    input_data: Dict[str, Any] = Field(default_factory=dict)
-    scheduled_at: Optional[datetime] = None
-    timeout_seconds: int = Field(default=3600, ge=60, le=86400)
-    max_attempts: int = Field(default=3, ge=1, le=10)
-    requires_approval: bool = False
-    idempotency_key: Optional[str] = Field(None, max_length=100)
-    resource_type: Optional[str] = Field(None, max_length=100)
-    resource_id: Optional[str] = Field(None, max_length=100)
-    correlation_id: Optional[UUID] = None
-    tags: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    title: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = None
+    priority: str = Field(default="medium", pattern=r"^(low|medium|high)$")
+    status: str = Field(default="pending", pattern=r"^(pending|in_progress|completed|failed)$")
+    assigned_to: Optional[int] = None
+    due_date: Optional[datetime.date] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskCreate(TaskBase):
     pass
 
 
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    priority: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    status: Optional[str] = Field(None, pattern=r"^(pending|in_progress|completed|failed)$")
+    assigned_to: Optional[int] = None
+    due_date: Optional[datetime.date] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class TaskResponse(TaskBase):
-    id: UUID
-    status: str = Field(default="pending", pattern=r"^(pending|processing|waiting_approval|completed|error_temp|error_perm|cancelled)$")
-    attempt: int = 0
-    last_error: Optional[str] = None
-    output_data: Optional[Dict[str, Any]] = None
-    error_data: Optional[Dict[str, Any]] = None
-    progress_percent: int = 0
-    progress_message: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-
-
-# =============================================================================
-# AUDITORÍA
-# =============================================================================
-
-class AuditLogResponse(BaseModel):
-    id: UUID
-    created_at: datetime
-    agent_name: str
-    agent_id: str
-    action: str
-    resource_type: str
-    resource_id: str
-    success: bool
-    duration_ms: int
-    request_data: Dict[str, Any]
-    response_data: Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
-    ip_address: Optional[str] = None
-    user_agent: Optional[str] = None
-
-
-# =============================================================================
-# RESPUESTAS ESTÁNDAR
-# =============================================================================
-
-class SuccessResponse(BaseModel):
-    success: bool = True
-    message: Optional[str] = None
-    data: Optional[Any] = None
-
-
-class ErrorResponse(BaseModel):
-    success: bool = False
-    error: str
-    message: str
-    details: Optional[Dict[str, Any]] = None
-    request_id: Optional[str] = None
+    id: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    created_by: int = 1
+    updated_by: int = 1
