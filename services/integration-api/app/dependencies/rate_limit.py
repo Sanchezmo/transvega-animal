@@ -16,14 +16,9 @@ from app.core.exceptions import RateLimitException, IdempotencyException
 settings = get_settings()
 
 
-async def get_redis_client() -> Redis:
-    """Obtener cliente Redis."""
-    return await get_redis()
-
-
 async def rate_limit_dependency(
     request: Request,
-    redis: Redis = Depends(get_redis_client),
+    redis: Redis = Depends(get_redis),
 ):
     """
     Rate limiting por IP + Agent.
@@ -56,7 +51,7 @@ async def rate_limit_dependency(
 
 async def idempotency_dependency(
     request: Request,
-    redis: Redis = Depends(get_redis_client),
+    redis: Redis = Depends(get_redis),
 ):
     """
     Validación de idempotencia para operaciones mutables.

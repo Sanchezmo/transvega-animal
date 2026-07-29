@@ -3,7 +3,7 @@ Configuración de la aplicación usando Pydantic Settings.
 """
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 class Settings(BaseSettings):
@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # API
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
-    API_WORKERS: int = 4
+    API_WORKERS: int = 1  # Cambiar a 1 para evitar problemas con workers
     API_CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:8002",
@@ -73,22 +73,22 @@ class Settings(BaseSettings):
     # Cifrado
     FERNET_KEY: str
     
-    # API Keys por agente
-    AGENT_API_KEY_SUPERVISOR: str
-    AGENT_API_KEY_PRODUCTS: str
-    AGENT_API_KEY_COMPLIANCE: str
-    AGENT_API_KEY_PUBLISHING: str
-    AGENT_API_KEY_SALES: str
-    AGENT_API_KEY_INVOICING: str
-    AGENT_API_KEY_PURCHASES: str
-    AGENT_API_KEY_BANKING: str
-    AGENT_API_KEY_ACCOUNTING: str
-    AGENT_API_KEY_TAX: str
-    AGENT_API_KEY_MARKETING: str
-    AGENT_API_KEY_TECHNICAL: str
+    # API Keys por agente - definir como campos opcionales con defaults
+    AGENT_API_KEY_SUPERVISOR: str = "tvsk_dev_supervisor_abcdef123456"
+    AGENT_API_KEY_PRODUCTS: str = "tvsk_dev_products_abcdef123456"
+    AGENT_API_KEY_COMPLIANCE: str = "tvsk_dev_compliance_abcdef123456"
+    AGENT_API_KEY_PUBLISHING: str = "tvsk_dev_publishing_abcdef123456"
+    AGENT_API_KEY_SALES: str = "tvsk_dev_sales_abcdef123456"
+    AGENT_API_KEY_INVOICING: str = "tvsk_dev_invoicing_abcdef123456"
+    AGENT_API_KEY_PURCHASES: str = "tvsk_dev_purchases_abcdef123456"
+    AGENT_API_KEY_BANKING: str = "tvsk_dev_banking_abcdef123456"
+    AGENT_API_KEY_ACCOUNTING: str = "tvsk_dev_accounting_abcdef123456"
+    AGENT_API_KEY_TAX: str = "tvsk_dev_tax_abcdef123456"
+    AGENT_API_KEY_MARKETING: str = "tvsk_dev_marketing_abcdef123456"
+    AGENT_API_KEY_TECHNICAL: str = "tvsk_dev_technical_abcdef123456"
     
-    @property
-    def AGENT_API_KEYS(self) -> dict:
+    # Método helper para obtener keys como dict
+    def get_agent_api_keys(self) -> Dict[str, str]:
         return {
             "supervisor": self.AGENT_API_KEY_SUPERVISOR,
             "products": self.AGENT_API_KEY_PRODUCTS,
@@ -103,11 +103,6 @@ class Settings(BaseSettings):
             "marketing": self.AGENT_API_KEY_MARKETING,
             "technical": self.AGENT_API_KEY_TECHNICAL,
         }
-    
-    # Dolibarr
-    DOLIBARR_API_URL: str
-    DOLIBARR_API_KEY: str
-    DOLIBARR_TIMEOUT: int = 30
     
     # Aprobaciones
     APPROVALS_SERVICE_URL: str = "http://approvals:8000"
@@ -145,3 +140,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Obtener configuración cacheada."""
     return Settings()
+
+
+# Exportar instancia para compatibilidad
+settings = get_settings()

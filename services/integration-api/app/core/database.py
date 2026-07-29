@@ -4,6 +4,7 @@ Configuración de base de datos - SQLAlchemy + asyncpg para auditoría.
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import MetaData
+from redis.asyncio import Redis
 from app.core.config import settings
 
 
@@ -53,6 +54,21 @@ async def get_db() -> AsyncSession:
             raise
         finally:
             await session.close()
+
+
+async def get_redis() -> Redis:
+    """Dependency para obtener cliente Redis."""
+    redis = Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=settings.REDIS_PASSWORD,
+        db=0,
+        decode_responses=True,
+    )
+    try:
+        yield redis
+    finally:
+        await redis.close()
 
 
 async def init_db():

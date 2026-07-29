@@ -18,10 +18,10 @@ WORKDIR /app
 COPY services/integration-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código de la aplicación
-COPY services/integration-api/app ./app
-COPY adapters ./adapters
-COPY shared ./shared
+# Copiar código de la aplicación con permisos correctos
+COPY --chown=appuser:appuser services/integration-api/app ./app
+COPY --chown=appuser:appuser adapters ./adapters
+COPY --chown=appuser:appuser shared ./shared
 
 # Cambiar a usuario no-root
 USER appuser
@@ -34,4 +34,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Comando por defecto
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

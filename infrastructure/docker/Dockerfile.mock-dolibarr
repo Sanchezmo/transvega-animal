@@ -12,8 +12,8 @@ WORKDIR /app
 COPY adapters/dolibarr/mock_requirements.txt .
 RUN pip install --no-cache-dir -r mock_requirements.txt
 
-COPY adapters/dolibarr/mock.py .
-COPY tests/fixtures/dolibarr ./fixtures
+COPY --chown=appuser:appuser adapters/dolibarr/mock.py .
+COPY --chown=appuser:appuser tests/fixtures/dolibarr ./fixtures
 
 USER appuser
 
