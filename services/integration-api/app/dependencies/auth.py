@@ -13,8 +13,6 @@ from app.core.exceptions import AuthenticationException, AuthorizationException
 
 
 security = HTTPBearer(auto_error=False)
-settings = get_settings()
-
 
 # Mapeo de API keys a roles/agentes
 AGENT_ROLES = {
@@ -64,8 +62,8 @@ async def get_current_agent(
     Autentica y valida la identidad del agente via API Key o JWT.
     
     Soporta dos métodos:
-    1. API Key en header: Authorization: Bearer tvsk_...
-    2. JWT token en header: Authorization: Bearer <jwt>
+    1. API Key en header: Authorization: Bearer ***
+    2. JWT token en header: Authorization: Bearer ***
     """
     if not credentials:
         raise AuthenticationException("Credenciales requeridas")
@@ -77,6 +75,7 @@ async def get_current_agent(
         return await _verify_api_key(token)
     
     # Intentar como JWT
+    settings = get_settings()
     try:
         payload = jwt.decode(
             token,
@@ -104,7 +103,7 @@ async def _verify_api_key(api_key: str) -> AgentIdentity:
     """Verifica API key contra configuración."""
     settings = get_settings()
     
-    for agent_name, expected_key in settings.AGENT_API_KEYS.items():
+    for agent_name, expected_key in settings.get_agent_api_keys().items():
         if expected_key and api_key == expected_key:
             roles = AGENT_ROLES.get(agent_name, ["read"])
             return AgentIdentity(

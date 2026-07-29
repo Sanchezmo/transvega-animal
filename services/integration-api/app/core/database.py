@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import MetaData
 from redis.asyncio import Redis
-from app.core.config import settings
+from app.core.config import settings, get_audit_db_url, get_redis_url
 
 
 # Convención de nombres para constraints (mejora migraciones Alembic)
@@ -26,7 +26,7 @@ class Base(DeclarativeBase):
 
 # Engine asíncrono para PostgreSQL
 engine = create_async_engine(
-    settings.AUDIT_DB_URL.replace("postgresql://", "postgresql+asyncpg://"),
+    get_audit_db_url(settings).replace("postgresql://", "postgresql+asyncpg://"),
     echo=settings.ENVIRONMENT == "development",
     pool_size=10,
     max_overflow=20,

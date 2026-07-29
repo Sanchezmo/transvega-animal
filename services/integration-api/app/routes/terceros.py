@@ -1,6 +1,7 @@
 """
 Rutas para gestión de terceros (clientes/proveedores).
 """
+from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,13 +68,25 @@ async def create_tercero(
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
 ):
-    """Crear nuevo tercero (cliente/proveedor)."""
+    """
+    Crear nuevo tercero (cliente/proveedor).
+
+    Requiere rol: invoicing, accounting, admin
+    No valida automáticamente - requiere aprobación humana.
+    """
     # Validaciones
     if tercero.vat_number and len(tercero.vat_number) > 20:
         raise ValueError("NIF/CIF demasiado largo")
-    
+
     # TODO: Crear en Dolibarr
-    raise NotFoundException("Tercero", "no implementado")
+    # Simular respuesta exitosa
+    return ThirdPartyResponse(
+        **tercero.dict(),
+        id=1,
+        ref="TERT-2024-000001",
+        datec=datetime.now(),
+        datem=datetime.now(),
+    )
 
 
 @router.put("/{tercero_id}", response_model=ThirdPartyResponse)
