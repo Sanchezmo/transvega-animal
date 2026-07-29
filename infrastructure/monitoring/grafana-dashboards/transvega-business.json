@@ -1,0 +1,194 @@
+{
+  "dashboard": {
+    "title": "Transvega Business",
+    "tags": ["transvega", "business", "kpis"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Expedientes por Estado",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "expedientes_por_estado",
+            "legendFormat": "{{estado}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "id": 2,
+        "title": "Leads por Fuente",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "leads_por_fuente",
+            "legendFormat": "{{fuente}}"
+          }
+        ],
+        "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "id": 3,
+        "title": "Leads por Temperatura",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "leads_por_temperatura",
+            "legendFormat": "{{temperatura}}"
+          }
+        ],
+        "gridPos": {"x": 16, "y": 0, "w": 8, "h": 8}
+      },
+      {
+        "id": 4,
+        "title": "Ventas del Mes (€)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(ventas_mes_euros)",
+            "legendFormat": "Total"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4}
+      },
+      {
+        "id": 5,
+        "title": "Nuevos Expedientes",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(nuevos_expedientes_mes)",
+            "legendFormat": "Total"
+          }
+        ],
+        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4}
+      },
+      {
+        "id": 6,
+        "title": "Conversión Lead→Venta",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "tasa_conversion_lead_venta * 100",
+            "legendFormat": "Conversión %"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 8, "w": 6, "h": 4}
+      },
+      {
+        "id": 7,
+        "title": "Ticket Medio (€)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ticket_medio_euros",
+            "legendFormat": "€"
+          }
+        ],
+        "gridPos": {"x": 18, "y": 8, "w": 6, "h": 4}
+      },
+      {
+        "id": 7,
+        "title": "Expedientes Disponibles",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(expedientes_disponibles)",
+            "legendFormat": "Disponibles"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 12, "w": 6, "h": 4}
+      },
+      {
+        "id": 8,
+        "title": "Expedientes en Transporte",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(expedientes_en_transporte)",
+            "legendFormat": "En transporte"
+          }
+        ],
+        "gridPos": {"x": 6, "y": 12, "w": 6, "h": 4}
+      },
+      {
+        "id": 9,
+        "title": "Facturas Pendientes Cobro",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(facturas_pendientes_cobro_euros)",
+            "legendFormat": "€"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 12, "w": 6, "h": 4}
+      },
+      {
+        "id": 10,
+        "title": "Anuncios Activos",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "count(anuncios_activos)",
+            "legendFormat": "Activos"
+          }
+        ],
+        "gridPos": {"x": 18, "y": 12, "w": 6, "h": 4}
+      },
+      {
+        "id": 10,
+        "title": "Ventas por País (Mes)",
+        "type": "barchart",
+        "targets": [
+          {
+            "expr": "ventas_por_pais_mes",
+            "legendFormat": "{{pais}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}
+      },
+      {
+        "id": 11,
+        "title": "Top Razas Vendidas",
+        "type": "barchart",
+        "targets": [
+          {
+            "expr": "top_razas_vendidas",
+            "legendFormat": "{{raza}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+      },
+      {
+        "id": 12,
+        "title": "CAC por Canal (€)",
+        "type": "barchart",
+        "targets": [
+          {
+            "expr": "cac_por_canal_euros",
+            "legendFormat": "{{canal}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8}
+      },
+      {
+        "id": 13,
+        "title": "NPS Post-Venta",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "nps_post_venta",
+            "legendFormat": "NPS"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8}
+      }
+    ],
+    "time": {
+      "from": "now-30d",
+      "to": "now"
+    },
+    "refresh": "60s"
+  }
+}

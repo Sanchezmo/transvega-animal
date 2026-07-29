@@ -1,0 +1,28 @@
+# Dockerfile para Worker Celery
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /app
+
+COPY services/integration-api/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY services/integration-api/app ./app
+COPY adapters ./adapters
+COPY shared ./shared
+COPY agents ./agents
+
+USER appuser
+
+# Health check para worker
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD celery -A app.celery_app inspect ping -d celery@${HOSTNAME} || exit 1
+
+CMD ["celery", "-A", "app.celery_app", "worker", "--loglevel=info", "--concurrency=4", "--queues=high,default,low,approvals,notifications"]

@@ -1,0 +1,74 @@
+# .gitignore - Transvega Animal
+
+# Entorno local con secretos
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# Base de datos
+*.sqlite
+*.db
+*.dump
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secretos y certificados
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+*.env.secrets
+
+# Backups
+backups/
+*.tar.gz
+*.sql.gz
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Modelos IA
+models/
+*.gguf
+*.bin
+
+# Temporales
+tmp/
+temp/
+*.tmp

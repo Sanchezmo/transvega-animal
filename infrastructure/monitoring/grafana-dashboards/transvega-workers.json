@@ -1,0 +1,94 @@
+{
+  "dashboard": {
+    "title": "Transvega Workers",
+    "tags": ["transvega", "workers", "celery"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Tasks by Queue",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "celery_queue_length",
+            "legendFormat": "{{queue}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+      },
+      {
+        "id": 2,
+        "title": "Task Processing Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_completed_total[5m])",
+            "legendFormat": "{{task_name}}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+      },
+      {
+        "id": 3,
+        "title": "Task Duration (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(celery_task_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{task_name}}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "id": 4,
+        "title": "Task Success/Failure Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_succeeded_total[5m])",
+            "legendFormat": "Succeeded"
+          },
+          {
+            "expr": "rate(celery_tasks_failed_total[5m])",
+            "legendFormat": "Failed"
+          },
+          {
+            "expr": "rate(celery_tasks_retried_total[5m])",
+            "legendFormat": "Retried"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "id": 5,
+        "title": "Worker Count",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "celery_workers_active",
+            "legendFormat": "Active Workers"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}
+      },
+      {
+        "id": 6,
+        "title": "Task Retry Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(celery_tasks_retried_total[5m])",
+            "legendFormat": "Retries"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "10s"
+  }
+}

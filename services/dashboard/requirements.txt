@@ -1,0 +1,10 @@
+# Requirements para Dashboard (Node.js - package.json contenido equivalente)
+# Este archivo es referencia, el real es package.json en services/dashboard/
+
+# FastAPI backend para dashboard si se usa Python
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+httpx==0.26.0
+python-dotenv==1.0.0
+structlog==24.1.0
