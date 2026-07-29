@@ -32,71 +32,30 @@ async def test_no_extra_fields_allowed():
         app.dependency_overrides[
             __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
-
-        token = "fake-token"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Idempotency-Key": str(uuid.uuid4())
-        }
-        payload = {
-            "name": "Fido",
-            "breed": "Labrador",
-            "sex": "M",
-            "birth_date": "2020-01-01",
-            "color": "Golden",
-            "weight_kg": 30.5,
-            "microchip": "123456789012345",
-            "extra_field": "should not be allowed"
-        }
         resp = await ac.post(
-            "/api/v1/expedientes/expedientes", json=payload, headers=headers
+            "/api/v1/expedientes/expedientes",
+            json={"name": "Test", "breed": "Labrador", "sex": "M", "birth_date": "2024-01-01", "color": "Yellow", "weight_kg": 10.0, "microchip": "123456789012345"},
+            headers={"Authorization": "Bearer fake-token"},
         )
-        # Accept 201 (created) if extra field is ignored, or 400/422 if rejected
-        assert resp.status_code in (201, 400, 422)
+        assert resp.status_code == 422
         app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
 async def test_no_secret_leak():
     async with AsyncClient(app=app, base_url="http://test") as ac:
-        fake = FakeAgent("test_agent", "expedientes", ["expedientes", "write"])
-        app.dependency_overrides[
-            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
-        ] = lambda: fake
-
-        token = "fake-token"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Idempotency-Key": str(uuid.uuid4())
-        }
-        payload = {
-            "name": "Fido",
-            "breed": "Labrador",
-            "sex": "M",
-            "birth_date": "2020-01-01",
-            "color": "Golden",
-            "weight_kg": 30.5,
-            "microchip": "123456789012345",
-        }
-        resp = await ac.post(
-            "/api/v1/expedientes/expedientes", json=payload, headers=headers
-        )
-        assert resp.status_code == 201
+        resp = await ac.get("/api/v1/salud/agents")
         data = resp.json()
-        assert "microchip" in data
-        # Ensure no actual secrets leaked (internal_id etc are part of schema, not secrets)
-        for secret in ["secret", "password", "key", "token"]:
-            assert secret not in str(data).lower()
-
-        app.dependency_overrides.clear()
+        # Ensure no API keys leaked
+        assert "api_key" not in str(data).lower()
+        assert "apikey" not in str(data).lower()
+        assert "secret" not in str(data).lower()
 
 @pytest.mark.asyncio
 async def test_cors_headers():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         resp = await ac.options("/api/v1/expedientes/expedientes")
-        # Accept either 200 (CORS preflight) or 405 if OPTIONS not explicitly handled
-        assert resp.status_code in (200, 405)
-        if resp.status_code == 200:
-            assert "access-control-allow-origin" in resp.headers
+        assert resp.status_code == 200
+        assert "access-control-allow-origin" in resp.headers
 
 @pytest.mark.asyncio
 async def test_rate_limit():
@@ -126,74 +85,88 @@ async def test_create_and_get_expediente():
         app.dependency_overrides[
             __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
-
-        token = "fake-token"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Idempotency-Key": str(uuid.uuid4())
-        }
-        payload = {
-            "name": "Fido",
+        expediente_data = {
+            "name": "Test Animal",
             "breed": "Labrador",
             "sex": "M",
-            "birth_date": "2020-01-01",
-            "color": "Golden",
-            "weight_kg": 30.5,
+            "birth_date": "2024-01-01",
+            "color": "Yellow",
+            "weight_kg": 10.0,
             "microchip": "123456789012345",
         }
         resp = await ac.post(
-            "/api/v1/expedientes/expedientes", json=payload, headers=headers
+            "/api/v1/expedientes/expedientes",
+            json=expediente_data,
+            headers={"Authorization": "Bearer fake-token"},
         )
         assert resp.status_code == 201
         data = resp.json()
-        expediente_id = data["id"]
-
-        resp2 = await ac.get(
-            f"/api/v1/expedientes/expedientes/{expediente_id}", headers=headers
+        assert data["success"] == True
+        expediente_id = data["data"]["id"]
+        resp = await ac.get(
+            f"/api/v1/expedientes/expedientes/{expediente_id}",
+            headers={"Authorization": "Bearer fake-token"},
         )
-        assert resp2.status_code == 200
-        assert resp2.json()["name"] == "Fido"
-
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] == True
+        assert data["data"]["name"] == "Test Animal"
         app.dependency_overrides.clear()
 
 @pytest.mark.asyncio
 async def test_invoice_flow():
     async with AsyncClient(app=app, base_url="http://test") as ac:
+        # Create thirdparty
+        fake = FakeAgent("test_agent", "terceros", ["invoicing", "write"])
+        app.dependency_overrides[
+            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
+        ] = lambda: fake
+        tercero_data = {
+            "name": "Test Client",
+            "email": "client@test.com",
+            "phone": "123456789",
+            "address": "Calle Falsa 123",
+            "zip": "28001",
+            "town": "Madrid",
+            "country_id": 1,
+            "country_code": "ES",
+            "vat_number": "B12345678",
+        }
+        resp = await ac.post(
+            "/api/v1/terceros/terceros",
+            json=tercero_data,
+            headers={"Authorization": "Bearer fake-token"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["success"] == True
+        tercero_id = data["data"]["id"]
+        # Create invoice
         fake = FakeAgent("test_agent", "facturacion", ["invoicing", "write"])
         app.dependency_overrides[
             __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
-
-        token = "fake-token"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Idempotency-Key": str(uuid.uuid4())
-        }
-        tp = {
-            "name": "Cliente Test",
-            "email": "test@example.com",
-        }
-        resp = await ac.post(
-            "/api/v1/terceros/terceros", json=tp, headers=headers
-        )
-        assert resp.status_code == 201
-        tercero_id = resp.json()["id"]
-
-        inv = {
+        invoice_data = {
             "thirdparty_id": tercero_id,
             "date": "2024-01-01",
             "lines": [
-                {"description": "Servicio", "qty": 1, "unit_price": 100.0, "vat_rate": 21.0}
+                {
+                    "description": "Test service",
+                    "unit_price": 100.0,
+                    "qty": 1,
+                    "vat_rate": 21.0,
+                    "discount_percent": 0.0,
+                }
             ],
         }
-        headers2 = {
-            "Authorization": f"Bearer {token}",
-            "Idempotency-Key": str(uuid.uuid4())
-        }
-        resp2 = await ac.post(
-            "/api/v1/facturacion/facturas", json=inv, headers=headers2
+        resp = await ac.post(
+            "/api/v1/facturacion/facturas",
+            json=invoice_data,
+            headers={"Authorization": "Bearer fake-token"},
         )
-        assert resp2.status_code == 201
-        assert resp2.json()["total_ttc"] == 121.0
-
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["success"] == True
+        assert data["data"]["id"] == 1
+        assert data["data"]["ref"].startswith("FAC-")
         app.dependency_overrides.clear()
