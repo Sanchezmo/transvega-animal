@@ -220,7 +220,7 @@ async def readiness_check():
 # =============================================================================
 
 # Importar y registrar routers
-from app.routes import expedientes, terceros, productos, publicaciones, comercial, facturacion, aprobaciones, salud
+from app.routes import expedientes, terceros, productos, publicaciones, comercial, facturacion, aprobaciones, salud, proveedores
 
 app.include_router(salud.router, prefix="/api/v1", tags=["Health"])
 app.include_router(expedientes.router, prefix="/api/v1/expedientes", tags=["Expedientes"])
@@ -230,6 +230,7 @@ app.include_router(publicaciones.router, prefix="/api/v1/publicaciones", tags=["
 app.include_router(comercial.router, prefix="/api/v1/comercial", tags=["Comercial"])
 app.include_router(facturacion.router, prefix="/api/v1/facturacion", tags=["Facturación"])
 app.include_router(aprobaciones.router, prefix="/api/v1/aprobaciones", tags=["Aprobaciones"])
+app.include_router(proveedores.router, prefix="/api/v1/proveedores", tags=["Proveedores"])
 
 
 # =============================================================================

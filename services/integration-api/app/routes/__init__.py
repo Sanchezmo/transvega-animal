@@ -10,6 +10,7 @@ from app.routes import (
     facturacion,
     aprobaciones,
     salud,
+    proveedores,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "facturacion",
     "aprobaciones",
     "salud",
+    "proveedores",
 ]

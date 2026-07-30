@@ -2,6 +2,11 @@
 Configuración de Celery para el worker.
 """
 from celery import Celery
+
+# Import settings directly from the integration-api config
+import sys
+sys.path.insert(0, '/app')
+
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -12,10 +17,10 @@ celery_app = Celery(
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
-        "app.tasks.expedientes",
-        "app.tasks.publicaciones",
-        "app.tasks.facturacion",
-        "app.tasks.notificaciones",
+        "tasks.expedientes",
+        "tasks.publicaciones",
+        "tasks.facturacion",
+        "tasks.notificaciones",
     ],
 )
 

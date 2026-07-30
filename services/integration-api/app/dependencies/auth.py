@@ -16,18 +16,18 @@ security = HTTPBearer(auto_error=False)
 
 # Mapeo de API keys a roles/agentes
 AGENT_ROLES = {
-    "supervisor": ["supervisor", "admin"],
-    "products": ["products", "read"],
+    "supervisor": ["supervisor", "admin", "write"],
+    "products": ["products", "read", "write"],
     "compliance": ["compliance", "read"],
-    "publishing": ["publishing", "read"],
-    "sales": ["sales", "read"],
-    "invoicing": ["invoicing", "read"],
-    "purchases": ["purchases", "read"],
-    "banking": ["banking", "read"],
-    "accounting": ["accounting", "read"],
-    "tax": ["tax", "read"],
-    "marketing": ["marketing", "read"],
-    "technical": ["technical", "read"],
+    "publishing": ["publishing", "read", "write"],
+    "sales": ["sales", "read", "write"],
+    "invoicing": ["invoicing", "read", "write"],
+    "purchases": ["purchases", "read", "write"],
+    "banking": ["banking", "read", "write"],
+    "accounting": ["accounting", "read", "write"],
+    "tax": ["tax", "read", "write"],
+    "marketing": ["marketing", "read", "write"],
+    "technical": ["technical", "read", "write"],
 }
 
 

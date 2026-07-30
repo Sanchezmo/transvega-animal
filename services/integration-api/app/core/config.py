@@ -111,6 +111,19 @@ class Settings(BaseSettings):
     VERIFACTU_KEY_PATH: Optional[str] = None
     VERIFACTU_TEST_MODE: bool = True
 
+    # Celery
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/2"
+    CELERY_TASK_SERIALIZER: str = "json"
+    CELERY_RESULT_SERIALIZER: str = "json"
+    CELERY_ACCEPT_CONTENT: List[str] = ["json"]
+    CELERY_TIMEZONE: str = "Europe/Madrid"
+    CELERY_TASK_TRACK_STARTED: bool = True
+    CELERY_TASK_TIME_LIMIT: int = 3600
+    CELERY_WORKER_PREFETCH_MULTIPLIER: int = 4
+    CELERY_WORKER_CONCURRENCY: int = 4
+    CELERY_TASK_DEFAULT_QUEUE: str = "default"
+
     def get_agent_api_keys(self) -> Dict[str, str]:
         """Obtener diccionario de API keys por agente."""
         return {
