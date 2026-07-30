@@ -3,7 +3,7 @@
 # Entorno local con secretos
 .env.local
 .env.*.local
-
+.env
 # Docker
 docker-compose.override.yml
 
