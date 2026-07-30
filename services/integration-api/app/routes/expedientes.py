@@ -18,7 +18,7 @@ from app.schemas import (
     PaginatedResponse,
     PaginationParams,
 )
-from adapters.dolibarr.client import DolibarrClient
+from app.adapters.dolibarr.client import DolibarrClient
 from app.services.audit_logger import AuditLogger
 from app.core.exceptions import NotFoundException, ValidationException
 

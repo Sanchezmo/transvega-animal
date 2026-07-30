@@ -58,7 +58,11 @@ class DolibarrClient:
         data: Optional[Dict] = None,
     ) -> Dict[str, Any]:
         """Realizar petición HTTP con manejo de errores."""
-        url = f"/api/index.php/{endpoint.lstrip('/')}"
+        # Handle both Dolibarr API format (/api/index.php/...) and mock format (direct)
+        if self.base_url.endswith(":8001"):  # Mock Dolibarr
+            url = f"/{endpoint.lstrip('/')}"
+        else:
+            url = f"/api/index.php/{endpoint.lstrip('/')}"
         
         try:
             response = await self.client.request(
@@ -142,7 +146,16 @@ class DolibarrClient:
         return await self._request("GET", f"thirdparties/{thirdparty_id}")
     
     async def create_thirdparty(self, data: Dict) -> Dict:
-        return await self._request("POST", "thirdparties", json=data)
+        result = await self._request("POST", "thirdparties", json=data)
+        # Handle different response formats:
+        # - Mock: {"success": true, "data": {...}, "id": 21}
+        # - Real Dolibarr: integer ID (e.g., "6") or full object
+        if isinstance(result, dict) and "data" in result:
+            return result["data"]
+        elif isinstance(result, int):
+            # Real Dolibarr returns just the ID on create, fetch the full object
+            return await self.get_thirdparty(result)
+        return result
     
     async def update_thirdparty(self, thirdparty_id: int, data: Dict) -> Dict:
         return await self._request("PUT", f"thirdparties/{thirdparty_id}", json=data)
@@ -349,3 +362,211 @@ class DolibarrClient:
     
     async def get_user(self, user_id: int) -> Dict:
         return await self._request("GET", f"users/{user_id}")
+
+    # =========================================================================
+    # PROVEEDORES (TERCEROS CON SUPPLIER=1)
+    # =========================================================================
+    
+    async def list_suppliers(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        sortfield: str = "rowid",
+        sortorder: str = "ASC",
+        sqlfilters: Optional[str] = None,
+    ) -> List[Dict]:
+        """Listar solo proveedores (filtro fournisseur=1)."""
+        params = {
+            "limit": limit,
+            "offset": offset,
+            "sortfield": sortfield,
+            "sortorder": sortorder,
+        }
+        # Añadir filtro para solo proveedores (Dolibarr usa 'fournisseur')
+        filter_parts = ["fournisseur:=1"]
+        if sqlfilters:
+            filter_parts.append(sqlfilters)
+        params["sqlfilters"] = ";".join(filter_parts)
+        
+        result = await self._request("GET", "thirdparties", params=params)
+        return result.get("data", []) if isinstance(result, dict) else result
+    
+    async def get_supplier(self, supplier_id: int) -> Dict:
+        return await self._request("GET", f"thirdparties/{supplier_id}")
+    
+    async def create_supplier(self, data: Dict) -> Dict:
+        """Crear proveedor. Asegura fournisseur=1 y client=0."""
+        data["fournisseur"] = 1
+        data["client"] = 0
+        result = await self._request("POST", "thirdparties", json=data)
+        if isinstance(result, dict) and "data" in result:
+            return result["data"]
+        elif isinstance(result, int):
+            return await self.get_supplier(result)
+        return result
+    
+    async def update_supplier(self, supplier_id: int, data: Dict) -> Dict:
+        data["fournisseur"] = 1
+        data["client"] = 0
+        return await self._request("PUT", f"thirdparties/{supplier_id}", json=data)
+    
+    async def delete_supplier(self, supplier_id: int) -> Dict:
+        return await self._request("DELETE", f"thirdparties/{supplier_id}")
+
+    # =========================================================================
+    # FACTURAS PROVEEDOR (SUPPLIER INVOICES)
+    # =========================================================================
+    
+    async def list_supplier_invoices(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: Optional[int] = None,
+        thirdparty_id: Optional[int] = None,
+    ) -> List[Dict]:
+        params = {"limit": limit, "offset": offset}
+        if status is not None:
+            params["status"] = status
+        if thirdparty_id is not None:
+            params["thirdparty_ids"] = str(thirdparty_id)
+        result = await self._request("GET", "supplierinvoices", params=params)
+        return result.get("data", []) if isinstance(result, dict) else result
+    
+    async def get_supplier_invoice(self, invoice_id: int) -> Dict:
+        return await self._request("GET", f"supplierinvoices/{invoice_id}")
+    
+    async def create_supplier_invoice(self, data: Dict) -> Dict:
+        """Crear factura de proveedor. Requiere socid (ID proveedor)."""
+        # Dolibarr usa 'socid' para el proveedor
+        if "thirdparty_id" in data and "socid" not in data:
+            data["socid"] = data.pop("thirdparty_id")
+        result = await self._request("POST", "supplierinvoices", json=data)
+        if isinstance(result, dict) and "data" in result:
+            return result["data"]
+        elif isinstance(result, int):
+            return await self.get_supplier_invoice(result)
+        return result
+    
+    async def update_supplier_invoice(self, invoice_id: int, data: Dict) -> Dict:
+        return await self._request("PUT", f"supplierinvoices/{invoice_id}", json=data)
+    
+    async def validate_supplier_invoice(self, invoice_id: int) -> Dict:
+        """Validar factura proveedor (pasar de borrador a validada)."""
+        return await self._request("POST", f"supplierinvoices/{invoice_id}/validate")
+    
+    async def cancel_supplier_invoice(self, invoice_id: int) -> Dict:
+        """Anular factura proveedor."""
+        return await self._request("POST", f"supplierinvoices/{invoice_id}/cancel")
+    
+    async def add_supplier_invoice_line(self, invoice_id: int, line_data: Dict) -> Dict:
+        """Añadir línea a factura proveedor."""
+        return await self._request("POST", f"supplierinvoices/{invoice_id}/lines", json=line_data)
+    
+    async def update_supplier_invoice_line(self, invoice_id: int, line_id: int, line_data: Dict) -> Dict:
+        return await self._request("PUT", f"supplierinvoices/{invoice_id}/lines/{line_id}", json=line_data)
+    
+    async def delete_supplier_invoice_line(self, invoice_id: int, line_id: int) -> Dict:
+        return await self._request("DELETE", f"supplierinvoices/{invoice_id}/lines/{line_id}")
+
+    # =========================================================================
+    # PEDIDOS PROVEEDOR (SUPPLIER ORDERS / ÓRDENES DE COMPRA)
+    # =========================================================================
+    
+    async def list_supplier_orders(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: Optional[int] = None,
+        thirdparty_id: Optional[int] = None,
+    ) -> List[Dict]:
+        params = {"limit": limit, "offset": offset}
+        if status is not None:
+            params["status"] = status
+        if thirdparty_id is not None:
+            params["thirdparty_ids"] = str(thirdparty_id)
+        result = await self._request("GET", "supplierorders", params=params)
+        return result.get("data", []) if isinstance(result, dict) else result
+    
+    async def get_supplier_order(self, order_id: int) -> Dict:
+        return await self._request("GET", f"supplierorders/{order_id}")
+    
+    async def create_supplier_order(self, data: Dict) -> Dict:
+        if "thirdparty_id" in data and "socid" not in data:
+            data["socid"] = data.pop("thirdparty_id")
+        result = await self._request("POST", "supplierorders", json=data)
+        if isinstance(result, dict) and "data" in result:
+            return result["data"]
+        elif isinstance(result, int):
+            return await self.get_supplier_order(result)
+        return result
+    
+    async def update_supplier_order(self, order_id: int, data: Dict) -> Dict:
+        return await self._request("PUT", f"supplierorders/{order_id}", json=data)
+    
+    async def validate_supplier_order(self, order_id: int) -> Dict:
+        return await self._request("POST", f"supplierorders/{order_id}/validate")
+    
+    async def add_supplier_order_line(self, order_id: int, line_data: Dict) -> Dict:
+        return await self._request("POST", f"supplierorders/{order_id}/lines", json=line_data)
+
+    # =========================================================================
+    # PROPUESTAS PROVEEDOR (SUPPLIER PROPOSALS)
+    # =========================================================================
+    
+    async def list_supplier_proposals(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: Optional[int] = None,
+        thirdparty_id: Optional[int] = None,
+    ) -> List[Dict]:
+        params = {"limit": limit, "offset": offset}
+        if status is not None:
+            params["status"] = status
+        if thirdparty_id is not None:
+            params["thirdparty_ids"] = str(thirdparty_id)
+        result = await self._request("GET", "supplierproposals", params=params)
+        return result.get("data", []) if isinstance(result, dict) else result
+    
+    async def get_supplier_proposal(self, proposal_id: int) -> Dict:
+        return await self._request("GET", f"supplierproposals/{proposal_id}")
+    
+    async def create_supplier_proposal(self, data: Dict) -> Dict:
+        if "thirdparty_id" in data and "socid" not in data:
+            data["socid"] = data.pop("thirdparty_id")
+        result = await self._request("POST", "supplierproposals", json=data)
+        if isinstance(result, dict) and "data" in result:
+            return result["data"]
+        elif isinstance(result, int):
+            return await self.get_supplier_proposal(result)
+        return result
+    
+    async def update_supplier_proposal(self, proposal_id: int, data: Dict) -> Dict:
+        return await self._request("PUT", f"supplierproposals/{proposal_id}", json=data)
+    
+    async def convert_supplier_proposal_to_order(self, proposal_id: int) -> Dict:
+        return await self._request("POST", f"supplierproposals/{proposal_id}/convert_to_order")
+
+    # =========================================================================
+    # RECEPCIONES (PROVEEDOR - RECEIPTS)
+    # =========================================================================
+    
+    async def list_supplier_receipts(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict]:
+        params = {"limit": limit, "offset": offset}
+        result = await self._request("GET", "supplierreceipts", params=params)
+        return result.get("data", []) if isinstance(result, dict) else result
+    
+    async def get_supplier_receipt(self, receipt_id: int) -> Dict:
+        return await self._request("GET", f"supplierreceipts/{receipt_id}")
+    
+    async def create_supplier_receipt(self, data: Dict) -> Dict:
+        result = await self._request("POST", "supplierreceipts", json=data)
+        if isinstance(result, dict) and "data" in result:
+            return result["data"]
+        elif isinstance(result, int):
+            return await self.get_supplier_receipt(result)
+        return result

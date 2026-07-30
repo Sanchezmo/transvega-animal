@@ -68,6 +68,8 @@ class ThirdPartyBase(BaseModel):
     status: int = Field(default=1, ge=0, le=1)
     vat_number: Optional[str] = Field(None, max_length=50)
     default_lang: Optional[str] = Field(default="es_ES", pattern=r"^[a-z]{2}_[A-Z]{2}$")
+    code_client: Optional[str] = Field(None, max_length=24, description="Código cliente (requerido por Dolibarr para clientes)")
+    code_fournisseur: Optional[str] = Field(None, max_length=24, description="Código proveedor (requerido por Dolibarr para proveedores, formato SU...)")
 
 
 class ThirdPartyCreate(ThirdPartyBase):
@@ -90,6 +92,7 @@ class ThirdPartyUpdate(BaseModel):
     status: Optional[int] = Field(None, ge=0, le=1)
     vat_number: Optional[str] = Field(None, max_length=50)
     default_lang: Optional[str] = Field(None, pattern=r"^[a-z]{2}_[A-Z]{2}$")
+    code_client: Optional[str] = Field(None, max_length=24, description="Código cliente (requerido por Dolibarr para clientes)")
 
 
 class ThirdPartyResponse(ThirdPartyBase):
@@ -97,10 +100,11 @@ class ThirdPartyResponse(ThirdPartyBase):
     ref: str
     ref_ext: Optional[str] = None
     canvas: Optional[str] = None
-    datec: datetime.datetime
-    datem: datetime.datetime
-    fk_user_author: int = 1
-    fk_user_modif: int = 1
+    datec: Optional[datetime.datetime] = None
+    datem: Optional[datetime.datetime] = None
+    fk_user_author: Optional[int] = None
+    fk_user_modif: Optional[int] = None
+    country_code: Optional[str] = None
 
 
 # =============================================================================
@@ -329,6 +333,174 @@ class InvoiceResponse(InvoiceBase):
     datem: datetime.datetime
     fk_user_author: int = 1
     fk_user_modif: int = 1
+
+
+# =============================================================================
+# FACTURAS PROVEEDOR (COMPRAS)
+# =============================================================================
+
+class SupplierInvoiceLineBase(BaseModel):
+    product_id: Optional[int] = None
+    description: str = Field(..., min_length=1, max_length=500)
+    qty: float = Field(default=1.0, gt=0)
+    unit_price: float = Field(..., ge=0)
+    vat_rate: float = Field(default=21.0, ge=0, le=100)
+    discount_percent: float = Field(default=0.0, ge=0, le=100)
+
+
+class SupplierInvoiceLineCreate(SupplierInvoiceLineBase):
+    pass
+
+
+class SupplierInvoiceLineResponse(SupplierInvoiceLineBase):
+    id: int
+    total_ht: float
+    total_tva: float
+    total_ttc: float
+
+
+class SupplierInvoiceBase(BaseModel):
+    thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
+    date: datetime.date = Field(default_factory=datetime.date.today)
+    lines: List[SupplierInvoiceLineCreate] = Field(..., min_length=1)
+    payment_term_id: Optional[int] = None
+    cond_reglement_id: Optional[int] = None
+    mode_reglement_id: Optional[int] = None
+    note_private: Optional[str] = None
+    note_public: Optional[str] = None
+    ref_supplier: Optional[str] = Field(None, max_length=50, description="Referencia del proveedor")
+
+
+class SupplierInvoiceCreate(SupplierInvoiceBase):
+    pass
+
+
+class SupplierInvoiceUpdate(BaseModel):
+    status: Optional[int] = Field(None, ge=0, le=2)
+    payment_term_id: Optional[int] = None
+    cond_reglement_id: Optional[int] = None
+    mode_reglement_id: Optional[int] = None
+    note_private: Optional[str] = None
+    note_public: Optional[str] = None
+    ref_supplier: Optional[str] = Field(None, max_length=50)
+
+
+class SupplierInvoiceResponse(SupplierInvoiceBase):
+    id: int
+    ref: str
+    total_ht: float
+    total_tva: float
+    total_ttc: float
+    lines: List[SupplierInvoiceLineResponse]
+    datec: datetime.datetime
+    datem: datetime.datetime
+    fk_user_author: int = 1
+    fk_user_modif: int = 1
+    status: int = 0  # 0=draft, 1=validated, 2=cancelled
+
+
+# =============================================================================
+# PEDIDOS PROVEEDOR (ÓRDENES DE COMPRA)
+# =============================================================================
+
+class SupplierOrderLineBase(BaseModel):
+    product_id: Optional[int] = None
+    description: str = Field(..., min_length=1, max_length=500)
+    qty: float = Field(default=1.0, gt=0)
+    unit_price: float = Field(..., ge=0)
+    vat_rate: float = Field(default=21.0, ge=0, le=100)
+    discount_percent: float = Field(default=0.0, ge=0, le=100)
+
+
+class SupplierOrderLineCreate(SupplierOrderLineBase):
+    pass
+
+
+class SupplierOrderLineResponse(SupplierOrderLineBase):
+    id: int
+    total_ht: float
+    total_tva: float
+    total_ttc: float
+
+
+class SupplierOrderBase(BaseModel):
+    thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
+    date: datetime.date = Field(default_factory=datetime.date.today)
+    lines: List[SupplierOrderLineCreate] = Field(..., min_length=1)
+    payment_term_id: Optional[int] = None
+    cond_reglement_id: Optional[int] = None
+    mode_reglement_id: Optional[int] = None
+    note_private: Optional[str] = None
+    note_public: Optional[str] = None
+    ref_supplier: Optional[str] = Field(None, max_length=50)
+
+
+class SupplierOrderCreate(SupplierOrderBase):
+    pass
+
+
+class SupplierOrderUpdate(BaseModel):
+    status: Optional[int] = Field(None, ge=0, le=2)
+    payment_term_id: Optional[int] = None
+    cond_reglement_id: Optional[int] = None
+    mode_reglement_id: Optional[int] = None
+    note_private: Optional[str] = None
+    note_public: Optional[str] = None
+    ref_supplier: Optional[str] = Field(None, max_length=50)
+
+
+class SupplierOrderResponse(SupplierOrderBase):
+    id: int
+    ref: str
+    total_ht: float
+    total_tva: float
+    total_ttc: float
+    lines: List[SupplierOrderLineResponse]
+    datec: datetime.datetime
+    datem: datetime.datetime
+    fk_user_author: int = 1
+    fk_user_modif: int = 1
+    status: int = 0
+
+
+# =============================================================================
+# PROPUESTAS PROVEEDOR
+# =============================================================================
+
+class SupplierProposalBase(BaseModel):
+    thirdparty_id: int = Field(..., gt=0)
+    date: datetime.date = Field(default_factory=datetime.date.today)
+    lines: List[SupplierOrderLineCreate] = Field(..., min_length=1)
+    payment_term_id: Optional[int] = None
+    cond_reglement_id: Optional[int] = None
+    note_private: Optional[str] = None
+    note_public: Optional[str] = None
+    ref_supplier: Optional[str] = Field(None, max_length=50)
+
+
+class SupplierProposalCreate(SupplierProposalBase):
+    pass
+
+
+class SupplierProposalUpdate(BaseModel):
+    status: Optional[int] = Field(None, ge=0, le=2)
+    note_private: Optional[str] = None
+    note_public: Optional[str] = None
+    ref_supplier: Optional[str] = Field(None, max_length=50)
+
+
+class SupplierProposalResponse(SupplierProposalBase):
+    id: int
+    ref: str
+    total_ht: float
+    total_tva: float
+    total_ttc: float
+    lines: List[SupplierOrderLineResponse]
+    datec: datetime.datetime
+    datem: datetime.datetime
+    fk_user_author: int = 1
+    fk_user_modif: int = 1
+    status: int = 0
 
 
 # =============================================================================

@@ -56,7 +56,7 @@ services:
     container_name: transvega-mock-dolibarr
     environment:
       - ENVIRONMENT=development
-      - MOCK_DOLIBARR_API_KEY=mock-admin-key-123
+      - MOCK_API_KEY=dev_dolibarr_api_key_123456
       - MOCK_DOLIBARR_AGENT_KEY=mock-agent-key-456
       - MOCK_DOLIBARR_READONLY_KEY=mock-readonly-key-789
     ports:
@@ -81,13 +81,13 @@ services:
       - API_PORT=8000
       - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - DOLIBARR_API_URL=http://mock-dolibarr:8001
-      - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
+      - DOLIBARR_API_URL=http://dolibarr:80
+      - DOLIBARR_API_KEY=dolibarr_admin_api_key_123456
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - FERNET_KEY=${FERNET_KEY}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
-      - MOCK_DOLIBARR_ENABLED=true
+      - MOCK_DOLIBARR_ENABLED=false
       # Individual fields required by Settings
       - AUDIT_DB_PASSWORD=${AUDIT_DB_PASSWORD}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -117,6 +117,57 @@ services:
     networks:
       - transvega-internal
     restart: unless-stopped
+
+  # =============================================================================
+  # WORKER CELERY (Procesamiento de tareas en background)
+  # =============================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: transvega-worker
+    environment:
+      - ENVIRONMENT=development
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
+      - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
+      - DOLIBARR_API_URL=http://mock-dolibarr:8001
+      - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      # Individual fields required by Settings
+      - AUDIT_DB_PASSWORD=${AUDIT_DB_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - FERNET_KEY=${FERNET_KEY}
+      - AGENT_API_KEY_SUPERVISOR=${AGENT_API_KEY_SUPERVISOR}
+      - AGENT_API_KEY_PRODUCTS=${AGENT_API_KEY_PRODUCTS}
+      - AGENT_API_KEY_COMPLIANCE=${AGENT_API_KEY_COMPLIANCE}
+      - AGENT_API_KEY_PUBLISHING=${AGENT_API_KEY_PUBLISHING}
+      - AGENT_API_KEY_SALES=${AGENT_API_KEY_SALES}
+      - AGENT_API_KEY_INVOICING=${AGENT_API_KEY_INVOICING}
+      - AGENT_API_KEY_PURCHASES=${AGENT_API_KEY_PURCHASES}
+      - AGENT_API_KEY_BANKING=${AGENT_API_KEY_BANKING}
+      - AGENT_API_KEY_ACCOUNTING=${AGENT_API_KEY_ACCOUNTING}
+      - AGENT_API_KEY_TAX=${AGENT_API_KEY_TAX}
+      - AGENT_API_KEY_MARKETING=${AGENT_API_KEY_MARKETING}
+      - AGENT_API_KEY_TECHNICAL=${AGENT_API_KEY_TECHNICAL}
+    # No volumes - files copied in Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+      audit-db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - transvega-internal
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
 
   # =============================================================================
   # DOLIBARR (ERP/CRM oficial)

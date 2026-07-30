@@ -11,24 +11,26 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /app
 
+# Install requirements from integration-api (includes celery)
 COPY services/integration-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy with correct ownership
+# Copy all necessary code with correct ownership
 COPY --chown=appuser:appuser services/integration-api/app ./app
 COPY --chown=appuser:appuser adapters ./adapters
 COPY --chown=appuser:appuser shared ./shared
 COPY --chown=appuser:appuser agents ./agents
-COPY --chown=appuser:appuser services/task-queue ./tasks
 
-# Create tasks module init if needed
+# Copy task-queue app contents to /app/tasks (not nested under another tasks/)
+COPY --chown=appuser:appuser services/task-queue/app/celery_app.py ./tasks/celery_app.py
+COPY --chown=appuser:appuser services/task-queue/app/tasks ./tasks
+
+# Create tasks module init
 RUN touch /app/tasks/__init__.py && chown appuser:appuser /app/tasks/__init__.py
-# Copy celery_app.py to tasks root for easier import
-RUN cp /app/tasks/app/celery_app.py /app/tasks/celery_app.py && chown appuser:appuser /app/tasks/celery_app.py
 
 USER appuser
 
-# Health check para worker
+# Health check for worker
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD celery -A tasks.celery_app inspect ping -d celery@${HOSTNAME} || exit 1
 
