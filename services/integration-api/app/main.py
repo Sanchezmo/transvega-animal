@@ -197,9 +197,10 @@ async def readiness_check():
     
     # Verificar Redis
     try:
-        from app.core.database import get_redis
-        redis = await get_redis()
+        from app.core.database import get_redis_client
+        redis = await get_redis_client()
         await redis.ping()
+        await redis.close()
         checks["redis"] = "ok"
     except Exception as e:
         checks["redis"] = f"error: {e}"

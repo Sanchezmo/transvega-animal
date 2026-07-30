@@ -71,6 +71,17 @@ async def get_redis() -> Redis:
         await redis.close()
 
 
+async def get_redis_client() -> Redis:
+    """Obtener cliente Redis directo (para health checks)."""
+    return Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        password=settings.REDIS_PASSWORD,
+        db=0,
+        decode_responses=True,
+    )
+
+
 async def init_db():
     """Inicializar base de datos - crear tablas."""
     async with engine.begin() as conn:

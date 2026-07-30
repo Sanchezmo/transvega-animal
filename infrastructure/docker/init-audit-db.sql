@@ -1,6 +1,4 @@
-"""
-Inicialización de base de datos auditoría - SQL para PostgreSQL.
-"""
+-- Inicialización de base de datos auditoría - SQL para PostgreSQL.
 -- Extensiones necesarias
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
