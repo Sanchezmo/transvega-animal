@@ -1,45 +1,63 @@
-version: '3.8'
+version: "3.9"
 
 services:
+  # -------------------------------------------------
+  # Base de datos principal de Hermes (PostgreSQL)
+  # -------------------------------------------------
   postgres:
     image: postgres:13
     container_name: postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: hermes
-      POSTGRES_PASSWORD: hermespassword
+      POSTGRES_PASSWORD: "***"
       POSTGRES_DB: hermes
+    # Bind‑mount del directorio de datos de PostgreSQL
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
     networks:
       - hermes_net
 
+  # -------------------------------------------------
+  # Redis (usado como caché y/o cola de tareas)
+  # -------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    # Bind‑mount del fichero RDB/AOF de persistencia de Redis
+    volumes:
+      - ./redis_data:/data
     networks:
       - hermes_net
 
+  # -------------------------------------------------
+  # Ollama – modelo local para tareas privadas
+  # -------------------------------------------------
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
+    # Bind‑mount donde Ollama guarda los modelos descargados
     volumes:
-      - ollama_data:/root/.ollama
+      - ./ollama_data:/root/.ollama
     networks:
       - hermes_net
-    # No host port exposed; accessible only via internal network
+    # No se expone el puerto al host; sólo es accesible desde la red interna
 
+  # -------------------------------------------------
+  # Hermes – API principal, gateway y orquestador
+  # -------------------------------------------------
   hermes:
     build: .
     container_name: hermes
     restart: unless-stopped
     env_file:
       - .env
+    # Bind‑mounts para datos de aplicación y logs
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ./hermes_data:/app/data          # datos que la API necesita persistir (uploads, colas temporales, etc.)
+      - ./hermes_logs:/app/logs          # logs de la aplicación
     depends_on:
       - postgres
       - redis
@@ -47,10 +65,61 @@ services:
     networks:
       - hermes_net
 
+  # -------------------------------------------------
+  # Worker de procesamiento de facturas (ejemplo)
+  # -------------------------------------------------
+  invoice_worker:
+    # Reutiliza la misma imagen que Hermes (o crea una específica si lo prefieres)
+    build: .
+    container_name: invoice_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    # El worker necesita leer/escribir los mismos datos que Hermes
+    volumes:
+      - ./hermes_data:/app/data          # acceso a los archivos de facturas, etc.
+      - ./invoice_worker_logs:/app/logs  # logs propios del worker
+    depends_on:
+      - hermes
+    networks:
+      - hermes_net
+    command: ["python", "-m", "agents.invoice_processing.worker"]  # ajusta según tu entrypoint
+
+  # -------------------------------------------------
+  # (Opcional) Dolibarr – ERP fuente de verdad para contabilidad
+  # -------------------------------------------------
+  # dolibarr:
+  #   image: dolibarr/dolibarr:latest
+  #   container_name: dolibarr
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env_dolibarr   # contiene DB_HOST, DB_USER, DB_PASSWORD, etc.
+  #   volumes:
+  #     - ./dolibarr_db:/var/lib/mysql          # si usas MySQL interno
+  #     - ./dolibarr_data:/var/www/html/documents  # documentos adjuntos, facturas, logos, etc.
+  #   depends_on:
+  #     - postgres   # si usas el mismo Postgres que Hermes, o elimina si usas MySQL separado
+  #   networks:
+  #     - hermes_net
+
+  # -------------------------------------------------
+  # Red compartida para todos los servicios
+  # -------------------------------------------------
 networks:
   hermes_net:
     driver: bridge
 
-volumes:
-  postgres_data:
-  ollama_data:
+# -------------------------------------------------
+# Volúmenes nombrados (solo se usan si prefieres NO usar bind‑mounts)
+# En este archivo ya no los necesitamos porque todo está bind‑mountado,
+# pero los dejamos comentados por si en algún momento quieres volver a usarlos.
+# -------------------------------------------------
+# volumes:
+#   postgres_data:
+#   redis_data:
+#   ollama_data:
+#   hermes_data:
+#   hermes_logs:
+#   invoice_worker_logs:
+#   dolibarr_db:
+#   dolibarr_data:
