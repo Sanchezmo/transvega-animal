@@ -14,6 +14,7 @@ This system manages the lifecycle of dogs for a breeder/broker business, integra
 - **Approval Workflow**: All content and listings must be approved by humans via the existing approval-agent.
 - **Media Generation Agent**: Placeholders for local image, video, TTS generation (future DGX Spark integration).
 - **Privacy Router**: Deterministically classifies data as LOCAL_ONLY (media, personal docs) or ONLINE_ALLOWED (non-sensitive text).
+- **Publishing Agent**: Handles assisted and automatic publishing to platforms (Milanuncios via Playwright, Facebook, Instagram, TikTok).
 
 ## Data Model
 
@@ -37,6 +38,7 @@ This system manages the lifecycle of dogs for a breeder/broker business, integra
 - `DOG_MEDIA_ROOT`: Root directory for storing media (default /data/dogs)
 - `LOCAL_IMAGE_BASE_URL`, `LOCAL_VIDEO_BASE_URL`, `LOCAL_TTS_BASE_URL`: For future local generation services
 - `MEDIA_SELECTION_THRESHOLDS`: JSON for sharpness, exposure, dog_visibility thresholds
+- `PLATFORMS`: Configuration for each platform (e.g., Milanuncios, Facebook, Instagram, TikTok)
 
 ## Workflow
 
@@ -45,21 +47,23 @@ This system manages the lifecycle of dogs for a breeder/broker business, integra
 3. Content Marketing → Content Proposals
 4. Listing Agent → Milanuncios Draft
 5. Approval Agent → Human Review → Approved/Rejected
-6. (Future) Publishing Agent → Auto-publish to platforms
+6. Publishing Agent → Assisted or Automatic publishing to platforms (Milanuncios via Playwright, Facebook, Instagram, TikTok)
 
 ## Extensibility
 
-- Add new platforms by extending SocialPublisher and ListingAgent.
+- Add new platforms by extending the PublishingAgent with platform-specific logic.
 - Replace stub providers in MediaGenerationAgent with real local services.
 - Enhance privacy router with more patterns.
 
 ## Testing
 
 - Unit tests for schemas: `test_dog_schemas_standalone.py`
-- Run with: `python test_dog_schemas_standalone.py`
+- Integration test: `test_integration_flow.py`
+- Run with: `PYTHONPATH=/home/saulo/transvega-animal:/home/saulo/transvega-animal/services/integration-api source venv/bin/activate && python test_integration_flow.py`
 
 ## Deployment
 
 - Use Docker Compose for development.
 - Ensure media directory is mounted.
 - Configure Telegram webhook to point to `/telegram/webhook` endpoint.
+- For Milanuncios automation via Playwright, ensure a compatible browser is available.
