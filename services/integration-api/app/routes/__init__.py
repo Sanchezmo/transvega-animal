@@ -1,6 +1,4 @@
-"""
-Paquete de rutas de la API.
-"""
+"""Paquete de rutas de la API."""
 from app.routes import (
     expedientes,
     terceros,
@@ -11,6 +9,8 @@ from app.routes import (
     aprobaciones,
     salud,
     proveedores,
+    dogs,
+    telegram,
 )
 
 __all__ = [
@@ -23,4 +23,6 @@ __all__ = [
     "aprobaciones",
     "salud",
     "proveedores",
+    "dogs",
+    "telegram",
 ]

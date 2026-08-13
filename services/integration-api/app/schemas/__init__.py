@@ -664,3 +664,222 @@ class TaskResponse(TaskBase):
     updated_at: datetime.datetime
     created_by: int = 1
     updated_by: int = 1
+# =============================================================================
+# PERROS (DOGS) - NUEVOS MODELOS DE DOMINIO
+# =============================================================================
+
+
+class BreedBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    average_weight_kg: Optional[float] = Field(None, gt=0)
+    average_height_cm: Optional[float] = Field(None, gt=0)
+    life_expectancy_years: Optional[int] = Field(None, gt=0)
+    temperament: Optional[str] = None
+    good_with_children: Optional[bool] = None
+    good_with_other_dogs: Optional[bool] = None
+    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    grooming_needs: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+
+
+class BreedCreate(BreedBase):
+    pass
+
+
+class BreedUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    average_weight_kg: Optional[float] = Field(None, gt=0)
+    average_height_cm: Optional[float] = Field(None, gt=0)
+    life_expectancy_years: Optional[int] = Field(None, gt=0)
+    temperament: Optional[str] = None
+    good_with_children: Optional[bool] = None
+    good_with_other_dogs: Optional[bool] = None
+    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    grooming_needs: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+
+
+class BreedResponse(BreedBase):
+    id: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class LitterBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    breed_id: int = Field(..., gt=0)
+    mother_id: int = Field(..., gt=0)
+    father_id: Optional[int] = Field(None, gt=0)
+    birth_date: datetime.date
+    size: int = Field(..., gt=0)
+    registration_number: Optional[str] = Field(None, max_length=50)
+
+
+class LitterCreate(LitterBase):
+    pass
+
+
+class LitterUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    breed_id: Optional[int] = Field(None, gt=0)
+    mother_id: Optional[int] = Field(None, gt=0)
+    father_id: Optional[int] = Field(None, gt=0)
+    birth_date: Optional[datetime.date] = None
+    size: Optional[int] = Field(None, gt=0)
+    registration_number: Optional[str] = Field(None, max_length=50)
+
+
+class LitterResponse(LitterBase):
+    id: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class DogMediaBase(BaseModel):
+    file_path: str = Field(..., max_length=500)
+    file_hash: str = Field(..., min_length=32, max_length=128)  # SHA-256 or similar
+    mime_type: str = Field(..., max_length=100)
+    width: Optional[int] = Field(None, gt=0)
+    height: Optional[int] = Field(None, gt=0)
+    duration_seconds: Optional[float] = Field(None, gt=0)  # for videos
+    media_type: str = Field(..., pattern=r"^(photo|video)$")
+    purpose: str = Field(..., pattern=r"^(original|processed|social|listing)$")
+    dog_id: int = Field(..., gt=0)
+    uploaded_by: int = Field(..., gt=0)
+
+
+class DogMediaCreate(DogMediaBase):
+    pass
+
+
+class DogMediaUpdate(BaseModel):
+    file_path: Optional[str] = Field(None, max_length=500)
+    file_hash: Optional[str] = Field(None, min_length=32, max_length=128)
+    mime_type: Optional[str] = Field(None, max_length=100)
+    width: Optional[int] = Field(None, gt=0)
+    height: Optional[int] = Field(None, gt=0)
+    duration_seconds: Optional[float] = Field(None, gt=0)
+    media_type: Optional[str] = Field(None, pattern=r"^(photo|video)$")
+    purpose: Optional[str] = Field(None, pattern=r"^(original|processed|social|listing)$")
+    dog_id: Optional[int] = Field(None, gt=0)
+    uploaded_by: Optional[int] = Field(None, gt=0)
+
+
+class DogMediaResponse(DogMediaBase):
+    id: int
+    created_at: datetime.datetime
+
+
+class DogHealthBase(BaseModel):
+    vet_check_date: Optional[datetime.date] = None
+    weight_kg: Optional[float] = Field(None, gt=0)
+    temperature_celsius: Optional[float] = Field(None, ge=35, le=42)
+    heart_rate_bpm: Optional[int] = Field(None, gt=0)
+    respiratory_rate: Optional[int] = Field(None, gt=0)
+    stool_condition: Optional[str] = Field(None, pattern=r"^(normal|soft|diarrhea|constipated)$")
+    urine_condition: Optional[str] = Field(None, pattern=r"^(normal|cloudy|bloody)$")
+    appetite: Optional[str] = Field(None, pattern=r"^(poor|fair|good|excellent)$")
+    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    notes: Optional[str] = None
+    next_check_date: Optional[datetime.date] = None
+
+
+class DogHealthCreate(DogHealthBase):
+    pass
+
+
+class DogHealthUpdate(BaseModel):
+    vet_check_date: Optional[datetime.date] = None
+    weight_kg: Optional[float] = Field(None, gt=0)
+    temperature_celsius: Optional[float] = Field(None, ge=35, le=42)
+    heart_rate_bpm: Optional[int] = Field(None, gt=0)
+    respiratory_rate: Optional[int] = Field(None, gt=0)
+    stool_condition: Optional[str] = Field(None, pattern=r"^(normal|soft|diarrhea|constipated)$")
+    urine_condition: Optional[str] = Field(None, pattern=r"^(normal|cloudy|bloody)$")
+    appetite: Optional[str] = Field(None, pattern=r"^(poor|fair|good|excellent)$")
+    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    notes: Optional[str] = None
+    next_check_date: Optional[datetime.date] = None
+
+
+class DogHealthResponse(DogHealthBase):
+    id: int
+    dog_id: int = Field(..., gt=0)
+    recorded_at: datetime.datetime
+
+
+class DogStatusHistoryBase(BaseModel):
+    status: str = Field(..., pattern=r"^(draft|available|reserved|sold|inactive)$")
+    changed_by: int = Field(..., gt=0)
+    change_reason: Optional[str] = None
+
+
+class DogStatusHistoryCreate(DogStatusHistoryBase):
+    pass
+
+
+class DogStatusHistoryResponse(DogStatusHistoryBase):
+    id: int
+    dog_id: int = Field(..., gt=0)
+    changed_at: datetime.datetime
+
+
+# =============================================================================
+# PERRO PRINCIPAL (DOG)
+# =============================================================================
+
+
+class DogBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    breed_id: int = Field(..., gt=0)
+    litter_id: Optional[int] = Field(None, gt=0)
+    sex: str = Field(..., pattern=r"^[MH]$")
+    birth_date: datetime.date
+    color: str = Field(..., max_length=50)
+    microchip: str = Field(..., pattern=r"^\d{15}$")
+    sire_name: Optional[str] = Field(None, max_length=200)  # father name
+    dam_name: Optional[str] = Field(None, max_length=200)  # mother name
+    pedigree: Optional[str] = Field(None, max_length=100)
+    vet_status: str = Field(default="healthy", max_length=50)
+    purchase_price: float = Field(default=0.0, ge=0)
+    sale_price: float = Field(default=0.0, ge=0)
+    associated_costs: float = Field(default=0.0, ge=0)
+    # Reference to ExpedienteAnimal for Dolibarr sync (optional)
+    expediente_id: Optional[int] = Field(None, gt=0)
+
+
+class DogCreate(DogBase):
+    pass
+
+
+class DogUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    breed_id: Optional[int] = Field(None, gt=0)
+    litter_id: Optional[int] = Field(None, gt=0)
+    sex: Optional[str] = Field(None, pattern=r"^[MH]$")
+    birth_date: Optional[datetime.date] = None
+    color: Optional[str] = Field(None, max_length=50)
+    vet_status: Optional[str] = Field(None, max_length=50)
+    sire_name: Optional[str] = Field(None, max_length=200)
+    dam_name: Optional[str] = Field(None, max_length=200)
+    pedigree: Optional[str] = Field(None, max_length=100)
+    purchase_price: Optional[float] = Field(None, ge=0)
+    sale_price: Optional[float] = Field(None, ge=0)
+    associated_costs: Optional[float] = Field(None, ge=0)
+    expediente_id: Optional[int] = Field(None, gt=0)
+
+
+class DogResponse(DogBase):
+    id: int
+    internal_id: str = Field(..., max_length=50)  # e.g., DOG-2026-000001
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    created_by: int = 1
+    updated_by: int = 1
+    # Computed or related fields (optional, for API responses)
+    breed: Optional[BreedResponse] = None
+    litter: Optional[LitterResponse] = None
+    media: List[DogMediaResponse] = Field(default_factory=list)
+    health_records: List[DogHealthResponse] = Field(default_factory=list)
+    status_history: List[DogStatusHistoryResponse] = Field(default_factory=list)
+

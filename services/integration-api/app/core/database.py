@@ -6,6 +6,7 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import MetaData
 from redis.asyncio import Redis
 from app.core.config import settings, get_audit_db_url, get_redis_url
+from app.models import Breed, Litter, DogMedia, DogHealth, DogStatusHistory, Dog  # noqa: F401
 
 
 # Convención de nombres para constraints (mejora migraciones Alembic)
