@@ -1,38 +1,56 @@
-# docker-compose.yml - Orquestador principal que delega a los archivos de entorno
-# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-#      docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
-#      docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-
 version: '3.8'
 
-# Este archivo define solo la configuración común base
-# Los servicios reales están en docker-compose.dev.yml, docker-compose.staging.yml, docker-compose.prod.yml
-
 services:
-  # Placeholder - los servicios reales se definen en los archivos de entorno
-  # docker-compose no soporta "extends" en v3.8 para servicios completos
-  # Mantenemos este archivo para compatibilidad con herramientas que esperan docker-compose.yml
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hermes
+      POSTGRES_PASSWORD: hermespassword
+      POSTGRES_DB: hermes
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hermes_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - hermes_net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - hermes_net
+    # No host port exposed; accessible only via internal network
+
+  hermes:
+    build: .
+    container_name: hermes
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+      - ollama
+    networks:
+      - hermes_net
 
 networks:
-  transvega-frontend:
-    external: true
-  transvega-backend:
-    external: true
-  transvega-monitoring:
-    external: true
+  hermes_net:
+    driver: bridge
 
 volumes:
-  audit-db-data:
-    external: true
-  redis-data:
-    external: true
-  prometheus-data:
-    external: true
-  grafana-data:
-    external: true
-  loki-data:
-    external: true
-  alertmanager-data:
-    external: true
-  ollama-data:
-    external: true
+  postgres_data:
+  ollama_data:
