@@ -4,6 +4,7 @@ Handles extraction, validation, and registration of supplier invoices.
 import structlog
 import os
 import hashlib
+import io
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import mimetypes
@@ -80,7 +81,7 @@ class InvoiceProcessingAgent:
     3. Structured extraction via Ollama (local LLM) to JSON
     4. Validation with Pydantic
     5. Deterministic checks (sums, VAT, duplicate)
-    6. Lookup supplier in Dolibarr via DolibarrIntegrationService
+    6. Lookup supplier in Dolibarr via InvoiceIntegrationService
     7. Return result for human approval
     8. On approval, create invoice in Dolibarr
     """
@@ -108,6 +109,12 @@ class InvoiceProcessingAgent:
         # Storage roots
         self.invoice_storage_root = config.get("INVOICE_STORAGE_ROOT", "/data/invoices")
         os.makedirs(self.invoice_storage_root, exist_ok=True)
+
+        # OCR configuration (CPU-optimized defaults)
+        self.ocr_dpi = config.get("OCR_DPI", 150)
+        self.ocr_max_pages = config.get("OCR_MAX_PAGES", 5)
+        self.ocr_max_file_mb = config.get("OCR_MAX_FILE_MB", 10)
+        self.ocr_timeout = config.get("OCR_TIMEOUT", 120)
 
         self.capabilities = [
             "process_invoice",
@@ -146,14 +153,78 @@ class InvoiceProcessingAgent:
             self.logger.warning("pdf_text_extraction_failed", error=str(e))
             return ""
 
-    async def _ocr_via_ollama(self, image_path: str) -> str:
-        """Use Ollama vision model to extract text from image."""
+    async def _render_pdf_pages_to_images(self, file_path: str) -> List[bytes]:
+        """
+        Render PDF pages to PNG images for OCR.
+        Returns list of image bytes (one per page).
+        Respects OCR limits: max pages, DPI, file size.
+        """
+        import fitz  # pymupdf
+        images = []
+        
         try:
+            doc = fitz.open(file_path)
+            
+            # Check page limit
+            page_count = min(len(doc), self.ocr_max_pages)
+            if len(doc) > self.ocr_max_pages:
+                self.logger.warning("pdf_exceeds_max_pages", total_pages=len(doc), max_pages=self.ocr_max_pages)
+            
+            # Check file size
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            if file_size_mb > self.ocr_max_file_mb:
+                self.logger.warning("pdf_exceeds_max_size", size_mb=file_size_mb, max_mb=self.ocr_max_file_mb)
+                # We'll still process but log warning
+            
+            for page_num in range(page_count):
+                page = doc[page_num]
+                # Render at configured DPI
+                mat = fitz.Matrix(self.ocr_dpi / 72.0, self.ocr_dpi / 72.0)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                img_bytes = pix.tobytes("png")
+                images.append(img_bytes)
+                
+                # Log image dimensions for debugging
+                self.logger.debug("pdf_page_rendered", page=page_num + 1, width=pix.width, height=pix.height, size_kb=len(img_bytes)/1024)
+            
+            doc.close()
+            return images
+            
+        except Exception as e:
+            self.logger.error("pdf_render_failed", error=str(e))
+            return []
+
+    async def _ocr_via_ollama(self, image_path_or_bytes: str = None, image_bytes: bytes = None) -> str:
+        """
+        Use Ollama vision model to extract text from image.
+        Accepts either image_path (str) or image_bytes (bytes).
+        """
+        try:
+            # If image_bytes provided directly, write to temp file
+            if image_bytes is not None:
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    tmp.write(image_bytes)
+                    tmp_path = tmp.name
+                image_path = tmp_path
+            elif image_path_or_bytes is not None:
+                image_path = image_path_or_bytes
+            else:
+                return ""
+            
             result = await self.router.vision(
                 privacy_scope="LOCAL_ONLY",
                 image_path=image_path,
                 prompt="Extract all text from this image. Return only the raw text, no extra commentary."
             )
+            
+            # Clean up temp file if we created one
+            if image_bytes is not None and image_path:
+                try:
+                    os.unlink(image_path)
+                except:
+                    pass
+            
             return result.get("text", "").strip()
         except Exception as e:
             self.logger.error("ollama_ocr_failed", error=str(e))
@@ -270,10 +341,21 @@ Return ONLY the JSON, no extra text.
         raw_text = ""
         mime_type, _ = mimetypes.guess_type(filename)
         if mime_type == "application/pdf" or filename.lower().endswith('.pdf'):
+            # First try to extract text layer
             raw_text = await self._extract_text_from_pdf(file_path)
-            if not raw_text:
-                # No text layer, need OCR
-                raw_text = await self._ocr_via_ollama(file_path)
+            if not raw_text or len(raw_text.strip()) < 50:
+                # No text layer or very little text - likely scanned PDF
+                # Render pages to images and OCR each
+                self.logger.info("pdf_no_text_layer_rendering_for_ocr", file_path=file_path)
+                page_images = await self._render_pdf_pages_to_images(file_path)
+                if page_images:
+                    ocr_texts = []
+                    for i, img_bytes in enumerate(page_images):
+                        self.logger.debug("ocr_page", page=i+1, total=len(page_images))
+                        page_text = await self._ocr_via_ollama(image_bytes=img_bytes)
+                        if page_text:
+                            ocr_texts.append(f"--- Page {i+1} ---\n{page_text}")
+                    raw_text = "\n\n".join(ocr_texts)
         else:
             # Assume image
             raw_text = await self._ocr_via_ollama(file_path)
