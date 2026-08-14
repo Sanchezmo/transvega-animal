@@ -14,7 +14,7 @@ from agents.publishing.agent import PublishingAgent
 
 async def test_assisted_publish():
     config = {
-        "INTERNAL_API_URL": "http://localhost:8000",
+        "INTERNAL_API_URL": "http://localhost:8000/api/v1",
         "PLATFORMS": {
             "milanuncios": {},
             "facebook": {}
@@ -29,7 +29,7 @@ async def test_assisted_publish():
 async def test_auto_publish_no_playwright():
     # Simulate playwright not available by patching the flag
     config = {
-        "INTERNAL_API_URL": "http://localhost:8000",
+        "INTERNAL_API_URL": "http://localhost:8000/api/v1",
         "PLATFORMS": {
             "milanuncios": {"username": "u", "password": "p"}
         }
@@ -43,7 +43,7 @@ async def test_auto_publish_no_playwright():
         print("Auto publish without playwright test passed")
 
 async def test_auto_publish_other_platforms():
-    config = {"INTERNAL_API_URL": "http://localhost:8000", "PLATFORMS": {}}
+    config = {"INTERNAL_API_URL": "http://localhost:8000/api/v1", "PLATFORMS": {}}
     agent = PublishingAgent(config)
     for platform in ["facebook", "instagram", "tiktok"]:
         result = await agent.auto_publish(listing_id=1, platform=platform)

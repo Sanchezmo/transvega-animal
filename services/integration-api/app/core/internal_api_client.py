@@ -313,7 +313,7 @@ async def create_internal_api_client(
 
     # Use provided values or get from settings
     final_base_url = base_url or getattr(
-        settings, "INTERNAL_API_URL", "http://localhost:8000"
+        settings, "INTERNAL_API_URL", "http://localhost:8000/api/v1"
     )
     final_api_key = api_key or settings.AGENT_API_KEYS.get(agent_name)
 

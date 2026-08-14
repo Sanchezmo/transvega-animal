@@ -33,8 +33,8 @@ class Settings(BaseSettings):
         "https://hermes.transvega-animal.es",
     ]
 
-    # Internal API URL for service-to-service communication
-    INTERNAL_API_URL: str = "http://localhost:8000"
+    # Internal API URL for service-to-service communication (includes /api/v1 prefix)
+    INTERNAL_API_URL: str = "http://localhost:8000/api/v1"
 
     # Rate limiting
     RATE_LIMIT_REQUESTS: int = 100

@@ -8,7 +8,14 @@ import structlog
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from app.services.media_storage import save_uploaded_file, get_media_root, ensure_media_dirs
+from app.services.media_storage import (
+    save_uploaded_file, 
+    get_media_root, 
+    ensure_media_dirs,
+    MediaAsset,
+    list_dog_assets,
+    get_assets_for_publishing,
+)
 from app.agents.media_selection.agent import MediaSelectionAgent
 from app.agents.media_generation.agent import MediaGenerationAgent, create_media_generation_agent
 from app.schemas import DogMediaCreate
@@ -21,13 +28,27 @@ class MediaPipelineAgent:
     Agente de pipeline de media - Orquesta el flujo completo de media para perros.
     
     Flujo:
-    1. INGEST: Recibir archivo -> validar -> guardar en storage (original/)
+    1. INGEST: Recibir archivo -> validar -> guardar en storage (originals/)
     2. ANALYZE: MediaSelectionAgent analiza (nitidez, exposición, encuadre, visibilidad perro)
     3. SELECT: Recomendar portada, listado, redes sociales, marcar descartables
     4. PROCESS (opcional): Generar versiones procesadas (processed/, social/, listing/)
     5. PUBLISH PREP: Preparar assets para Publishing Agent
     
     Privacy: Media original es LOCAL_ONLY por defecto.
+    
+    Estructura de directorios unificada:
+    /data/dogs/{dog_internal_id}/
+        originals/
+        listing/
+            cover.jpg
+            image_01.jpg
+            image_02.jpg
+            ...
+        social/
+            square.jpg
+            story.jpg
+            facebook.jpg
+        processed/
     """
 
     def __init__(self, config: Dict):
@@ -63,17 +84,22 @@ class MediaPipelineAgent:
         file_content: bytes,
         filename: str,
         dog_internal_id: str,
-        purpose: str = "original",
+        variant: str = "original",
         uploaded_by: int = 1,
         metadata: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """
         Paso 1: Ingestar media - validar, hashear, guardar en storage.
-        Retorna metadata para DogMediaCreate.
+        Retorna MediaAsset.
         """
-        # Validar propósito
-        if purpose not in ["original", "processed", "social", "listing"]:
-            return {"success": False, "error": f"Invalid purpose: {purpose}"}
+        # Validar variante
+        valid_variants = [
+            "original", "cover", "listing_01", "listing_02", "listing_03", "listing_04", "listing_05",
+            "listing_06", "listing_07", "listing_08", "listing_09", "listing_10",
+            "social_square", "social_story", "social_facebook", "processed"
+        ]
+        if variant not in valid_variants:
+            return {"success": False, "error": f"Invalid variant: {variant}. Valid: {valid_variants}"}
         
         # Validar tipo MIME
         ext = os.path.splitext(filename)[1].lower()
@@ -88,11 +114,11 @@ class MediaPipelineAgent:
         
         # Guardar en storage
         try:
-            media_meta = save_uploaded_file(
+            asset = save_uploaded_file(
                 file_content=file_content,
                 filename=filename,
                 dog_internal_id=dog_internal_id,
-                purpose=purpose,
+                variant=variant,
                 uploaded_by=uploaded_by,
             )
         except Exception as e:
@@ -100,7 +126,8 @@ class MediaPipelineAgent:
             return {"success": False, "error": str(e)}
         
         # Añadir metadata extra
-        media_meta.update({
+        asset_dict = asset.to_dict()
+        asset_dict.update({
             "dog_internal_id": dog_internal_id,
             "original_filename": filename,
             "ingested_at": datetime.utcnow().isoformat(),
@@ -109,17 +136,17 @@ class MediaPipelineAgent:
         
         logger.info("media_ingested", 
                     dog_internal_id=dog_internal_id, 
-                    file_hash=media_meta["file_hash"],
-                    purpose=purpose)
+                    asset_id=asset.id,
+                    variant=variant)
         
-        return {"success": True, "media_metadata": media_meta}
+        return {"success": True, "media_asset": asset_dict}
 
     async def ingest_and_analyze(
         self,
         file_content: bytes,
         filename: str,
         dog_internal_id: str,
-        purpose: str = "original",
+        variant: str = "original",
         uploaded_by: int = 1,
     ) -> Dict[str, Any]:
         """
@@ -130,37 +157,37 @@ class MediaPipelineAgent:
             file_content=file_content,
             filename=filename,
             dog_internal_id=dog_internal_id,
-            purpose=purpose,
+            variant=variant,
             uploaded_by=uploaded_by,
         )
         if not ingest_result["success"]:
             return ingest_result
         
-        media_meta = ingest_result["media_metadata"]
-        file_path = media_meta["file_path"]
+        asset_dict = ingest_result["media_asset"]
+        file_path = asset_dict["path"]
         
         # Analizar si es foto
-        if media_meta["media_type"] == "photo" and self.auto_analyze:
+        if asset_dict["type"] == "photo" and self.auto_analyze:
             analysis = await self.selection_agent.analyze_image(file_path)
-            media_meta["analysis"] = analysis
+            asset_dict["analysis"] = analysis
             
             # Auto-seleccionar si hay otros media del perro
             if self.auto_select:
                 # Obtener todos los media del perro para selección
                 pass  # Se haría consultando la API/DB
         
-        return {"success": True, "media_metadata": media_meta}
+        return {"success": True, "media_asset": asset_dict}
 
     async def select_best_for_publishing(
         self,
         dog_internal_id: str,
-        media_items: List[Dict[str, Any]]
+        media_assets: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
         Paso 3: Seleccionar mejores media para publishing.
-        media_items: lista con file_path, purpose, media_type, etc.
+        media_items: lista con file_path, variant, type, etc.
         """
-        return await self.selection_agent.select_media(dog_internal_id, media_items)
+        return await self.selection_agent.select_media(dog_internal_id, media_assets)
 
     async def generate_social_variants(
         self,
@@ -172,20 +199,27 @@ class MediaPipelineAgent:
     ) -> Dict[str, Any]:
         """
         Paso 4: Generar variantes para redes sociales usando MediaGenerationAgent.
-        - Post cuadrado (Instagram) 1080x1080
-        - Story 1080x1920
-        - Listing 1200x800
+        - Post cuadrado (Instagram) 1080x1080 -> social/square.jpg
+        - Story 1080x1920 -> social/story.jpg
+        - Listing 1200x800 -> listing/cover.jpg (also used as listing image)
         """
         results = {}
         
         prompts = {
             "social_square": f"Professional photo of {dog_name}, a {breed} dog, clean background, high quality, square format",
             "social_story": f"Vertical photo of {dog_name}, {breed} puppy, lifestyle shot, story format 9:16",
-            "listing": f"Clean product photo of {dog_name}, {breed} dog for sale listing, professional lighting, 3:2 ratio",
+            "listing_cover": f"Clean product photo of {dog_name}, {breed} dog for sale listing, professional lighting, 3:2 ratio",
         }
         
         for variant, prompt in prompts.items():
-            output_path = f"/data/dogs/{dog_internal_id}/{variant}/{variant}.jpg"
+            # Determine output path based on variant
+            if variant.startswith("social_"):
+                output_path = f"/data/dogs/{dog_internal_id}/social/{variant.replace('social_', '')}.jpg"
+            elif variant == "listing_cover":
+                output_path = f"/data/dogs/{dog_internal_id}/listing/cover.jpg"
+            else:
+                output_path = f"/data/dogs/{dog_internal_id}/listing/{variant}.jpg"
+            
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
             result = await self.generation_agent.generate_image(
@@ -196,12 +230,16 @@ class MediaPipelineAgent:
             results[variant] = result
             
             if result["success"]:
-                # Guardar metadata en storage
+                # The file is already saved by the generation agent to the correct path
+                # We just need to register it in storage with the correct variant
+                # Note: save_uploaded_file will overwrite with the same filename
+                with open(result["output_path"], "rb") as f:
+                    file_content = f.read()
                 save_uploaded_file(
-                    file_content=open(result["output_path"], "rb").read(),
-                    filename=f"{variant}.jpg",
+                    file_content=file_content,
+                    filename=os.path.basename(result["output_path"]),
                     dog_internal_id=dog_internal_id,
-                    purpose="social",
+                    variant=variant,
                     uploaded_by=1,
                 )
         
@@ -214,32 +252,13 @@ class MediaPipelineAgent:
     ) -> Dict[str, Any]:
         """
         Paso 5: Preparar assets para Publishing Agent.
-        Retorna dict con archivos listos por plataforma.
+        Retorna dict con archivos listos por plataforma usando la estructura unificada.
         """
-        media_root = get_media_root() / dog_internal_id
+        assets = {}
         
-        assets = {
-            "milanuncios": {},
-            "meta": {},
-        }
-        
-        # Milanuncios: necesita portada + hasta 20 fotos
-        if "milanuncios" in platforms:
-            cover = media_root / "social" / "cover.jpg"
-            listing = media_root / "listing"
-            
-            assets["milanuncios"] = {
-                "cover": str(cover) if cover.exists() else None,
-                "photos": [str(f) for f in listing.glob("*.jpg")] if listing.exists() else [],
-                "max_photos": 20,
-            }
-        
-        # Meta (Instagram/Facebook): post + story
-        if "meta" in platforms:
-            assets["meta"] = {
-                "post_image": str(media_root / "social" / "social_square.jpg") if (media_root / "social" / "social_square.jpg").exists() else None,
-                "story_image": str(media_root / "social" / "social_story.jpg") if (media_root / "social" / "social_story.jpg").exists() else None,
-            }
+        for platform in platforms:
+            platform_assets = get_assets_for_publishing(dog_internal_id, platform)
+            assets[platform] = platform_assets
         
         return {"success": True, "assets": assets, "dog_internal_id": dog_internal_id}
 
@@ -247,28 +266,50 @@ class MediaPipelineAgent:
         """
         Obtener resumen de todo el media de un perro para dashboard.
         """
-        media_root = get_media_root() / dog_internal_id
+        assets = list_dog_assets(dog_internal_id)
         
         summary = {
             "dog_internal_id": dog_internal_id,
-            "by_purpose": {},
+            "by_variant": {},
             "total_files": 0,
             "total_size_bytes": 0,
         }
         
-        for purpose in ["original", "processed", "social", "listing"]:
-            purpose_dir = media_root / purpose
-            if purpose_dir.exists():
-                files = list(purpose_dir.glob("*"))
-                summary["by_purpose"][purpose] = {
-                    "count": len(files),
-                    "files": [f.name for f in files],
-                    "size_bytes": sum(f.stat().st_size for f in files if f.is_file()),
+        for asset in assets:
+            variant = asset.variant
+            if variant not in summary["by_variant"]:
+                summary["by_variant"][variant] = {
+                    "count": 0,
+                    "files": [],
+                    "size_bytes": 0,
                 }
-                summary["total_files"] += len(files)
-                summary["total_size_bytes"] += summary["by_purpose"][purpose]["size_bytes"]
+            
+            summary["by_variant"][variant]["count"] += 1
+            summary["by_variant"][variant]["files"].append({
+                "id": asset.id,
+                "path": asset.path,
+                "type": asset.type,
+                "mime_type": asset.mime_type,
+                "width": asset.width,
+                "height": asset.height,
+            })
+            
+            # Calculate file size
+            try:
+                file_size = os.path.getsize(asset.path)
+                summary["by_variant"][variant]["size_bytes"] += file_size
+                summary["total_size_bytes"] += file_size
+            except Exception:
+                pass
+            
+            summary["total_files"] += 1
         
         return {"success": True, "summary": summary}
+
+    async def get_assets_by_variant(self, dog_internal_id: str, variant: str) -> List[MediaAsset]:
+        """Get all assets for a specific variant."""
+        assets = list_dog_assets(dog_internal_id)
+        return [a for a in assets if a.variant == variant]
 
     async def close(self):
         await self.generation_agent.close()

@@ -158,6 +158,8 @@ async def reject_publicacion(
 @router.post("/{publicacion_id}/publish", status_code=status.HTTP_202_ACCEPTED)
 async def publish_publicacion(
     publicacion_id: int,
+    external_id: str | None = None,
+    external_url: str | None = None,
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
@@ -167,15 +169,45 @@ async def publish_publicacion(
     Publicar en plataforma externa (Milanuncios, etc.).
 
     Requiere: aprobación previa, expediente válido, documentación completa.
+    
+    IMPORTANTE: Requiere external_id y external_url de la confirmación real de la plataforma.
+    Sin estos campos, no se puede marcar como publicada.
     """
     published_pub = await pub_service.publish_publication(
         pub_id=publicacion_id,
         published_by=agent.get("agent_id", 1),
+        external_id=external_id,
+        external_url=external_url,
     )
     return {
         "success": True,
-        "message": "Publicación marcada como publicada",
+        "message": "Publicación confirmada como publicada en la plataforma",
         "publication": published_pub,
+    }
+
+
+@router.post("/{publicacion_id}/publish-failed", status_code=status.HTTP_202_ACCEPTED)
+async def publish_failed_publicacion(
+    publicacion_id: int,
+    error: str,
+    agent: dict = Depends(require_write),
+    _rate_limit: None = Depends(rate_limit_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
+):
+    """
+    Marcar publicación como fallida tras intento de publicación.
+    
+    Se llama cuando el PublishingAgent falla al publicar en Milanuncios.
+    """
+    failed_pub = await pub_service.mark_publish_failed(
+        pub_id=publicacion_id,
+        error=error,
+        failed_by=agent.get("agent_id", 1),
+    )
+    return {
+        "success": True,
+        "message": "Publicación marcada como fallida",
+        "publication": failed_pub,
     }
 
 

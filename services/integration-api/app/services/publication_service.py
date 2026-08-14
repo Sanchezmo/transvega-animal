@@ -174,9 +174,15 @@ class PublicationService:
         return publication
 
     async def publish_publication(
-        self, pub_id: int, published_by: int = 1
+        self, pub_id: int, published_by: int = 1,
+        external_id: str | None = None, external_url: str | None = None
     ) -> Publication:
-        """Mark publication as published."""
+        """
+        Mark publication as published with real confirmation from platform.
+        
+        REQUIRES external_id and external_url from the platform (e.g., Milanuncios).
+        Without these, the publication cannot be marked as published.
+        """
         publication = await self.get_publication(pub_id)
         if not publication:
             raise NotFoundException("Publicación", str(pub_id))
@@ -186,10 +192,47 @@ class PublicationService:
                 f"Only approved publications can be published. Current status: {publication.status}"
             )
 
+        # REQUIRE real confirmation from platform
+        if not external_id or not external_url:
+            raise ValidationException(
+                "Cannot mark as published without real platform confirmation. "
+                "external_id and external_url are required from the publishing platform."
+            )
+
         publication.status = "published"
+        publication.external_id = external_id
+        publication.external_url = external_url
         publication.published_by = published_by
         publication.published_at = datetime.utcnow()
         publication.updated_by = published_by
+        publication.updated_at = datetime.utcnow()
+
+        await self.db.flush()
+        await self.db.refresh(publication)
+        return publication
+
+    async def mark_publish_failed(
+        self, pub_id: int, error: str, failed_by: int = 1
+    ) -> Publication:
+        """
+        Mark publication as failed after a failed publishing attempt.
+        
+        This should be called when PublishingAgent fails to publish to Milanuncios.
+        """
+        publication = await self.get_publication(pub_id)
+        if not publication:
+            raise NotFoundException("Publicación", str(pub_id))
+
+        if publication.status != "approved":
+            raise ValidationException(
+                f"Can only mark approved publications as failed. Current status: {publication.status}"
+            )
+
+        publication.status = "failed"
+        publication.rejection_reason = error
+        publication.rejected_by = failed_by
+        publication.rejected_at = datetime.utcnow()
+        publication.updated_by = failed_by
         publication.updated_at = datetime.utcnow()
 
         await self.db.flush()

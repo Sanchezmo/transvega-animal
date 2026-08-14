@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 import structlog
 
 from app.services.intake_session import intake_session_store
-from app.services.media_storage import save_uploaded_file
+from app.services.media_storage import save_uploaded_file, MediaAsset
 from app.core.privacy_router import privacy_router
 from app.core.internal_api_client import InternalAPIClient, InternalAPIError, create_internal_api_client
 
@@ -39,7 +39,7 @@ class DogIntakeAgent:
         self.agent_name = "Dog Intake Agent"
         # Internal API client with authentication
         self.api_client: Optional[InternalAPIClient] = None
-        self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000")
+        self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
         self.api_key = config.get("AGENT_API_KEY_DOG_INTAKE", "")
         self.capabilities = [
             "create_dog",
@@ -57,6 +57,16 @@ class DogIntakeAgent:
             "media_must_be_local_first",  # Media se considera LOCAL_ONLY por defecto
             "privacy_scope_aware",  # Debe respetar el ámbito de privacidad
         ]
+
+    def _purpose_to_variant(self, purpose: str, media_index: int = 0) -> str:
+        """Map legacy purpose to new variant."""
+        mapping = {
+            "original": "original",
+            "processed": "processed",
+            "social": "social_square",
+            "listing": f"listing_{media_index + 1:02d}",
+        }
+        return mapping.get(purpose, "original")
 
     async def start(self):
         logger.info("starting_dog_intake_agent")
@@ -238,15 +248,18 @@ class DogIntakeAgent:
 
                     # Associate media from session
                     media_success = []
-                    for mf in session.media_files:
+                    for idx, mf in enumerate(session.media_files):
                         try:
-                            meta = save_uploaded_file(
+                            variant = self._purpose_to_variant(mf.get("purpose", "original"), idx)
+                            asset = save_uploaded_file(
                                 file_content=mf["content"],
                                 filename=mf["filename"],
                                 dog_internal_id=internal_id,
-                                purpose=mf["purpose"],
+                                variant=variant,
                                 uploaded_by=mf["uploaded_by"],
                             )
+                            # Convert MediaAsset to dict for API
+                            meta = asset.to_dict()
                             meta["dog_id"] = dog_id
                             media_resp = await self.api_client.post(
                                 f"/dogs/{dog_id}/media", json=meta
@@ -502,18 +515,20 @@ class DogIntakeAgent:
 
         # Save file to storage
         try:
-            media_metadata = save_uploaded_file(
+            variant = self._purpose_to_variant(purpose)
+            asset = save_uploaded_file(
                 file_content=file_content,
                 filename=filename,
                 dog_internal_id=internal_id,
-                purpose=purpose,
+                variant=variant,
                 uploaded_by=uploaded_by,
             )
+            media_metadata = asset.to_dict()
         except Exception as e:
             logger.error("media_save_failed", error=str(e))
             return {"success": False, "error": f"Failed to save media: {e}"}
 
-        # Set the dog_id in metadata (the storage function left it as 0)
+        # Set the dog_id in metadata
         media_metadata["dog_id"] = dog_id
 
         # Now call API to create DogMedia record

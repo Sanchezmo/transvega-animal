@@ -54,12 +54,15 @@ class SupervisorAgent:
         self.status = "idle"
         
         # Internal API client
-        self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000")
+        self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
         self.api_client = httpx.AsyncClient(base_url=self.api_base, timeout=60.0)
         self.api_key = config.get("AGENT_API_KEY_SUPERVISOR", "")
         
         # Sub-agents
-        self.dog_intake_agent = DogIntakeAgent({"INTERNAL_API_URL": self.api_base})
+        self.dog_intake_agent = DogIntakeAgent({
+            "INTERNAL_API_URL": self.api_base,
+            "AGENT_API_KEY_DOG_INTAKE": config.get("AGENT_API_KEY_DOG_INTAKE", ""),
+        })
         self.media_pipeline_agent = create_media_pipeline_agent(config)
         self.content_agent = create_content_marketing_agent(config)
         self.publishing_agent = create_publishing_agent(config)
@@ -405,6 +408,13 @@ class SupervisorAgent:
     async def execute_publication(self, workflow_id: str) -> Dict:
         """
         Execute actual publication on platform (Milanuncios via Playwright).
+        
+        Flow:
+        1. Prepare assets for publishing
+        2. Call PublishingAgent.auto_publish() to do real Milanuncios publishing via Playwright
+        3. If successful, call API with external_id and external_url
+        4. If failed, call API to mark as failed
+        5. NEVER mark as published without real platform confirmation
         """
         workflow = self.active_workflows.get(workflow_id)
         if not workflow:
@@ -418,8 +428,80 @@ class SupervisorAgent:
             platforms=["milanuncios"]
         )
         
-        # Publish via API (triggers PublishingAgent)
-        publish_resp = await self._api_post(f"/publicaciones/{pub_id}/publish")
+        milanuncios_assets = assets.get("assets", {}).get("milanuncios", {})
+        cover = milanuncios_assets.get("cover")
+        photos = milanuncios_assets.get("photos", [])
+        
+        if not cover or not photos:
+            return {
+                "success": False, 
+                "error": "No assets available for publishing",
+                "step": WorkflowStep.PUBLISH_EXECUTE
+            }
+        
+        # Get publication data to pass to PublishingAgent
+        pub_resp = await self._api_get(f"/publicaciones/{pub_id}")
+        if not pub_resp.get("success"):
+            return {"success": False, "error": "Could not fetch publication data"}
+        
+        publication = pub_resp.get("data")
+        
+        # Call PublishingAgent to do REAL Milanuncios publishing
+        publish_result = await self.publishing_agent.auto_publish(
+            listing_id=pub_id,  # Using publication ID as listing_id
+            platform="milanuncios"
+        )
+        
+        if not publish_result.get("success"):
+            error = publish_result.get("error", "Unknown error")
+            detail = publish_result.get("detail", error)
+            
+            # If requires_human_action, don't mark as failed - let human handle
+            if publish_result.get("requires_human_action"):
+                return {
+                    "success": False,
+                    "error": "requires_human_action",
+                    "detail": detail,
+                    "step": WorkflowStep.PUBLISH_EXECUTE,
+                    "message": "Se requiere intervención humana para completar la publicación."
+                }
+            
+            # Mark as failed in API
+            await self._api_post(
+                f"/publicaciones/{pub_id}/publish-failed",
+                data={"error": detail}
+            )
+            
+            return {
+                "success": False,
+                "error": "publish_failed",
+                "detail": detail,
+                "step": WorkflowStep.PUBLISH_EXECUTE,
+                "message": f"Falló la publicación en Milanuncios: {detail}"
+            }
+        
+        # SUCCESS: Real Milanuncios publishing confirmed!
+        external_id = publish_result.get("external_id")
+        external_url = publish_result.get("external_url")
+        
+        if not external_id or not external_url:
+            # Should not happen if PublishingAgent works correctly, but safeguard
+            await self._api_post(
+                f"/publicaciones/{pub_id}/publish-failed",
+                data={"error": "PublishingAgent succeeded but did not return external_id/external_url"}
+            )
+            return {
+                "success": False,
+                "error": "missing_confirmation",
+                "detail": "PublishingAgent did not return platform confirmation",
+                "step": WorkflowStep.PUBLISH_EXECUTE
+            }
+        
+        # Mark as published in API with REAL confirmation
+        publish_resp = await self._api_post(
+            f"/publicaciones/{pub_id}/publish",
+            data={"external_id": external_id, "external_url": external_url}
+        )
         
         if not publish_resp.get("success"):
             return {"success": False, "error": publish_resp.get("error")}
@@ -427,13 +509,17 @@ class SupervisorAgent:
         workflow["step"] = WorkflowStep.COMPLETE
         workflow["status"] = "completed"
         workflow["completed_at"] = datetime.utcnow().isoformat()
+        workflow["external_id"] = external_id
+        workflow["external_url"] = external_url
         
         return {
             "success": True,
             "workflow_id": workflow_id,
             "step": workflow["step"],
-            "message": "¡Publicación completada! El anuncio está en vivo.",
+            "message": f"Publicación confirmada en Milanuncios. ID externo: {external_id}",
             "publication": publish_resp.get("data"),
+            "external_id": external_id,
+            "external_url": external_url,
         }
 
     # =========================================================================
@@ -466,6 +552,20 @@ class SupervisorAgent:
             return {"success": False, "error": resp.text}
         except Exception as e:
             logger.error("api_post_failed", path=path, error=str(e))
+            return {"success": False, "error": str(e)}
+
+    async def _api_get(self, path: str) -> Dict:
+        """GET from internal API with auth."""
+        try:
+            resp = await self.api_client.get(
+                path,
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            if resp.status_code == 200:
+                return {"success": True, "data": resp.json()}
+            return {"success": False, "error": resp.text}
+        except Exception as e:
+            logger.error("api_get_failed", path=path, error=str(e))
             return {"success": False, "error": str(e)}
 
     async def _monitor_workflows(self):

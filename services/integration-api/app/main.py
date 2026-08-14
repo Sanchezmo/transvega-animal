@@ -229,6 +229,7 @@ async def readiness_check():
 from app.routes import (
     aprobaciones,
     comercial,
+    dogs,
     expedientes,
     facturacion,
     productos,
@@ -245,6 +246,7 @@ app.include_router(
 )
 app.include_router(terceros.router, prefix="/api/v1/terceros", tags=["Terceros"])
 app.include_router(productos.router, prefix="/api/v1/productos", tags=["Productos"])
+app.include_router(dogs.router, prefix="/api/v1/dogs", tags=["Dogs"])
 app.include_router(
     publicaciones.router, prefix="/api/v1/publicaciones", tags=["Publicaciones"]
 )

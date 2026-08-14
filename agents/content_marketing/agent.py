@@ -2,9 +2,10 @@
 Genera propuestas de contenido basándose en animales disponibles y datos existentes.
 """
 import structlog
-import httpx
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+
+from app.core.internal_api_client import InternalAPIClient, create_internal_api_client, InternalAPIError
 
 logger = structlog.get_logger()
 
@@ -27,9 +28,10 @@ class ContentMarketingAgent:
         self.config = config
         self.agent_id = "content_marketing"
         self.agent_name = "Content Marketing Agent"
-        # Base URL for internal API (same service)
-        self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000")
-        self.client = httpx.AsyncClient(base_url=self.api_base, timeout=30.0)
+        # Base URL for internal API (same service, includes /api/v1)
+        self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
+        self.api_key = config.get("AGENT_API_KEY_MARKETING", "")
+        self.api_client: Optional[InternalAPIClient] = None
         self.capabilities = [
             "generate_individual_content",
             "generate_breed_content",
@@ -41,15 +43,30 @@ class ContentMarketingAgent:
             "privacy_scope_aware",  # Debe respetar el ámbito de privacidad (LOCAL_ONLY vs ONLINE_ALLOWED)
         ]
 
-    async def __aenter__(self):
-        return self
+    async def start(self):
+        """Initialize the internal API client."""
+        if self.api_client is None:
+            self.api_client = await create_internal_api_client(
+                agent_name="marketing",
+                base_url=self.api_base,
+                api_key=self.api_key or None,
+            )
+            await self.api_client.start()
+        logger.info("content_marketing_agent_started")
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.client.aclose()
+    async def close(self):
+        """Close the internal API client."""
+        if self.api_client:
+            await self.api_client.close()
+            self.api_client = None
 
     async def generate_individual_content(self, dog_id: int) -> Dict[str, Any]:
         """Generar contenido centrado en un perro específico."""
         logger.info("generating_individual_content", dog_id=dog_id)
+        
+        if self.api_client is None:
+            return {"success": False, "error": "ContentMarketingAgent not started. Call start() first."}
+        
         # Fetch dog data
         dog = await self._get_dog(dog_id)
         if not dog:
@@ -181,67 +198,71 @@ class ContentMarketingAgent:
     # Helper methods to call internal API
     async def _get_dog(self, dog_id: int) -> Optional[Dict]:
         try:
-            resp = await self.client.get(f"/dogs/{dog_id}")
-            if resp.status_code == 200:
-                return resp.json()
+            return await self.api_client.get(f"/dogs/{dog_id}")
+        except InternalAPIError as e:
+            logger.error("failed_to_get_dog", dog_id=dog_id, error=e.message)
         except Exception as e:
             logger.error("failed_to_get_dog", dog_id=dog_id, error=str(e))
         return None
 
     async def _get_media_for_dog(self, dog_id: int) -> List[Dict]:
         try:
-            resp = await self.client.get(f"/dogs/{dog_id}/media")
-            if resp.status_code == 200:
-                data = resp.json()
-                # Assuming the API returns a list under 'data' key or direct list
-                if isinstance(data, dict) and "data" in data:
-                    return data["data"]
-                if isinstance(data, list):
-                    return data
+            resp = await self.api_client.get(f"/dogs/{dog_id}/media")
+            data = resp
+            # Assuming the API returns a list under 'data' key or direct list
+            if isinstance(data, dict) and "data" in data:
+                return data["data"]
+            if isinstance(data, list):
+                return data
+        except InternalAPIError as e:
+            logger.error("failed_to_get_media", dog_id=dog_id, error=e.message)
         except Exception as e:
             logger.error("failed_to_get_media", dog_id=dog_id, error=str(e))
         return []
 
     async def _get_breed_name(self, breed_id: int) -> Optional[str]:
         try:
-            resp = await self.client.get(f"/breeds/{breed_id}")
-            if resp.status_code == 200:
-                return resp.json().get("name")
+            breed = await self.api_client.get(f"/breeds/{breed_id}")
+            return breed.get("name")
+        except InternalAPIError as e:
+            logger.error("failed_to_get_breed", breed_id=breed_id, error=e.message)
         except Exception as e:
             logger.error("failed_to_get_breed", breed_id=breed_id, error=str(e))
         return None
 
     async def _get_dogs_by_breed(self, breed_id: int, limit: int = 5) -> List[Dict]:
         try:
-            resp = await self.client.get("/dogs/", params={"breed_id": breed_id, "limit": limit})
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, dict) and "data" in data:
-                    return data["data"]
-                if isinstance(data, list):
-                    return data
+            resp = await self.api_client.get("/dogs/", params={"breed_id": breed_id, "limit": limit})
+            data = resp
+            if isinstance(data, dict) and "data" in data:
+                return data["data"]
+            if isinstance(data, list):
+                return data
+        except InternalAPIError as e:
+            logger.error("failed_to_get_dogs_by_breed", breed_id=breed_id, error=e.message)
         except Exception as e:
             logger.error("failed_to_get_dogs_by_breed", breed_id=breed_id, error=str(e))
         return []
 
     async def _get_litter(self, litter_id: int) -> Optional[Dict]:
         try:
-            resp = await self.client.get(f"/litters/{litter_id}")
-            if resp.status_code == 200:
-                return resp.json()
+            return await self.api_client.get(f"/litters/{litter_id}")
+        except InternalAPIError as e:
+            logger.error("failed_to_get_litter", litter_id=litter_id, error=e.message)
         except Exception as e:
             logger.error("failed_to_get_litter", litter_id=litter_id, error=str(e))
         return None
 
     async def _get_dogs_by_litter(self, litter_id: int, limit: int = 10) -> List[Dict]:
         try:
-            resp = await self.client.get("/dogs/", params={"litter_id": litter_id, "limit": limit})
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, dict) and "data" in data:
-                    return data["data"]
-                if isinstance(data, list):
-                    return data
+            resp = await self.api_client.get("/dogs/", params={"litter_id": litter_id, "limit": limit})
+            data = resp
+            if isinstance(data, dict) and "data" in data:
+                return data["data"]
+            if isinstance(data, list):
+                return data
+        except InternalAPIError as e:
+            logger.error("failed_to_get_dogs_by_litter", litter_id=litter_id, error=e.message)
         except Exception as e:
             logger.error("failed_to_get_dogs_by_litter", litter_id=litter_id, error=str(e))
         return []
