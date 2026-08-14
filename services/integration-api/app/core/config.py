@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Internal API URL for service-to-service communication (includes /api/v1 prefix)
     INTERNAL_API_URL: str = "http://localhost:8000/api/v1"
 
+    # Playwright
+    PLAYWRIGHT_HEADLESS: bool = True
+
     # Rate limiting
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_WINDOW_SECONDS: int = 60
@@ -70,21 +73,21 @@ class Settings(BaseSettings):
     FERNET_KEY: str
 
     # API Keys por agente
-    AGENT_API_KEY_SUPERVISOR: str = "tvsk_dev_supervisor_abcdef123456"
-    AGENT_API_KEY_PRODUCTS: str = "tvsk_dev_products_abcdef123456"
-    AGENT_API_KEY_COMPLIANCE: str = "tvsk_dev_compliance_abcdef123456"
-    AGENT_API_KEY_PUBLISHING: str = "tvsk_dev_publishing_abcdef123456"
-    AGENT_API_KEY_SALES: str = "tvsk_dev_sales_abcdef123456"
-    AGENT_API_KEY_INVOICING: str = "tvsk_dev_invoicing_abcdef123456"
-    AGENT_API_KEY_PURCHASES: str = "tvsk_dev_purchases_abcdef123456"
-    AGENT_API_KEY_BANKING: str = "tvsk_dev_banking_abcdef123456"
-    AGENT_API_KEY_ACCOUNTING: str = "tvsk_dev_accounting_abcdef123456"
-    AGENT_API_KEY_TAX: str = "tvsk_dev_tax_abcdef123456"
-    AGENT_API_KEY_MARKETING: str = "tvsk_dev_marketing_abcdef123456"
-    AGENT_API_KEY_TECHNICAL: str = "tvsk_dev_technical_abcdef123456"
-    AGENT_API_KEY_DOG_INTAKE: str = "tvsk_dev_dog_intake_abcdef123456"
-    AGENT_API_KEY_EXPEDIENTES: str = "tvsk_dev_expedientes_abcdef123456"
-    AGENT_API_KEY_FACTURACION: str = "tvsk_dev_facturacion_abcdef123456"
+    AGENT_API_KEY_SUPERVISOR: str = ""
+    AGENT_API_KEY_PRODUCTS: str = ""
+    AGENT_API_KEY_COMPLIANCE: str = ""
+    AGENT_API_KEY_PUBLISHING: str = ""
+    AGENT_API_KEY_SALES: str = ""
+    AGENT_API_KEY_INVOICING: str = ""
+    AGENT_API_KEY_PURCHASES: str = ""
+    AGENT_API_KEY_BANKING: str = ""
+    AGENT_API_KEY_ACCOUNTING: str = ""
+    AGENT_API_KEY_TAX: str = ""
+    AGENT_API_KEY_MARKETING: str = ""
+    AGENT_API_KEY_TECHNICAL: str = ""
+    AGENT_API_KEY_DOG_INTAKE: str = ""
+    AGENT_API_KEY_EXPEDIENTES: str = ""
+    AGENT_API_KEY_FACTURACION: str = ""
 
     # Aprobaciones
     APPROVALS_SERVICE_URL: str = "http://approvals:8000"

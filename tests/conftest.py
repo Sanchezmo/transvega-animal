@@ -67,8 +67,6 @@ def sample_expediente():
         "color": "Dorado",
         "weight_kg": 12.5,
         "microchip": "941000012345678",
-        "breed": "Golden Retriever",
-        "color": "Dorado",
         "purchase_price": 800.00,
         "sale_price": 1500.00,
         "commercial_status": "draft",

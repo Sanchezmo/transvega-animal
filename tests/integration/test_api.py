@@ -45,6 +45,55 @@ class MockRedis:
         return True
 
 
+@pytest.fixture(scope="session")
+def test_settings():
+    """Provide test settings with API keys."""
+    import os
+
+    from app.core.config import get_settings
+
+    # Clear the cache first
+    get_settings.cache_clear()
+
+    # Set all required environment variables for testing
+    os.environ["AUDIT_DB_HOST"] = "localhost"
+    os.environ["AUDIT_DB_PORT"] = "5432"
+    os.environ["AUDIT_DB_NAME"] = "audit_test"
+    os.environ["AUDIT_DB_USER"] = "audit"
+    os.environ["AUDIT_DB_PASSWORD"] = "test"
+    os.environ["REDIS_HOST"] = "localhost"
+    os.environ["REDIS_PORT"] = "6379"
+    os.environ["REDIS_PASSWORD"] = ""
+    os.environ["DOLIBARR_API_URL"] = "http://localhost:8001"
+    os.environ["DOLIBARR_API_KEY"] = "test-key"
+    os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
+    os.environ["FERNET_KEY"] = "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg="
+    os.environ["ENVIRONMENT"] = "test"
+    os.environ["MOCK_DOLIBARR_ENABLED"] = "true"
+    os.environ["AGENT_API_KEY_SUPERVISOR"] = "tvsk_test_supervisor"
+    os.environ["AGENT_API_KEY_PRODUCTS"] = "tvsk_test_products"
+    os.environ["AGENT_API_KEY_COMPLIANCE"] = "tvsk_test_compliance"
+    os.environ["AGENT_API_KEY_PUBLISHING"] = "tvsk_test_publishing"
+    os.environ["AGENT_API_KEY_SALES"] = "tvsk_test_sales"
+    os.environ["AGENT_API_KEY_INVOICING"] = "tvsk_test_invoicing"
+    os.environ["AGENT_API_KEY_PURCHASES"] = "tvsk_test_purchases"
+    os.environ["AGENT_API_KEY_BANKING"] = "tvsk_test_banking"
+    os.environ["AGENT_API_KEY_ACCOUNTING"] = "tvsk_test_accounting"
+    os.environ["AGENT_API_KEY_TAX"] = "tvsk_test_tax"
+    os.environ["AGENT_API_KEY_MARKETING"] = "tvsk_test_marketing"
+    os.environ["AGENT_API_KEY_TECHNICAL"] = "tvsk_test_technical"
+    os.environ["AGENT_API_KEY_DOG_INTAKE"] = "tvsk_test_dog_intake"
+    os.environ["AGENT_API_KEY_EXPEDIENTES"] = "tvsk_test_expedientes"
+    os.environ["AGENT_API_KEY_FACTURACION"] = "tvsk_test_facturacion"
+    return get_settings()
+
+
+@pytest.fixture(scope="session")
+def api_keys(test_settings):
+    """Provide API keys for testing."""
+    return test_settings.get_agent_api_keys()
+
+
 def create_mock_dolibarr_request():
     """Create a mock _request method for DolibarrClient."""
     import time
@@ -307,9 +356,9 @@ class TestIdempotency:
     """Tests de idempotencia."""
 
     @pytest.mark.asyncio
-    async def test_idempotency_key_requerida_post(self, client: AsyncClient):
+    async def test_idempotency_key_requerida_post(self, client: AsyncClient, api_keys: dict):
         """POST sin Idempotency-Key debe fallar en endpoints mutables."""
-        headers = {"Authorization": "Bearer tvsk_dev_expedientes_abcdef123456"}
+        headers = {"Authorization": f"Bearer {api_keys['expedientes']}"}
 
         with patch("app.dependencies.auth.get_current_agent") as mock_agent:
             mock_agent.return_value = type(
@@ -341,10 +390,10 @@ class TestIdempotency:
             assert response.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_idempotency_funciona(self, client: AsyncClient):
+    async def test_idempotency_funciona(self, client: AsyncClient, api_keys: dict):
         """Idempotency-Key funciona correctamente."""
         headers = {
-            "Authorization": "Bearer tvsk_dev_expedientes_abcdef123456",
+            "Authorization": f"Bearer {api_keys['expedientes']}",
             "Idempotency-Key": "test-key-123",
         }
 
@@ -362,7 +411,7 @@ class TestIdempotency:
             )()
 
             # Primera request
-            response1 = await client.post(
+            _ = await client.post(
                 "/api/v1/expedientes",
                 json={
                     "name": "Test",
@@ -426,8 +475,6 @@ class TestAuditLogging:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-import pytest
-from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
@@ -446,7 +493,7 @@ async def test_invalid_token_rejected(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_no_extra_fields_allowed(client: AsyncClient):
+async def test_no_extra_fields_allowed(client: AsyncClient, api_keys: dict):
     """Rechazo de campos inesperados."""
     # First we need a valid token - mock the dependency
     with patch("app.dependencies.auth.get_current_agent") as mock_agent:
@@ -462,7 +509,7 @@ async def test_no_extra_fields_allowed(client: AsyncClient):
             },
         )()
         headers = {
-            "Authorization": "Bearer tvsk_dev_expedientes_abcdef123456",
+            "Authorization": f"Bearer {api_keys['expedientes']}",
             "Idempotency-Key": "test-extra-fields-123",
         }
         payload = {
@@ -502,8 +549,8 @@ async def test_cors_headers(client: AsyncClient):
 async def test_rate_limit(client: AsyncClient):
     """Verificar límite básico de rate (asumiendo configurado)."""
     # Make many requests quickly; we expect 429 after limit
-    for i in range(15):
-        r = await client.get("/api/v1/expedientes")
+    for _ in range(15):
+        await client.get("/api/v1/expedientes")
         # May be 401 due to auth, but we just keep hitting
     resp = await client.get("/api/v1/expedientes")
     # If rate limiting is active, we get 429; otherwise 401 (still not 200)
@@ -512,7 +559,7 @@ async def test_rate_limit(client: AsyncClient):
 
 # End-to-end flows with dummy data
 @pytest.mark.asyncio
-async def test_create_and_get_expediente(client: AsyncClient):
+async def test_create_and_get_expediente(client: AsyncClient, api_keys: dict):
     with patch("app.dependencies.auth.get_current_agent") as mock_agent:
         mock_agent.return_value = type(
             "Agent",
@@ -526,7 +573,7 @@ async def test_create_and_get_expediente(client: AsyncClient):
             },
         )()
         headers = {
-            "Authorization": "Bearer tvsk_dev_expedientes_abcdef123456",
+            "Authorization": f"Bearer {api_keys['expedientes']}",
             "Idempotency-Key": "test-create-expediente-123",
         }
         payload = {
@@ -548,7 +595,7 @@ async def test_create_and_get_expediente(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_invoice_flow(client: AsyncClient):
+async def test_invoice_flow(client: AsyncClient, api_keys: dict):
     with patch("app.dependencies.auth.get_current_agent") as mock_agent:
         # Use invoicing agent which has the required financial roles
         mock_agent.return_value = type(
@@ -564,7 +611,7 @@ async def test_invoice_flow(client: AsyncClient):
         )()
         # Create third party
         headers_tp = {
-            "Authorization": "Bearer tvsk_dev_invoicing_abcdef123456",
+            "Authorization": f"Bearer {api_keys['invoicing']}",
             "Idempotency-Key": "test-invoice-flow-tp-123",
         }
         tp = {
@@ -577,7 +624,7 @@ async def test_invoice_flow(client: AsyncClient):
         tercero_id = resp.json()["id"]
         # Create invoice with different idempotency key
         headers_inv = {
-            "Authorization": "Bearer tvsk_dev_invoicing_abcdef123456",
+            "Authorization": f"Bearer {api_keys['invoicing']}",
             "Idempotency-Key": "test-invoice-flow-inv-123",
         }
         inv = {

@@ -149,7 +149,11 @@ PRODUCTOS_FICTICIOS = [
         "id": 1,
         "ref": "DOG-GOLDEN-RET",
         "label": "Cachorro Golden Retriever LOE",
-        "description": "Cachorro de Golden Retriever con pedigree LOE, vacunado, desparasitado, con microchip y garantías sanitarias. Padres campeones de belleza.",
+        "description": (
+            "Cachorro de Golden Retriever con pedigree LOE, vacunado, "
+            "desparasitado, con microchip y garantías sanitarias. "
+            "Padres campeones de belleza."
+        ),
         "price": 1500.00,
         "price_ttc": 1815.00,
         "tva_tx": 21.0,
@@ -165,7 +169,10 @@ PRODUCTOS_FICTICIOS = [
         "id": 2,
         "ref": "DOG-LABRADOR-RET",
         "label": "Cachorro Labrador Retriever LOE",
-        "description": "Cachorro de Labrador Retriever color dorado, pedigree LOE, padres con pruebas genéticas OK, socializado Puppy Culture.",
+        "description": (
+            "Cachorro de Labrador Retriever color dorado, pedigree LOE, "
+            "padres con pruebas genéticas OK, socializado Puppy Culture."
+        ),
         "price": 1400.00,
         "price_ttc": 1694.00,
         "tva_tx": 21.0,
@@ -181,7 +188,10 @@ PRODUCTOS_FICTICIOS = [
         "id": 3,
         "ref": "DOG-GSD",
         "label": "Cachorro Pastor Alemán LOE",
-        "description": "Cachorro Pastor Alemán línea de trabajo/belleza, padres con cadera A/A, codo 0/0, tests genéticos completos.",
+        "description": (
+            "Cachorro Pastor Alemán línea de trabajo/belleza, "
+            "padres con cadera A/A, codo 0/0, tests genéticos completos."
+        ),
         "price": 1600.00,
         "price_ttc": 1936.00,
         "tva_tx": 21.0,
@@ -197,7 +207,10 @@ PRODUCTOS_FICTICIOS = [
         "id": 4,
         "ref": "DOG-FRENCH-BULL",
         "label": "Cachorro Bulldog Francés LOE",
-        "description": "Cachorro Bulldog Francés color bringüe, padres testados BOAS, columna vertebral OK, socializado desde día 3.",
+        "description": (
+            "Cachorro Bulldog Francés color bringüe, padres testados BOAS, "
+            "columna vertebral OK, socializado desde día 3."
+        ),
         "price": 2500.00,
         "price_ttc": 3025.00,
         "tva_tx": 21.0,
@@ -213,7 +226,10 @@ PRODUCTOS_FICTICIOS = [
         "id": 5,
         "ref": "SERV-TRANSP-NAC",
         "label": "Transporte Nacional Península",
-        "description": "Transporte terrestre climatizado puerta a puerta, vehículo homologado IATA, conductor certificado bienestar animal.",
+        "description": (
+            "Transporte terrestre climatizado puerta a puerta, "
+            "vehículo homologado IATA, conductor certificado bienestar animal."
+        ),
         "price": 300.00,
         "price_ttc": 363.00,
         "tva_tx": 21.0,
@@ -229,7 +245,10 @@ PRODUCTOS_FICTICIOS = [
         "id": 6,
         "ref": "SERV-TRANSP-INT",
         "label": "Transporte Internacional (LatAm/EEUU)",
-        "description": "Transporte aéreo IATA Live Animals, documentación CITES, certificado zoosanitario, trámites aduaneros, entrega puerta a puerta.",
+        "description": (
+            "Transporte aéreo IATA Live Animals, documentación CITES, "
+            "certificado zoosanitario, trámites aduaneros, entrega puerta a puerta."
+        ),
         "price": 1200.00,
         "price_ttc": 1452.00,
         "tva_tx": 21.0,
@@ -245,7 +264,10 @@ PRODUCTOS_FICTICIOS = [
         "id": 7,
         "ref": "SERV-GESTORIA",
         "label": "Gestión Documental y Aduanas",
-        "description": "Tramitación completa: CITES, certificado zoosanitario, pasaporte UE, permiso importación, DUA, IVA intracomunitario.",
+        "description": (
+            "Tramitación completa: CITES, certificado zoosanitario, "
+            "pasaporte UE, permiso importación, DUA, IVA intracomunitario."
+        ),
         "price": 250.00,
         "price_ttc": 302.50,
         "tva_tx": 21.0,

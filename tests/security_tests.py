@@ -122,7 +122,7 @@ async def test_create_and_get_expediente():
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["success"] == True
+        assert data["success"]
         expediente_id = data["data"]["id"]
         resp = await ac.get(
             f"/api/v1/expedientes/expedientes/{expediente_id}",
@@ -130,7 +130,7 @@ async def test_create_and_get_expediente():
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["success"] == True
+        assert data["success"]
         assert data["data"]["name"] == "Test Animal"
         app.dependency_overrides.clear()
 
@@ -161,7 +161,7 @@ async def test_invoice_flow():
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["success"] == True
+        assert data["success"]
         tercero_id = data["data"]["id"]
         # Create invoice
         fake = FakeAgent("test_agent", "facturacion", ["invoicing", "write"])
@@ -188,7 +188,7 @@ async def test_invoice_flow():
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["success"] == True
+        assert data["success"]
         assert data["data"]["id"] == 1
         assert data["data"]["ref"].startswith("FAC-")
         app.dependency_overrides.clear()
