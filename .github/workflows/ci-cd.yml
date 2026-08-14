@@ -109,7 +109,7 @@ jobs:
 
       - name: Run unit tests
         env:
-          AUDIT_DB_URL: postgresql://audit:***@localhost:5432/audit_test
+          AUDIT_DB_URL: postgresql://audit:test@localhost:5432/audit_test
           REDIS_URL: redis://localhost:6379/0
           DOLIBARR_API_URL: http://mock-dolibarr:8001
           DOLIBARR_API_KEY: test-key
@@ -150,18 +150,25 @@ jobs:
         image: redis:7-alpine
         ports: [6379:6379]
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
-      mock-dolibarr:
-        image: python:3.11-slim
-        ports: [8001:8001]
-        volumes:
-          - ./adapters/dolibarr/mock.py:/app/mock.py:ro
-          - ./tests/fixtures/dolibarr:/app/fixtures:ro
-        command: |
-          pip install fastapi uvicorn pydantic pydantic-settings python-dotenv pyyaml
-          python /app/mock.py
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Build mock-dolibarr image
+        run: |
+          docker build -t mock-dolibarr:test -f infrastructure/docker/Dockerfile.mock-dolibarr .
+
+      - name: Start mock-dolibarr container
+        run: |
+          docker run -d --name mock-dolibarr -p 8001:8001 mock-dolibarr:test
+          # Wait for health check
+          for i in {1..30}; do
+            if curl -sf http://localhost:8001/health >/dev/null; then
+              echo "mock-dolibarr is ready"
+              break
+            fi
+            sleep 1
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -177,7 +184,7 @@ jobs:
 
       - name: Run integration tests
         env:
-          AUDIT_DB_URL: postgresql://audit:***@localhost:5432/audit_test
+          AUDIT_DB_URL: postgresql://audit:test@localhost:5432/audit_test
           REDIS_URL: redis://localhost:6379/0
           DOLIBARR_API_URL: http://localhost:8001
           DOLIBARR_API_KEY: mock-dolibarr-key-12345
@@ -185,8 +192,13 @@ jobs:
           FERNET_KEY: ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg=
           ENVIRONMENT: test
           MOCK_DOLIBARR_ENABLED: "true"
+          PYTHONPATH: services/integration-api
         run: |
           pytest tests/integration -v --tb=short
+
+      - name: Stop mock-dolibarr container
+        if: always()
+        run: docker stop mock-dolibarr && docker rm mock-dolibarr
 
   # =============================================================================
   # SECURITY SCANS
@@ -227,7 +239,7 @@ jobs:
           sarif_file: 'trivy-image.sarif'
 
       - name: Check for secrets with TruffleHog
-        uses: trufflesecurity/trufflehog@v3
+        uses: trufflesecurity/trufflehog@v3.88.0
         with:
           path: ./
           base: master
