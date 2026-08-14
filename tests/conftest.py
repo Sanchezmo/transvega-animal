@@ -1,14 +1,12 @@
 """
 Configuración de pytest y fixtures compartidas.
 """
+
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.main import app
-from app.core.database import get_db, init_db, close_db
 from app.core.config import get_settings
+from app.main import app
+from httpx import AsyncClient, ASGITransport
 
 
 @pytest.fixture(scope="session")
@@ -21,6 +19,7 @@ def settings():
 def event_loop():
     """Event loop para tests async."""
     import asyncio
+
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
@@ -29,7 +28,8 @@ def event_loop():
 @pytest_asyncio.fixture(scope="session")
 async def test_app():
     """App FastAPI para testing."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
 
@@ -37,7 +37,6 @@ async def test_app():
 async def db_session():
     """Sesión de base de datos para tests."""
     # TODO: Implementar con base de datos de test separada
-    pass
 
 
 # Fixtures de datos de prueba
@@ -101,15 +100,7 @@ def mock_agent():
 # Configuración de pytest
 def pytest_configure(config):
     """Configuración global de pytest."""
-    config.addinivalue_line(
-        "markers", "unit: Tests unitarios"
-    )
-    config.addinivalue_line(
-        "markers", "integration: Tests de integración"
-    )
-    config.addinivalue_line(
-        "markers", "security: Tests de seguridad"
-    )
-    config.addinivalue_line(
-        "markers", "e2e: Tests end-to-end"
-    )
+    config.addinivalue_line("markers", "unit: Tests unitarios")
+    config.addinivalue_line("markers", "integration: Tests de integración")
+    config.addinivalue_line("markers", "security: Tests de seguridad")
+    config.addinivalue_line("markers", "e2e: Tests end-to-end")

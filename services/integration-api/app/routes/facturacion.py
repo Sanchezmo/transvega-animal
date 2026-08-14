@@ -1,34 +1,37 @@
 """
 Rutas para facturación.
 """
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from datetime import date, datetime
 
+from app.adapters.dolibarr.client import DolibarrClient
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.dependencies.auth import get_current_agent, require_write, require_financial
+from app.core.exceptions import NotFoundException, ValidationException
+from app.dependencies.auth import get_current_agent, require_financial
 from app.dependencies.dolibarr import get_dolibarr_client
-from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
+from app.dependencies.rate_limit import idempotency_dependency, rate_limit_dependency
 from app.schemas import (
     InvoiceCreate,
-    InvoiceUpdate,
+    InvoiceLineResponse,
     InvoiceResponse,
+    InvoiceUpdate,
     PaginatedResponse,
     PaginationParams,
 )
-from app.core.exceptions import NotFoundException, ValidationException
-from app.adapters.dolibarr.client import DolibarrClient
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/facturas", tags=["Facturación"])
+router = APIRouter(tags=["Facturación"])
 settings = get_settings()
 
 
 @router.get("", response_model=PaginatedResponse[InvoiceResponse])
 async def list_invoices(
     pagination: PaginationParams = Depends(),
-    status: Optional[int] = Query(None, description="Filtrar por estado (0=borrador, 1=validada, 2=anulada)"),
+    status: int | None = Query(
+        None, description="Filtrar por estado (0=borrador, 1=validada, 2=anulada)"
+    ),
     agent: dict = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
@@ -51,7 +54,6 @@ async def get_invoice(
     _rate_limit: None = Depends(rate_limit_dependency),
 ):
     """Obtener factura por ID."""
-    from app.core.exceptions import NotFoundException
     raise NotFoundException("Factura", str(invoice_id))
 
 
@@ -145,7 +147,9 @@ async def create_invoice(
         id=invoice_id,
         ref=invoice_data.get("ref", ""),
         thirdparty_id=invoice_data.get("thirdparty_id", invoice.thirdparty_id),
-        date=datetime.strptime(invoice_data.get("date", date.today().isoformat()), "%Y-%m-%d").date(),
+        date=datetime.strptime(
+            invoice_data.get("date", date.today().isoformat()), "%Y-%m-%d"
+        ).date(),
         payment_term_id=invoice_data.get("fk_paiement"),
         cond_reglement_id=invoice_data.get("cond_reglement_id"),
         mode_reglement_id=invoice_data.get("mode_reglement_id"),
@@ -155,8 +159,12 @@ async def create_invoice(
         total_tva=float(invoice_data.get("total_tva", 0)),
         total_ttc=float(invoice_data.get("total_ttc", 0)),
         lines=lines_response,
-        datec=datetime.fromtimestamp(invoice_data.get("date_creation", datetime.now().timestamp())),
-        datem=datetime.fromtimestamp(invoice_data.get("date_modification", datetime.now().timestamp())),
+        datec=datetime.fromtimestamp(
+            invoice_data.get("date_creation", datetime.now().timestamp())
+        ),
+        datem=datetime.fromtimestamp(
+            invoice_data.get("date_modification", datetime.now().timestamp())
+        ),
         fk_user_author=invoice_data.get("fk_user_creat", 1),
         fk_user_modif=invoice_data.get("fk_user_modif", 1),
     )
@@ -172,7 +180,6 @@ async def update_invoice(
     _idempotency: None = Depends(idempotency_dependency),
 ):
     """Actualizar factura en borrador."""
-    from app.core.exceptions import NotFoundException, ValidationException
 
     # Verificar estado
     # existing = await dolibarr.get_invoice(invoice_id)
@@ -249,7 +256,7 @@ async def cancel_invoice(
 async def rectify_invoice(
     invoice_id: int,
     reason: str,
-    new_lines: List[dict],
+    new_lines: list[dict],
     agent: dict = Depends(require_financial),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
@@ -274,14 +281,14 @@ async def get_invoice_pdf(
     return {
         "success": True,
         "pdf_url": f"/api/v1/facturas/{invoice_id}/download",
-        "filename": f"FAC-2024-000001.pdf",
+        "filename": "FAC-2024-000001.pdf",
     }
 
 
 @router.post("/{invoice_id}/send", status_code=status.HTTP_202_ACCEPTED)
 async def send_invoice(
     invoice_id: int,
-    email: Optional[str] = None,
+    email: str | None = None,
     agent: dict = Depends(require_financial),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
@@ -303,7 +310,7 @@ async def register_payment(
     amount: float,
     payment_date: date,
     payment_method: str,
-    reference: Optional[str] = None,
+    reference: str | None = None,
     agent: dict = Depends(require_financial),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
