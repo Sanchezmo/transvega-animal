@@ -1,573 +1,494 @@
 """
-Agente Supervisor - Coordinador principal del sistema multi-agente.
+Supervisor Agent - Orchestrates the complete multi-agent pipeline.
+Integrates: Telegram → Dog Intake → Media Pipeline → Content Marketing → Publishing
 """
 import asyncio
-import json
+import httpx
+import structlog
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from uuid import uuid4
 from enum import Enum
-import structlog
+
+from app.agents.dog_intake.agent import DogIntakeAgent
+from app.agents.media_pipeline.agent import create_media_pipeline_agent
+from app.agents.content_marketing.agent import create_content_marketing_agent
+from app.agents.publishing.agent import create_publishing_agent
 
 logger = structlog.get_logger()
 
 
-class AgentRole(str):
-    SUPERVISOR = "supervisor"
-    PRODUCTS = "products"
-    COMPLIANCE = "compliance"
-    PUBLISHING = "publishing"
-    SALES = "sales"
-    INVOICING = "invoicing"
-    PURCHASES = "purchases"
-    BANKING = "banking"
-    ACCOUNTING = "accounting"
-    TAX = "tax"
-    MARKETING = "marketing"
-    TECHNICAL = "technical"
-
-
-class TaskPriority(int):
-    LOW = 1
-    NORMAL = 5
-    HIGH = 8
-    CRITICAL = 10
-
-
-class AgentStatus(str):
-    IDLE = "idle"
-    BUSY = "busy"
-    ERROR = "error"
-    OFFLINE = "offline"
-
-
-class ConflictType(str):
-    DUPLICATE_TASK = "duplicate_task"
-    RESOURCE_CONFLICT = "resource_conflict"
-    STATE_CONFLICT = "state_conflict"
-    PERMISSION_CONFLICT = "permission_conflict"
-    DATA_INCONSISTENCY = "data_inconsistency"
+class WorkflowStep(str, Enum):
+    """Pipeline workflow steps."""
+    DOG_INTAKE = "dog_intake"
+    MEDIA_INGEST = "media_ingest"
+    MEDIA_ANALYZE = "media_analyze"
+    MEDIA_SELECT = "media_select"
+    CONTENT_GENERATE = "content_generate"
+    CONTENT_APPROVE = "content_approve"
+    PUBLISH_DRAFT = "publish_draft"
+    PUBLISH_APPROVE = "publish_approve"
+    PUBLISH_EXECUTE = "publish_execute"
+    COMPLETE = "complete"
 
 
 class SupervisorAgent:
     """
-    Agente Supervisor - Coordinador central del sistema multi-agente.
+    Supervisor Agent - Central orchestrator for the multi-agent system.
     
-    Responsabilidades:
-    - Recibir eventos y asignar tareas
-    - Aplicar reglas de autorización
-    - Detectar conflictos
-    - Evitar duplicados
-    - Registrar decisiones
-    - Escalar excepciones
-    - Detener acciones anómalas
-    - Generar resumen diario
+    Pipeline: Telegram webhook → Dog Intake → Media Pipeline → Content → Publishing
+    
+    Responsibilities:
+    - Route incoming Telegram messages to DogIntakeAgent
+    - Coordinate media processing after dog creation
+    - Trigger content generation for approved dogs
+    - Manage publishing workflow with human approvals
+    - Handle errors and retries
+    - Audit logging
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.agent_id = "supervisor"
-        self.agent_name = "Supervisor"
-        self.status = AgentStatus.IDLE
+        self.agent_name = "Supervisor Agent"
+        self.status = "idle"
         
-        # Registro de agentes
-        self.agents: Dict[str, Dict] = {}
+        # Internal API client
+        self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000")
+        self.api_client = httpx.AsyncClient(base_url=self.api_base, timeout=60.0)
+        self.api_key = config.get("AGENT_API_KEY_SUPERVISOR", "")
         
-        # Cola de tareas pendientes
-        self.task_queue: asyncio.Queue = asyncio.Queue()
+        # Sub-agents
+        self.dog_intake_agent = DogIntakeAgent({"INTERNAL_API_URL": self.api_base})
+        self.media_pipeline_agent = create_media_pipeline_agent(config)
+        self.content_agent = create_content_marketing_agent(config)
+        self.publishing_agent = create_publishing_agent(config)
         
-        # Historial de decisiones
-        self.decision_log: List[Dict] = []
+        # Workflow state
+        self.active_workflows: Dict[str, Dict] = {}
+        self.pending_approvals: Dict[str, Dict] = {}
         
-        # Conflictos detectados
-        self.conflicts: List[Dict] = []
-        
-        # Reglas de autorización
-        self.authorization_rules = self._load_authorization_rules()
-        
-        # Configuración
-        self.max_concurrent_tasks_per_agent = config.get("max_concurrent_tasks", 5)
-        self.task_timeout = config.get("task_timeout", 3600)
-        self.duplicate_detection_window = config.get("duplicate_window", 300)  # 5 min
-        
-        # Estadísticas
-        self.stats = {
-            "tasks_assigned": 0,
-            "tasks_completed": 0,
-            "tasks_failed": 0,
-            "conflicts_detected": 0,
-            "conflicts_resolved": 0,
-            "approvals_requested": 0,
-            "approvals_approved": 0,
-            "approvals_rejected": 0,
-        }
-    
-    def _load_authorization_rules(self) -> Dict:
-        """Cargar reglas de autorización desde configuración."""
-        return {
-            "products": {
-                "create": ["products", "supervisor", "admin"],
-                "update": ["products", "supervisor", "admin"],
-                "delete": ["supervisor", "admin"],
-                "publish": ["products", "supervisor", "admin"],  # Requiere aprobación
-                "price_change": ["products", "supervisor", "admin"],  # Requiere aprobación
-            },
-            "compliance": {
-                "validate": ["compliance", "supervisor", "admin"],
-                "override": ["supervisor", "admin"],
-            },
-            "publishing": {
-                "create_draft": ["publishing", "products", "supervisor", "admin"],
-                "publish": ["publishing", "supervisor", "admin"],  # Requiere aprobación
-                "unpublish": ["publishing", "products", "supervisor", "admin"],
-                "renew": ["publishing", "products", "supervisor", "admin"],
-            },
-            "sales": {
-                "create_lead": ["sales", "supervisor", "admin"],
-                "qualify_lead": ["sales", "supervisor", "admin"],
-                "create_reservation": ["sales", "supervisor", "admin"],  # Requiere aprobación si >50%
-                "create_order": ["sales", "supervisor", "admin"],
-                "create_quote": ["sales", "supervisor", "admin"],
-            },
-            "invoicing": {
-                "create_draft": ["invoicing", "accounting", "supervisor", "admin"],
-                "validate": ["invoicing", "accounting", "supervisor", "admin"],  # Requiere aprobación
-                "cancel": ["invoicing", "accounting", "supervisor", "admin"],  # Requiere aprobación
-                "rectify": ["invoicing", "accounting", "supervisor", "admin"],  # Requiere aprobación
-                "register_payment": ["invoicing", "accounting", "supervisor", "admin"],
-            },
-            "purchases": {
-                "create_draft": ["purchases", "accounting", "supervisor", "admin"],
-                "validate": ["purchases", "accounting", "supervisor", "admin"],
-            },
-            "banking": {
-                "import_movements": ["banking", "accounting", "supervisor", "admin"],
-                "reconcile": ["banking", "accounting", "supervisor", "admin"],
-            },
-            "accounting": {
-                "propose_entry": ["accounting", "supervisor", "admin"],
-                "validate_entry": ["accounting", "supervisor", "admin"],
-            },
-            "tax": {
-                "prepare_return": ["tax", "accounting", "supervisor", "admin"],
-                "submit_return": ["tax", "accounting", "supervisor", "admin"],  # Requiere aprobación
-            },
-            "marketing": {
-                "create_campaign": ["marketing", "supervisor", "admin"],
-                "launch_campaign": ["marketing", "supervisor", "admin"],  # Requiere aprobación
-                "modify_budget": ["marketing", "supervisor", "admin"],  # Requiere aprobación
-            },
-            "technical": {
-                "monitor": ["technical", "supervisor", "admin"],
-                "backup": ["technical", "supervisor", "admin"],
-                "update_staging": ["technical", "supervisor", "admin"],
-                "update_production": ["technical", "supervisor", "admin"],  # Requiere aprobación
-            },
-            "supervisor": {
-                "manage_agents": ["supervisor", "admin"],
-                "override_decision": ["admin"],
-                "emergency_stop": ["supervisor", "admin"],
-            },
-        }
-    
+        self.capabilities = [
+            "orchestrate_dog_intake",
+            "orchestrate_media_pipeline",
+            "orchestrate_content_generation",
+            "orchestrate_publishing",
+            "manage_approvals",
+            "get_workflow_status",
+            "retry_failed_step",
+        ]
+        self.restrictions = [
+            "no_direct_db_access",
+            "human_approval_required_for_publish",
+            "human_approval_required_for_price_change",
+        ]
+
     async def start(self):
-        """Iniciar agente supervisor."""
+        """Start the supervisor and sub-agents."""
         logger.info("starting_supervisor", agent_id=self.agent_id)
-        self.status = AgentStatus.IDLE
+        self.status = "running"
         
-        # Iniciar workers
-        asyncio.create_task(self._process_task_queue())
-        asyncio.create_task(self._monitor_agents())
-        asyncio.create_task(self._cleanup_old_tasks())
+        # Start background tasks
+        asyncio.create_task(self._monitor_workflows())
+        asyncio.create_task(self._cleanup_completed_workflows())
         
         logger.info("supervisor_started")
-    
+
     async def stop(self):
-        """Detener agente supervisor."""
+        """Stop the supervisor and close connections."""
         logger.info("stopping_supervisor")
-        self.status = AgentStatus.OFFLINE
-    
-    def register_agent(self, agent_id: str, agent_info: Dict):
-        """Registrar un agente en el sistema."""
-        self.agents[agent_id] = {
-            **agent_info,
-            "status": AgentStatus.IDLE,
-            "registered_at": datetime.now().isoformat(),
-            "last_heartbeat": datetime.now().isoformat(),
-            "current_tasks": [],
-            "completed_tasks": 0,
-            "failed_tasks": 0,
-        }
-        logger.info("agent_registered", agent_id=agent_id, agent_name=agent_info.get("name"))
-    
-    def unregister_agent(self, agent_id: str):
-        """Desregistrar un agente."""
-        if agent_id in self.agents:
-            del self.agents[agent_id]
-            logger.info("agent_unregistered", agent_id=agent_id)
-    
-    async def agent_heartbeat(self, agent_id: str, status: str = AgentStatus.IDLE, 
-                             current_task: Optional[str] = None):
-        """Recibir heartbeat de un agente."""
-        if agent_id in self.agents:
-            self.agents[agent_id]["last_heartbeat"] = datetime.now().isoformat()
-            self.agents[agent_id]["status"] = status
-            if current_task:
-                if current_task not in self.agents[agent_id]["current_tasks"]:
-                    self.agents[agent_id]["current_tasks"].append(current_task)
-            else:
-                self.agents[agent_id]["current_tasks"] = []
-    
-    async def submit_task(self, task: Dict) -> Dict:
+        self.status = "stopped"
+        await self.api_client.aclose()
+        await self.media_pipeline_agent.close()
+        await self.content_agent.client.aclose()
+        await self.publishing_agent.close()
+        await self.dog_intake_agent.close()
+
+    # =========================================================================
+    # WORKFLOW ENTRY POINTS
+    # =========================================================================
+
+    async def handle_telegram_message(self, message: Dict) -> Dict:
         """
-        Enviar tarea para procesamiento.
-        
-        Aplica:
-        - Detección de duplicados
-        - Verificación de permisos
-        - Detección de conflictos
-        - Asignación a agente apropiado
+        Entry point for Telegram webhook.
+        Routes to DogIntakeAgent for multi-step dog creation.
         """
-        task_id = task.get("task_id", str(uuid4()))
-        task_type = task.get("task_type", "unknown")
-        agent_id = task.get("agent_id")
-        required_roles = task.get("required_roles", [])
-        idempotency_key = task.get("idempotency_key")
+        chat_id = message.get("chat_id")
+        user_id = message.get("user_id")
+        text = message.get("text", "")
         
-        # 1. Verificar duplicados por idempotency_key
-        if idempotency_key:
-            duplicate = await self._check_duplicate(idempotency_key)
-            if duplicate:
-                logger.warning("duplicate_task_detected", task_id=task_id, 
-                             idempotency_key=idempotency_key)
-                self.stats["tasks_failed"] += 1
-                return {
-                    "success": False,
-                    "error": "DUPLICATE_TASK",
-                    "message": "Tarea duplicada detectada",
-                    "existing_task_id": duplicate["task_id"],
-                }
+        workflow_id = f"wf-{chat_id}-{user_id}"
         
-        # 2. Verificar permisos del agente
-        if agent_id and not self._check_permissions(agent_id, task_type, required_roles):
-            logger.warning("permission_denied", agent_id=agent_id, task_type=task_type)
-            return {
-                "success": False,
-                "error": "PERMISSION_DENIED",
-                "message": f"Agente {agent_id} no tiene permisos para {task_type}",
+        # Initialize or get existing workflow
+        if workflow_id not in self.active_workflows:
+            self.active_workflows[workflow_id] = {
+                "workflow_id": workflow_id,
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "step": WorkflowStep.DOG_INTAKE,
+                "status": "in_progress",
+                "created_at": datetime.utcnow().isoformat(),
+                "dog_id": None,
+                "dog_internal_id": None,
+                "media_items": [],
+                "content": None,
+                "publication_id": None,
             }
         
-        # 3. Detectar conflictos
-        conflicts = await self._detect_conflicts(task)
-        if conflicts:
-            logger.warning("conflicts_detected", task_id=task_id, conflicts=conflicts)
-            self.stats["conflicts_detected"] += 1
-            
-            # Si hay conflictos críticos, requerir resolución manual
-            critical_conflicts = [c for c in conflicts if c.get("severity") == "critical"]
-            if critical_conflicts:
-                return {
-                    "success": False,
-                    "error": "CONFLICT_DETECTED",
-                    "message": "Conflictos críticos detectados, requiere resolución manual",
-                    "conflicts": critical_conflicts,
-                }
+        workflow = self.active_workflows[workflow_id]
         
-        # 4. Verificar si requiere aprobación humana
-        requires_approval = self._requires_approval(task_type, task.get("action"))
-        if requires_approval:
-            approval_id = await self._request_approval(task)
+        # Delegate to DogIntakeAgent
+        result = await self.dog_intake_agent.process_message(message)
+        
+        if result.get("completed") and result.get("dog"):
+            # Dog created successfully - advance workflow
+            workflow["dog_id"] = result["dog"]["id"]
+            workflow["dog_internal_id"] = result["dog"]["internal_id"]
+            workflow["step"] = WorkflowStep.MEDIA_INGEST
+            workflow["status"] = "awaiting_media"
+            
             return {
                 "success": True,
-                "message": "Tarea requiere aprobación humana",
-                "task_id": task_id,
-                "approval_id": approval_id,
-                "status": "waiting_approval",
+                "workflow_id": workflow_id,
+                "step": workflow["step"],
+                "message": f"Perro {result['dog']['internal_id']} creado. Ahora envía fotos/vídeos.",
+                "dog": result["dog"],
             }
-        
-        # 5. Asignar a agente
-        assigned_agent = await self._assign_agent(task_type, agent_id)
-        if not assigned_agent:
-            return {
-                "success": False,
-                "error": "NO_AGENT_AVAILABLE",
-                "message": f"No hay agente disponible para {task_type}",
-            }
-        
-        # 6. Encolar tarea
-        task["task_id"] = task_id
-        task["assigned_agent"] = assigned_agent
-        task["status"] = "queued"
-        task["created_at"] = datetime.now().isoformat()
-        task["idempotency_key"] = idempotency_key
-        
-        await self.task_queue.put(task)
-        
-        # Actualizar estadísticas
-        self.stats["tasks_assigned"] += 1
-        self.agents[assigned_agent]["current_tasks"].append(task_id)
-        
-        # Log de decisión
-        self._log_decision({
-            "timestamp": datetime.now().isoformat(),
-            "decision": "task_assigned",
-            "task_id": task_id,
-            "task_type": task_type,
-            "assigned_agent": assigned_agent,
-            "requires_approval": requires_approval,
-            "conflicts": conflicts,
-        })
-        
-        logger.info("task_assigned", task_id=task_id, agent=assigned_agent, 
-                   task_type=task_type, requires_approval=requires_approval)
         
         return {
             "success": True,
-            "task_id": task_id,
-            "assigned_agent": assigned_agent,
-            "status": "queued",
+            "workflow_id": workflow_id,
+            "step": workflow["step"],
+            "message": result.get("message", "Continúa con el ingreso..."),
+            "awaiting_input": True,
         }
-    
-    async def _check_duplicate(self, idempotency_key: str) -> Optional[Dict]:
-        """Verificar si ya existe una tarea con la misma clave de idempotencia."""
-        # TODO: Implementar búsqueda en BD/Redis
-        return None
-    
-    def _check_permissions(self, agent_id: str, task_type: str, required_roles: List[str]) -> bool:
-        """Verificar si el agente tiene permisos para la tarea."""
-        if agent_id not in self.agents:
-            return False
+
+    async def handle_media_upload(self, workflow_id: str, file_content: bytes, 
+                                   filename: str, purpose: str = "original") -> Dict:
+        """
+        Handle media upload for a dog.
+        Part of Media Pipeline: INGEST → ANALYZE → SELECT
+        """
+        workflow = self.active_workflows.get(workflow_id)
+        if not workflow:
+            return {"success": False, "error": "Workflow not found"}
         
-        agent_roles = self.agents[agent_id].get("roles", [])
-        task_rules = self.authorization_rules.get(task_type, {})
+        dog_internal_id = workflow["dog_internal_id"]
+        if not dog_internal_id:
+            return {"success": False, "error": "No dog associated with workflow"}
         
-        # Verificar roles requeridos
-        for role in required_roles:
-            if role not in agent_roles:
-                return False
+        # Ingest media
+        ingest_result = await self.media_pipeline_agent.ingest_media(
+            file_content=file_content,
+            filename=filename,
+            dog_internal_id=dog_internal_id,
+            purpose=purpose,
+        )
         
-        # Verificar reglas específicas de la tarea
-        if "roles" in task_rules:
-            allowed = False
-            for rule_role in task_rules["roles"]:
-                if rule_role in agent_roles:
-                    allowed = True
+        if not ingest_result["success"]:
+            return ingest_result
+        
+        media_meta = ingest_result["media_metadata"]
+        workflow["media_items"].append(media_meta)
+        
+        # Auto-analyze if photo
+        if media_meta["media_type"] == "photo":
+            analysis = await self.media_pipeline_agent.selection_agent.analyze_image(
+                media_meta["file_path"]
+            )
+            media_meta["analysis"] = analysis
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "step": WorkflowStep.MEDIA_ANALYZE,
+            "message": f"Media recibida ({len(workflow['media_items'])} total). Análisis completado.",
+            "media": media_meta,
+        }
+
+    async def finalize_media_selection(self, workflow_id: str) -> Dict:
+        """
+        Finalize media selection after all uploads.
+        Triggers: SELECT best → GENERATE variants → PREPARE for publishing
+        """
+        workflow = self.active_workflows.get(workflow_id)
+        if not workflow:
+            return {"success": False, "error": "Workflow not found"}
+        
+        if not workflow["media_items"]:
+            return {"success": False, "error": "No media to select from"}
+        
+        # Select best media for publishing
+        selection = await self.media_pipeline_agent.select_best_for_publishing(
+            workflow["dog_internal_id"],
+            workflow["media_items"]
+        )
+        
+        # Generate social variants (optional, async)
+        cover_path = None
+        if selection.get("cover"):
+            # Find cover file path
+            for m in workflow["media_items"]:
+                if m["file_hash"] in selection["cover"]:
+                    cover_path = m["file_path"]
                     break
-            if not allowed:
-                return False
-        
-        return True
-    
-    async def _detect_conflicts(self, task: Dict) -> List[Dict]:
-        """Detectar conflictos potenciales."""
-        conflicts = []
-        
-        task_type = task.get("task_type")
-        resource_id = task.get("resource_id")
-        resource_type = task.get("resource_type")
-        
-        if not resource_id:
-            return conflicts
-        
-        # Verificar si otro agente está trabajando en el mismo recurso
-        for agent_id, agent_info in self.agents.items():
-            for current_task_id in agent_info.get("current_tasks", []):
-                # TODO: Obtener info de la tarea actual y comparar recursos
-                pass
-        
-        # Verificar estado del recurso en Dolibarr
-        # TODO: Consultar estado actual
-        
-        return conflicts
-    
-    def _requires_approval(self, task_type: str, action: str) -> bool:
-        """Determinar si una acción requiere aprobación humana."""
-        approval_required = {
-            "products": ["publish", "price_change", "delete"],
-            "publishing": ["publish", "unpublish"],
-            "sales": ["confirm_reservation", "apply_discount"],
-            "invoicing": ["validate", "cancel", "rectify"],
-            "purchases": ["validate"],
-            "tax": ["submit_return"],
-            "marketing": ["launch_campaign", "modify_budget"],
-            "technical": ["update_production", "restart_service"],
-            "supervisor": ["emergency_stop", "override_decision"],
-        }
-        
-        return action in approval_required.get(task_type, [])
-    
-    async def _request_approval(self, task: Dict) -> str:
-        """Solicitar aprobación humana."""
-        approval_id = str(uuid4())
-        
-        # TODO: Enviar a servicio de aprobaciones
-        # await approval_service.request(...)
-        
-        self.stats["approvals_requested"] += 1
-        return approval_id
-    
-    async def _assign_agent(self, task_type: str, preferred_agent: Optional[str]) -> Optional[str]:
-        """Asignar mejor agente para la tarea."""
-        # Si hay agente preferido y está disponible
-        if preferred_agent and preferred_agent in self.agents:
-            agent = self.agents[preferred_agent]
-            if agent["status"] == AgentStatus.IDLE:
-                if len(agent["current_tasks"]) < self.max_concurrent_tasks_per_agent:
-                    return preferred_agent
-        
-        # Buscar agente disponible con el rol adecuado
-        task_rules = self.authorization_rules.get(task_type, {})
-        required_roles = task_rules.get("roles", [task_type])
-        
-        best_agent = None
-        min_tasks = float('inf')
-        
-        for agent_id, agent_info in self.agents.items():
-            if agent_info["status"] != AgentStatus.IDLE:
-                continue
             
-            if len(agent_info["current_tasks"]) >= self.max_concurrent_tasks_per_agent:
-                continue
-            
-            agent_roles = agent_info.get("roles", [])
-            has_role = any(role in agent_roles for role in required_roles)
-            
-            if not has_role:
-                continue
-            
-            current_load = len(agent_info["current_tasks"])
-            if current_load < min_tasks:
-                min_tasks = current_load
-                best_agent = agent_id
+            if cover_path:
+                # Get dog info for prompts
+                dog_info = await self._get_dog_info(workflow["dog_id"])
+                if dog_info:
+                    await self.media_pipeline_agent.generate_social_variants(
+                        dog_internal_id=workflow["dog_internal_id"],
+                        cover_image_path=cover_path,
+                        breed=dog_info.get("breed_name", ""),
+                        dog_name=dog_info.get("name", ""),
+                        privacy_scope="LOCAL_ONLY",
+                    )
         
-        return best_agent
-    
-    async def _process_task_queue(self):
-        """Procesar cola de tareas."""
-        while self.status != AgentStatus.OFFLINE:
-            try:
-                task = await asyncio.wait_for(self.task_queue.get(), timeout=1.0)
-                await self._execute_task(task)
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error("error_processing_task", error=str(e))
-    
-    async def _execute_task(self, task: Dict):
-        """Ejecutar tarea asignada."""
-        task_id = task["task_id"]
-        assigned_agent = task["assigned_agent"]
+        workflow["step"] = WorkflowStep.CONTENT_GENERATE
+        workflow["media_selection"] = selection
         
-        # Actualizar estado
-        if assigned_agent in self.agents:
-            self.agents[assigned_agent]["status"] = AgentStatus.BUSY
-        
-        task["status"] = "processing"
-        task["started_at"] = datetime.now().isoformat()
-        
-        # TODO: Enviar tarea al agente via mensaje/cola
-        # await self._send_to_agent(assigned_agent, task)
-        
-        # Por ahora simular completación
-        await asyncio.sleep(1)
-        
-        # Marcar completada
-        task["status"] = "completed"
-        task["completed_at"] = datetime.now().isoformat()
-        
-        if assigned_agent in self.agents:
-            self.agents[assigned_agent]["status"] = AgentStatus.IDLE
-            if task_id in self.agents[assigned_agent]["current_tasks"]:
-                self.agents[assigned_agent]["current_tasks"].remove(task_id)
-            self.agents[assigned_agent]["completed_tasks"] += 1
-        
-        self.stats["tasks_completed"] += 1
-        
-        logger.info("task_completed", task_id=task_id, agent=assigned_agent)
-    
-    async def _monitor_agents(self):
-        """Monitorear salud de agentes."""
-        while self.status != AgentStatus.OFFLINE:
-            await asyncio.sleep(30)
-            
-            now = datetime.now()
-            for agent_id, agent_info in self.agents.items():
-                last_hb = datetime.fromisoformat(agent_info["last_heartbeat"])
-                if (now - last_hb).total_seconds() > 60:
-                    if agent_info["status"] != AgentStatus.OFFLINE:
-                        logger.warning("agent_offline", agent_id=agent_id)
-                        agent_info["status"] = AgentStatus.OFFLINE
-                        
-                        # Re-encolar tareas del agente offline
-                        for task_id in agent_info["current_tasks"]:
-                            # TODO: Re-encolar tarea
-                            pass
-    
-    async def _cleanup_old_tasks(self):
-        """Limpiar tareas antiguas."""
-        while self.status != AgentStatus.OFFLINE:
-            await asyncio.sleep(3600)  # Cada hora
-            # TODO: Limpiar tareas completadas antiguas
-    
-    def _log_decision(self, decision: Dict):
-        """Registrar decisión en log de auditoría."""
-        self.decision_log.append(decision)
-        # Mantener solo últimas 10000 decisiones
-        if len(self.decision_log) > 10000:
-            self.decision_log = self.decision_log[-10000:]
-    
-    def get_status(self) -> Dict:
-        """Obtener estado del supervisor."""
         return {
-            "agent_id": self.agent_id,
-            "status": self.status,
-            "registered_agents": len(self.agents),
-            "agents": {k: {**v, "current_tasks": len(v["current_tasks"])} 
-                      for k, v in self.agents.items()},
-            "queue_size": self.task_queue.qsize(),
-            "stats": self.stats,
-            "uptime": "TODO",
+            "success": True,
+            "workflow_id": workflow_id,
+            "step": workflow["step"],
+            "message": "Selección de media completada. Generando contenido...",
+            "selection": selection,
         }
-    
-    def get_agent_status(self, agent_id: str) -> Optional[Dict]:
-        """Obtener estado de un agente específico."""
-        return self.agents.get(agent_id)
-    
-    def get_daily_summary(self) -> Dict:
-        """Generar resumen diario."""
+
+    async def generate_content(self, workflow_id: str) -> Dict:
+        """
+        Generate marketing content for the dog.
+        Uses ContentMarketingAgent with dog data + selected media.
+        """
+        workflow = self.active_workflows.get(workflow_id)
+        if not workflow:
+            return {"success": False, "error": "Workflow not found"}
+        
+        dog_id = workflow["dog_id"]
+        
+        # Generate individual dog content
+        content_result = await self.content_agent.generate_individual_content(dog_id)
+        
+        if not content_result["success"]:
+            return content_result
+        
+        # Add selected media paths to content
+        selection = workflow.get("media_selection", {})
+        content_result["suggested_media"] = {
+            "cover": selection.get("cover"),
+            "listing": selection.get("listing", []),
+            "social": selection.get("social", []),
+        }
+        
+        workflow["content"] = content_result
+        workflow["step"] = WorkflowStep.CONTENT_APPROVE
+        workflow["status"] = "awaiting_content_approval"
+        
         return {
-            "date": datetime.now().date().isoformat(),
-            "stats": self.stats,
-            "agents": {k: {"completed": v["completed_tasks"], "failed": v["failed_tasks"]} 
-                      for k, v in self.agents.items()},
-            "decisions_today": len([d for d in self.decision_log 
-                                   if d["timestamp"].startswith(datetime.now().date().isoformat())]),
-            "conflicts_today": self.stats["conflicts_detected"],
+            "success": True,
+            "workflow_id": workflow_id,
+            "step": workflow["step"],
+            "message": "Contenido generado. Requiere aprobación antes de publicar.",
+            "content": content_result,
+            "requires_approval": True,
         }
 
+    async def approve_content(self, workflow_id: str, approved: bool, 
+                               feedback: str = "") -> Dict:
+        """
+        Human approval for generated content.
+        """
+        workflow = self.active_workflows.get(workflow_id)
+        if not workflow:
+            return {"success": False, "error": "Workflow not found"}
+        
+        if not approved:
+            workflow["status"] = "content_rejected"
+            workflow["rejection_feedback"] = feedback
+            return {
+                "success": True,
+                "workflow_id": workflow_id,
+                "message": "Contenido rechazado. Puedes regenerar o editar.",
+            }
+        
+        # Approved - create publication draft
+        workflow["step"] = WorkflowStep.PUBLISH_DRAFT
+        return await self.create_publication_draft(workflow_id)
 
-# Instancia global para uso en workers
-_supervisor_instance: Optional[SupervisorAgent] = None
+    async def create_publication_draft(self, workflow_id: str) -> Dict:
+        """
+        Create publication draft from approved content.
+        """
+        workflow = self.active_workflows.get(workflow_id)
+        if not workflow:
+            return {"success": False, "error": "Workflow not found"}
+        
+        content = workflow["content"]
+        selection = workflow.get("media_selection", {})
+        dog_info = await self._get_dog_info(workflow["dog_id"])
+        
+        # Create publication via API
+        pub_data = {
+            "expediente_id": dog_info.get("expediente_id", 1),
+            "platform": "milanuncios",
+            "title": content["title"],
+            "description": content["copy"],
+            "photos": selection.get("listing", [])[:10],  # Milanuncios max 20
+            "price": dog_info.get("sale_price"),
+        }
+        
+        response = await self._api_post("/publicaciones/", pub_data)
+        if not response.get("success"):
+            return {"success": False, "error": response.get("error")}
+        
+        publication = response["data"]
+        workflow["publication_id"] = publication["id"]
+        workflow["step"] = WorkflowStep.PUBLISH_APPROVE
+        workflow["status"] = "awaiting_publish_approval"
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "step": workflow["step"],
+            "message": "Borrador de publicación creado. Requiere aprobación para publicar.",
+            "publication": publication,
+            "requires_approval": True,
+        }
+
+    async def approve_publication(self, workflow_id: str, approved: bool,
+                                   feedback: str = "") -> Dict:
+        """
+        Human approval to publish.
+        """
+        workflow = self.active_workflows.get(workflow_id)
+        if not workflow:
+            return {"success": False, "error": "Workflow not found"}
+        
+        if not approved:
+            workflow["status"] = "publish_rejected"
+            return {
+                "success": True,
+                "workflow_id": workflow_id,
+                "message": "Publicación rechazada.",
+            }
+        
+        # Approve via API
+        pub_id = workflow["publication_id"]
+        approve_resp = await self._api_post(f"/publicaciones/{pub_id}/approve")
+        
+        if not approve_resp.get("success"):
+            return {"success": False, "error": approve_resp.get("error")}
+        
+        workflow["step"] = WorkflowStep.PUBLISH_EXECUTE
+        return await self.execute_publication(workflow_id)
+
+    async def execute_publication(self, workflow_id: str) -> Dict:
+        """
+        Execute actual publication on platform (Milanuncios via Playwright).
+        """
+        workflow = self.active_workflows.get(workflow_id)
+        if not workflow:
+            return {"success": False, "error": "Workflow not found"}
+        
+        pub_id = workflow["publication_id"]
+        
+        # Prepare assets for publishing
+        assets = await self.media_pipeline_agent.prepare_for_publishing(
+            workflow["dog_internal_id"],
+            platforms=["milanuncios"]
+        )
+        
+        # Publish via API (triggers PublishingAgent)
+        publish_resp = await self._api_post(f"/publicaciones/{pub_id}/publish")
+        
+        if not publish_resp.get("success"):
+            return {"success": False, "error": publish_resp.get("error")}
+        
+        workflow["step"] = WorkflowStep.COMPLETE
+        workflow["status"] = "completed"
+        workflow["completed_at"] = datetime.utcnow().isoformat()
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "step": workflow["step"],
+            "message": "¡Publicación completada! El anuncio está en vivo.",
+            "publication": publish_resp.get("data"),
+        }
+
+    # =========================================================================
+    # HELPER METHODS
+    # =========================================================================
+
+    async def _get_dog_info(self, dog_id: int) -> Optional[Dict]:
+        """Fetch dog info from internal API."""
+        try:
+            resp = await self.api_client.get(
+                f"/dogs/{dog_id}",
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception as e:
+            logger.error("failed_to_get_dog", dog_id=dog_id, error=str(e))
+        return None
+
+    async def _api_post(self, path: str, data: Dict = None) -> Dict:
+        """POST to internal API with auth."""
+        try:
+            resp = await self.api_client.post(
+                path,
+                json=data,
+                headers={"Authorization": f"Bearer {self.api_key}"}
+            )
+            if resp.status_code in (200, 201, 202):
+                return {"success": True, "data": resp.json()}
+            return {"success": False, "error": resp.text}
+        except Exception as e:
+            logger.error("api_post_failed", path=path, error=str(e))
+            return {"success": False, "error": str(e)}
+
+    async def _monitor_workflows(self):
+        """Monitor workflows for timeouts/stale states."""
+        while self.status == "running":
+            await asyncio.sleep(60)
+            now = datetime.utcnow()
+            
+            for wf_id, workflow in list(self.active_workflows.items()):
+                # Check for stale workflows (>1 hour in same step)
+                created = datetime.fromisoformat(workflow["created_at"])
+                if (now - created).total_seconds() > 3600:
+                    if workflow["status"] in ["awaiting_media", "awaiting_content_approval", "awaiting_publish_approval"]:
+                        logger.warning("workflow_stale", workflow_id=wf_id, step=workflow["step"])
+
+    async def _cleanup_completed_workflows(self):
+        """Clean up old completed workflows."""
+        while self.status == "running":
+            await asyncio.sleep(3600)  # Every hour
+            
+            now = datetime.utcnow()
+            to_remove = []
+            
+            for wf_id, workflow in self.active_workflows.items():
+                if workflow["status"] == "completed":
+                    completed_at = datetime.fromisoformat(workflow.get("completed_at", workflow["created_at"]))
+                    if (now - completed_at).total_seconds() > 86400:  # 24 hours
+                        to_remove.append(wf_id)
+            
+            for wf_id in to_remove:
+                del self.active_workflows[wf_id]
+                logger.info("workflow_cleaned", workflow_id=wf_id)
+
+    def get_workflow_status(self, workflow_id: str) -> Optional[Dict]:
+        """Get current workflow status."""
+        return self.active_workflows.get(workflow_id)
+
+    def list_active_workflows(self) -> List[Dict]:
+        """List all active workflows."""
+        return list(self.active_workflows.values())
 
 
-def get_supervisor(config: Optional[Dict] = None) -> SupervisorAgent:
-    """Obtener instancia singleton del supervisor."""
-    global _supervisor_instance
-    if _supervisor_instance is None:
-        _supervisor_instance = SupervisorAgent(config or {})
-    return _supervisor_instance
-
-
-async def start_supervisor(config: Optional[Dict] = None):
-    """Iniciar supervisor."""
-    supervisor = get_supervisor(config)
-    await supervisor.start()
-    return supervisor
-
-
-async def stop_supervisor():
-    """Detener supervisor."""
-    global _supervisor_instance
-    if _supervisor_instance:
-        await _supervisor_instance.stop()
-        _supervisor_instance = None
+def create_supervisor_agent(config: Dict) -> SupervisorAgent:
+    """Factory function."""
+    return SupervisorAgent(config)
