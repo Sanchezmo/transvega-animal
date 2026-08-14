@@ -19,9 +19,10 @@ class ModelProvider:
 
 class OllamaProvider(ModelProvider):
     """Provider that talks to a local Ollama instance."""
-    def __init__(self, endpoint: str, model: str):
+    def __init__(self, endpoint: str, model: str, vision_model: Optional[str] = None):
         self.endpoint = endpoint.rstrip("/")
         self.model = model
+        self.vision_model = vision_model or model
         self._client: Optional[httpx.AsyncClient] = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -49,7 +50,7 @@ class OllamaProvider(ModelProvider):
         with open(image_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
         payload = {
-            "model": self.model,
+            "model": self.vision_model,
             "prompt": prompt or "",
             "images": [b64],
             "stream": False,
@@ -66,8 +67,8 @@ class OllamaProvider(ModelProvider):
 
 
 class NvidiaProvider(ModelProvider):
-    """Provider that calls NVIDIA API (placeholder)."""
-    def __init__(self, api_key: str, base_url: str = "https://api.nvidia.com/v1"):
+    """Provider that calls NVIDIA NIM API using OpenAI-compatible Chat Completions format."""
+    def __init__(self, api_key: str, base_url: str = "https://integrate.api.nvidia.com/v1"):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self._client: Optional[httpx.AsyncClient] = None
@@ -81,35 +82,50 @@ class NvidiaProvider(ModelProvider):
             )
         return self._client
 
-    async def generate(self, prompt: str, **kwargs) -> Dict[str, Any]:
-        # Placeholder endpoint; actual NVIDIA API may differ.
+    async def generate(self, prompt: str, model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Generate text using NVIDIA NIM Chat Completions API."""
         client = await self._get_client()
         payload = {
-            "model": "nemotron-3-super",  # example; should be configurable
-            "prompt": prompt,
-            **kwargs
+            "model": model or "meta/llama-3.1-70b-instruct",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": kwargs.get("temperature", 0.7),
+            "max_tokens": kwargs.get("max_tokens", 1024),
+            "stream": False,
         }
-        resp = await client.post("/infer", json=payload)
+        resp = await client.post("/chat/completions", json=payload)
         resp.raise_for_status()
         data = resp.json()
-        return {"text": data.get("generated_text", ""), "raw": data}
+        # OpenAI format: choices[0].message.content
+        text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        return {"text": text, "raw": data}
 
-    async def vision(self, image_path: str, prompt: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-        # Placeholder: assume endpoint accepts image upload.
+    async def vision(self, image_path: str, prompt: Optional[str] = None, model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Generate text from image using NVIDIA NIM Vision model (OpenAI-compatible)."""
         import base64
         with open(image_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
+        
         client = await self._get_client()
+        # Use data URL format for image
+        image_url = f"data:image/png;base64,{b64}"
         payload = {
-            "model": "nemotron-vision",
-            "prompt": prompt or "",
-            "image": b64,
-            **kwargs
+            "model": model or "meta/llama-3.2-90b-vision-instruct",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt or "Describe this image."},
+                    {"type": "image_url", "image_url": {"url": image_url}}
+                ]
+            }],
+            "temperature": kwargs.get("temperature", 0.7),
+            "max_tokens": kwargs.get("max_tokens", 1024),
+            "stream": False,
         }
-        resp = await client.post("/vision/infer", json=payload)
+        resp = await client.post("/chat/completions", json=payload)
         resp.raise_for_status()
         data = resp.json()
-        return {"text": data.get("generated_text", ""), "raw": data}
+        text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        return {"text": text, "raw": data}
 
     async def aclose(self):
         if self._client:
@@ -123,21 +139,21 @@ class ModelRouter:
         self.nvidia = nvidia
         self.logger = logger.bind(component="ModelRouter")
 
-    async def generate(self, *, privacy_scope: str, prompt: str, **kwargs) -> Dict[str, Any]:
+    async def generate(self, *, privacy_scope: str, prompt: str, model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         self.logger.debug("routing generate", privacy_scope=privacy_scope, prompt_len=len(prompt))
         if privacy_scope == "LOCAL_ONLY":
             return await self.ollama.generate(prompt, **kwargs)
         elif privacy_scope == "CLOUD_ALLOWED":
-            return await self.nvidia.generate(prompt, **kwargs)
+            return await self.nvidia.generate(prompt, model=model, **kwargs)
         else:
             raise ValueError(f"Unknown privacy scope: {privacy_scope}")
 
-    async def vision(self, *, privacy_scope: str, image_path: str, prompt: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+    async def vision(self, *, privacy_scope: str, image_path: str, prompt: Optional[str] = None, model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         self.logger.debug("routing vision", privacy_scope=privacy_scope, image_path=image_path)
         if privacy_scope == "LOCAL_ONLY":
             return await self.ollama.vision(image_path, prompt, **kwargs)
         elif privacy_scope == "CLOUD_ALLOWED":
-            return await self.nvidia.vision(image_path, prompt, **kwargs)
+            return await self.nvidia.vision(image_path, prompt, model=model, **kwargs)
         else:
             raise ValueError(f"Unknown privacy scope: {privacy_scope}")
 
@@ -147,15 +163,15 @@ class ModelRouter:
 
 
 # Factory helpers
-def create_ollama_provider(endpoint: str, model: str) -> OllamaProvider:
-    return OllamaProvider(endpoint=endpoint, model=model)
+def create_ollama_provider(endpoint: str, model: str, vision_model: Optional[str] = None) -> OllamaProvider:
+    return OllamaProvider(endpoint=endpoint, model=model, vision_model=vision_model)
 
 
-def create_nvidia_provider(api_key: str, base_url: str = "https://api.nvidia.com/v1") -> NvidiaProvider:
+def create_nvidia_provider(api_key: str, base_url: str = "https://integrate.api.nvidia.com/v1") -> NvidiaProvider:
     return NvidiaProvider(api_key=api_key, base_url=base_url)
 
 
-def create_model_router(ollama_endpoint: str, ollama_model: str, nvidia_api_key: str, nvidia_base_url: str = "https://api.nvidia.com/v1") -> ModelRouter:
-    ollama = create_ollama_provider(ollama_endpoint, ollama_model)
+def create_model_router(ollama_endpoint: str, ollama_model: str, ollama_vision_model: str, nvidia_api_key: str, nvidia_base_url: str = "https://integrate.api.nvidia.com/v1") -> ModelRouter:
+    ollama = create_ollama_provider(ollama_endpoint, ollama_model, ollama_vision_model)
     nvidia = create_nvidia_provider(nvidia_api_key, nvidia_base_url)
     return ModelRouter(ollama=ollama, nvidia=nvidia)

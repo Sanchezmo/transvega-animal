@@ -6,6 +6,7 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import MetaData
 from redis.asyncio import Redis
 from app.core.config import settings, get_audit_db_url, get_redis_url
+from app.core.base import Base, metadata
 from app.models import Breed, Litter, DogMedia, DogHealth, DogStatusHistory, Dog  # noqa: F401
 
 
@@ -18,11 +19,11 @@ NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 
-metadata = MetaData(naming_convention=NAMING_CONVENTION)
+# metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-class Base(DeclarativeBase):
-    metadata = metadata
+# class Base(DeclarativeBase):
+#     metadata = metadata
 
 
 # Engine asíncrono para PostgreSQL

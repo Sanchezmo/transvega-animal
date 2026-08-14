@@ -1,7 +1,7 @@
 """
 Esquemas Pydantic para validación de datos de entrada/salida.
 """
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, field_validator
 from typing import Optional, List, Dict, Any, TypeVar, Generic
 import datetime
 from uuid import UUID
@@ -541,6 +541,19 @@ class PublicationResponse(PublicationBase):
     created_at: datetime.datetime
     updated_at: datetime.datetime
     approval_id: Optional[UUID] = None
+
+    @field_validator("photos", mode="before")
+    @classmethod
+    def _parse_photos(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        if v is None:
+            return []
+        return v
 
 
 # =============================================================================

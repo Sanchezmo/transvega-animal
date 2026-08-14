@@ -6,6 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Crear usuario no-root
@@ -21,7 +26,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código de la aplicación con permisos correctos
 COPY --chown=appuser:appuser services/integration-api/app ./app
 COPY --chown=appuser:appuser adapters ./app/adapters
-COPY --chown=appuser:appuser shared ./shared
+COPY --chown=appuser:appuser agents ./app/agents
+COPY --chown=appuser:appuser tests ./app/tests
 
 # Cambiar a usuario no-root
 USER appuser

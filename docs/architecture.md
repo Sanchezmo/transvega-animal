@@ -120,7 +120,7 @@ This system manages the lifecycle of dogs for a breeder/broker business, integra
 - Unit tests for schemas: `test_dog_schemas_standalone.py`
 - Integration test for intake flow: `test_integration_flow.py`
 - Integration test for publishing: `test_publishing_simple.py`
-- Run with: `PYTHONPATH=/home/saulo/transvega-animal:/home/saulo/transvega-animal/services/integration-api source venv/bin/activate && python <test>`
+- Run with: `PYTHONPATH=$(pwd):$(pwd)/services/integration-api source venv/bin/activate && python <test>`
 
 ### Deployment
 

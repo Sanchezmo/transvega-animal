@@ -2,10 +2,13 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, '/home/saulo/transvega-animal')
-sys.path.insert(0, '/home/saulo/transvega-animal/services/integration-api')
+# Add project root to path dynamically
+PROJECT_ROOT = Path(__file__).parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "services" / "integration-api"))
 
 from agents.publishing.agent import PublishingAgent
 

@@ -5,6 +5,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -15,10 +20,19 @@ WORKDIR /app
 COPY services/integration-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright for browser automation (as root, then copy to shared location)
+RUN pip install --no-cache-dir playwright && \
+    playwright install --with-deps chromium && \
+    mkdir -p /opt/playwright && \
+    cp -r /root/.cache/ms-playwright /opt/playwright/ && \
+    chown -R appuser:appuser /opt/playwright
+
+# Create invoice storage directory with correct permissions
+RUN mkdir -p /data/invoices && chown -R appuser:appuser /data
+
 # Copy all necessary code with correct ownership
 COPY --chown=appuser:appuser services/integration-api/app ./app
 COPY --chown=appuser:appuser adapters ./adapters
-COPY --chown=appuser:appuser shared ./shared
 COPY --chown=appuser:appuser agents ./agents
 
 # Copy task-queue app contents to /app/tasks (not nested under another tasks/)
@@ -29,6 +43,9 @@ COPY --chown=appuser:appuser services/task-queue/app/tasks ./tasks
 RUN touch /app/tasks/__init__.py && chown appuser:appuser /app/tasks/__init__.py
 
 USER appuser
+
+# Set Playwright browser path for appuser
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright/ms-playwright
 
 # Health check for worker
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \

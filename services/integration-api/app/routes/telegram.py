@@ -2,7 +2,7 @@
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Header, HTTPException, Request, Status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from app.agents.dog_intake.agent import DogIntakeAgent

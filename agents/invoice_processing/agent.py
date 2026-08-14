@@ -9,7 +9,7 @@ from datetime import datetime
 import mimetypes
 
 # We'll import the ModelRouter and privacy router later
-from app.core.model_router import ModelRouter
+from app.core.model_router import ModelRouter, create_model_router
 # Assuming privacy router exists; if not, we'll define a simple stub
 try:
     from app.core.privacy_router import privacy_router, PrivacyScope
@@ -17,8 +17,8 @@ except ImportError:
     # Fallback stub
     from enum import Enum
     class PrivacyScope(Enum):
-        LOCAL_ONLY = "local_only"
-        CLOUD_ALLOWED = "cloud_allowed"
+        LOCAL_ONLY = "LOCAL_ONLY"
+        CLOUD_ALLOWED = "CLOUD_ALLOWED"
     async def privacy_router(content: str, filename: str = "") -> PrivacyScope:
         # Simple stub: treat everything as LOCAL_ONLY for safety
         return PrivacyScope.LOCAL_ONLY
@@ -92,13 +92,18 @@ class InvoiceProcessingAgent:
 
         # Initialize ModelRouter
         ollama_endpoint = config.get("OLLAMA_ENDPOINT", "http://ollama:11434")
-        ollama_model = config.get("OLLAMA_MODEL", "qwen4b:latest")
+        ollama_model = config.get("OLLAMA_MODEL", "llama3.1:8b")
+        ollama_vision_model = config.get("OLLAMA_VISION_MODEL", "llava:7b")
         nvidia_api_key = config.get("NVIDIA_API_KEY", "")
-        nvidia_base_url = config.get("NVIDIA_BASE_URL", "https://api.nvidia.com/v1")
-        from app.core.model_router import create_ollama_provider, create_nvidia_provider, ModelRouter
-        ollama_provider = create_ollama_provider(ollama_endpoint, ollama_model)
-        nvidia_provider = create_nvidia_provider(nvidia_api_key, nvidia_base_url)
-        self.router = ModelRouter(ollama=ollama_provider, nvidia=nvidia_provider)
+        nvidia_base_url = config.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+        from app.core.model_router import create_model_router
+        self.router = create_model_router(
+            ollama_endpoint=ollama_endpoint,
+            ollama_model=ollama_model,
+            ollama_vision_model=ollama_vision_model,
+            nvidia_api_key=nvidia_api_key,
+            nvidia_base_url=nvidia_base_url,
+        )
 
         # Storage roots
         self.invoice_storage_root = config.get("INVOICE_STORAGE_ROOT", "/data/invoices")
@@ -112,7 +117,7 @@ class InvoiceProcessingAgent:
             "no_cloud_fallback_for_private",
         ]
 
-        logger = logger.bind(component=self.agent_id)
+        self.logger = logger.bind(component=self.agent_id)
 
     async def _store_file(self, file_content: bytes, filename: str, supplier_folder: str) -> str:
         """Store file under invoice_storage_root/supplier_folder/ and return path."""
@@ -138,7 +143,7 @@ class InvoiceProcessingAgent:
             doc.close()
             return text.strip()
         except Exception as e:
-            logger.warning("pdf_text_extraction_failed", error=str(e))
+            self.logger.warning("pdf_text_extraction_failed", error=str(e))
             return ""
 
     async def _ocr_via_ollama(self, image_path: str) -> str:
@@ -151,7 +156,7 @@ class InvoiceProcessingAgent:
             )
             return result.get("text", "").strip()
         except Exception as e:
-            logger.error("ollama_ocr_failed", error=str(e))
+            self.logger.error("ollama_ocr_failed", error=str(e))
             return ""
 
     async def _extract_structured_data(self, raw_text: str) -> Dict[str, Any]:
@@ -190,7 +195,7 @@ Return ONLY the JSON, no extra text.
             data = json.loads(json_str)
             return data
         except Exception as e:
-            logger.error("structured_extraction_failed", error=str(e), raw_text=raw_text[:200])
+            self.logger.error("structured_extraction_failed", error=str(e), raw_text=raw_text[:200])
             raise
 
     async def _validate_with_pydantic(self, data: Dict[str, Any]) -> InvoiceData:
@@ -230,7 +235,7 @@ Return ONLY the JSON, no extra text.
             result = await service.get_supplier_by_tax_id(tax_id)
             return result
         except Exception as e:
-            logger.warning("dolibarr_supplier_lookup_failed", error=str(e))
+            self.logger.warning("dolibarr_supplier_lookup_failed", error=str(e))
             return None
 
     async def _check_duplicate(self, supplier_tax_id: str, invoice_number: str) -> bool:
@@ -240,7 +245,7 @@ Return ONLY the JSON, no extra text.
             service = DolibarrIntegrationService()
             return await service.invoice_exists(supplier_tax_id, invoice_number)
         except Exception as e:
-            logger.warning("duplicate_check_failed", error=str(e))
+            self.logger.warning("duplicate_check_failed", error=str(e))
             # Fail closed: assume duplicate to avoid creating duplicate
             return True
 
@@ -249,7 +254,7 @@ Return ONLY the JSON, no extra text.
         Main entry point: process an invoice file.
         Returns a dict with success, extracted data, validation errors, and next steps.
         """
-        logger.info("processing_invoice", filename=filename, size=len(file_content))
+        self.logger.info("processing_invoice", filename=filename, size=len(file_content))
         # Step 0: Determine privacy scope (should be LOCAL_ONLY for invoices)
         # We'll check content type and maybe filename.
         # For simplicity, we treat all uploads as LOCAL_ONLY.
@@ -344,7 +349,7 @@ Return ONLY the JSON, no extra text.
             # Move file
             os.rename(file_path, final_path)
         except Exception as e:
-            logger.error("file_move_failed", error=str(e))
+            self.logger.error("file_move_failed", error=str(e))
             return {"success": False, "error": f"Failed to move file: {e}"}
 
         # Create invoice in Dolibarr
@@ -363,7 +368,7 @@ Return ONLY the JSON, no extra text.
             )
             return {"success": True, "message": "Invoice created in Dolibarr", "dolibarr_invoice_id": result.get("id")}
         except Exception as e:
-            logger.error("dolibarr_invoice_create_failed", error=str(e))
+            self.logger.error("dolibarr_invoice_create_failed", error=str(e))
             # Optionally move file back? We'll leave it stored.
             return {"success": False, "error": f"Failed to create invoice in Dolibarr: {e}"}
 

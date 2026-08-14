@@ -106,7 +106,6 @@ services:
     volumes:
       - ./services/integration-api:/app:ro
       - ./adapters:/app/adapters:ro
-      - ./shared:/app/shared:ro
     depends_on:
       audit-db:
         condition: service_healthy
@@ -144,7 +143,6 @@ services:
     volumes:
       - ./services/integration-api:/app:ro
       - ./adapters:/app/adapters:ro
-      - ./shared:/app/shared:ro
       - ./agents:/app/agents:ro
       - ./services/task-queue:/app/tasks:ro
     depends_on:

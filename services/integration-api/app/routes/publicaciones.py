@@ -18,6 +18,7 @@ from app.schemas import (
     PaginationParams,
 )
 from app.core.exceptions import NotFoundException, ValidationException
+from app.services.publication_service import get_publication_service, PublicationService
 
 router = APIRouter(prefix="/publicaciones", tags=["Publicaciones"])
 settings = get_settings()
@@ -30,14 +31,20 @@ async def list_publicaciones(
     status: Optional[str] = Query(None, description="Filtrar por estado"),
     expediente_id: Optional[int] = Query(None, description="Filtrar por expediente"),
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """Listar publicaciones/anuncios."""
+    pubs, total = await pub_service.list_publications(
+        pagination=pagination,
+        platform=platform,
+        status=status,
+        expediente_id=expediente_id,
+    )
     return PaginatedResponse(
         success=True,
-        data=[],
-        total=0,
+        data=pubs,
+        total=total,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -47,11 +54,14 @@ async def list_publicaciones(
 async def get_publicacion(
     publicacion_id: int,
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """Obtener publicación por ID."""
-    raise NotFoundException("Publicación", str(publicacion_id))
+    pub = await pub_service.get_publication(publicacion_id)
+    if not pub:
+        raise NotFoundException("Publicación", str(publicacion_id))
+    return pub
 
 
 @router.post(
@@ -62,9 +72,9 @@ async def get_publicacion(
 async def create_publicacion(
     publicacion: PublicationCreate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """
     Crear borrador de publicación.
@@ -84,8 +94,11 @@ async def create_publicacion(
     if publicacion.platform not in valid_platforms:
         raise ValidationException(f"Plataforma inválida. Válidas: {valid_platforms}")
     
-    # TODO: Crear en BD local + solicitar aprobación
-    raise NotFoundException("Publicación", "no implementado")
+    created_pub = await pub_service.create_publication(
+        pub_data=publicacion,
+        created_by=agent.get("agent_id", 1),
+    )
+    return created_pub
 
 
 @router.put("/{publicacion_id}", response_model=PublicationResponse)
@@ -93,26 +106,35 @@ async def update_publicacion(
     publicacion_id: int,
     publicacion: PublicationUpdate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """Actualizar publicación."""
-    raise NotFoundException("Publicación", str(publicacion_id))
+    updated_pub = await pub_service.update_publication(
+        pub_id=publicacion_id,
+        pub_data=publicacion,
+        updated_by=agent.get("agent_id", 1),
+    )
+    return updated_pub
 
 
 @router.post("/{publicacion_id}/approve", status_code=status.HTTP_202_ACCEPTED)
 async def approve_publicacion(
     publicacion_id: int,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """Aprobar publicación para publicación real."""
-    # TODO: Implementar flujo de aprobación
+    approved_pub = await pub_service.approve_publication(
+        pub_id=publicacion_id,
+        approved_by=agent.get("agent_id", 1),
+    )
     return {
         "success": True,
         "message": "Publicación aprobada, pendiente de publicación real",
+        "publication": approved_pub,
     }
 
 
@@ -121,13 +143,19 @@ async def reject_publicacion(
     publicacion_id: int,
     reason: str,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """Rechazar publicación."""
+    rejected_pub = await pub_service.reject_publication(
+        pub_id=publicacion_id,
+        reason=reason,
+        rejected_by=agent.get("agent_id", 1),
+    )
     return {
         "success": True,
         "message": "Publicación rechazada",
+        "publication": rejected_pub,
     }
 
 
@@ -135,20 +163,24 @@ async def reject_publicacion(
 async def publish_publicacion(
     publicacion_id: int,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """
     Publicar en plataforma externa (Milanuncios, etc.).
     
     Requiere: aprobación previa, expediente válido, documentación completa.
     """
-    # Verificar estado: approved
-    # Verificar expediente: available + docs complete
-    # Ejecutar publicación via publisher agent
-    
-    raise NotFoundException("Publicación", "no implementado")
+    published_pub = await pub_service.publish_publication(
+        pub_id=publicacion_id,
+        published_by=agent.get("agent_id", 1),
+    )
+    return {
+        "success": True,
+        "message": "Publicación marcada como publicada",
+        "publication": published_pub,
+    }
 
 
 @router.post("/{publicacion_id}/unpublish", status_code=status.HTTP_202_ACCEPTED)
@@ -156,13 +188,19 @@ async def unpublish_publicacion(
     publicacion_id: int,
     reason: str = "Vendido / Retirado",
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """Retirar publicación (expediente vendido, error, etc.)."""
+    unpublished_pub = await pub_service.unpublish_publication(
+        pub_id=publicacion_id,
+        reason=reason,
+        unpublished_by=agent.get("agent_id", 1),
+    )
     return {
         "success": True,
         "message": "Publicación retirada",
+        "publication": unpublished_pub,
     }
 
 
@@ -170,11 +208,16 @@ async def unpublish_publicacion(
 async def renew_publicacion(
     publicacion_id: int,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    pub_service: PublicationService = Depends(get_publication_service),
 ):
     """Renovar publicación (Milanuncios renueva cada 7 días)."""
+    renewed_pub = await pub_service.renew_publication(
+        pub_id=publicacion_id,
+        renewed_by=agent.get("agent_id", 1),
+    )
     return {
         "success": True,
         "message": "Publicación renovada",
+        "publication": renewed_pub,
     }

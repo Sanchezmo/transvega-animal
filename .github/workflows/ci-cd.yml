@@ -5,9 +5,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [master, develop]
   release:
     types: [published]
   workflow_dispatch:
@@ -251,19 +251,19 @@ jobs:
         service: [api, worker, approvals, dashboard, mock-dolibarr]
         include:
           - service: api
-            context: services/integration-api
+            context: .
             dockerfile: infrastructure/docker/Dockerfile.api
           - service: worker
-            context: services/integration-api
+            context: .
             dockerfile: infrastructure/docker/Dockerfile.worker
           - service: approvals
-            context: services/approval-service
+            context: .
             dockerfile: infrastructure/docker/Dockerfile.approvals
           - service: dashboard
-            context: services/dashboard
+            context: .
             dockerfile: infrastructure/docker/Dockerfile.dashboard
           - service: mock-dolibarr
-            context: adapters/dolibarr
+            context: .
             dockerfile: infrastructure/docker/Dockerfile.mock-dolibarr
     steps:
       - name: Checkout code

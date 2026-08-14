@@ -96,7 +96,7 @@ shell-approvals: ## Shell en servicio aprobaciones
 # TESTING
 # =============================================================================
 
-test: test-unit test-integration ## Ejecutar todos los tests
+test: test-unit test-integration test-security ## Ejecutar todos los tests
 
 test-unit: ## Tests unitarios
 	@echo "$(GREEN)Ejecutando tests unitarios...$(NC)"

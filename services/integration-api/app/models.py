@@ -5,12 +5,12 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from typing import Optional, List
 
-from sqlalchemy import (Enum, ForeignKey, Integer, String, Text, DateTime, Float, Boolean, 
+from sqlalchemy import (Enum, ForeignKey, Integer, String, Text, DateTime, Float, Boolean,
                         Column, Index, CheckConstraint, UniqueConstraint)
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 
-from app.core.database import Base  # Import the Base from database.py
+from app.core.base import Base  # Import the Base from base.py (avoid circular import)
 
 
 class Breed(Base):
@@ -158,6 +158,8 @@ class Dog(Base):
     # Relationships
     breed = relationship("Breed", back_populates="dogs")
     litter = relationship("Litter", foreign_keys=[litter_id], back_populates="puppies")
+    litters_as_mother = relationship("Litter", foreign_keys="Litter.mother_id", back_populates="mother")
+    litters_as_father = relationship("Litter", foreign_keys="Litter.father_id", back_populates="father")
     media = relationship("DogMedia", back_populates="dog")
     health_records = relationship("DogHealth", back_populates="dog")
     status_history = relationship("DogStatusHistory", back_populates="dog")
@@ -168,4 +170,40 @@ class Dog(Base):
         CheckConstraint("purchase_price >= 0", name='ck_dog_purchase_price_nonneg'),
         CheckConstraint("sale_price >= 0", name='ck_dog_sale_price_nonneg'),
         CheckConstraint("associated_costs >= 0", name='ck_dog_associated_costs_nonneg'),
+    )
+
+
+class Publication(Base):
+    __tablename__ = "publications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    expediente_id = Column(Integer, nullable=False, index=True)  # Reference to ExpedienteAnimal in Dolibarr
+    platform = Column(String(50), nullable=False, index=True)  # milanuncios, facebook, instagram, tiktok, web
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    photos = Column(Text, nullable=True)  # JSON array of photo paths/URLs
+    price = Column(Float, nullable=True)
+    external_id = Column(String(100), nullable=True, index=True)  # External platform listing ID
+    external_url = Column(String(500), nullable=True)
+    status = Column(String(20), nullable=False, default="draft", index=True)  # draft, pending_approval, approved, published, expired, removed, failed
+    approval_id = Column(UUID, nullable=True)  # Reference to approval workflow
+    published_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    last_renewed_at = Column(DateTime, nullable=True)
+    approved_by = Column(Integer, nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    rejected_by = Column(Integer, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    unpublished_by = Column(Integer, nullable=True)
+    unpublished_at = Column(DateTime, nullable=True)
+    unpublish_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_by = Column(Integer, nullable=False, default=1)
+    updated_by = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('draft', 'pending_approval', 'approved', 'published', 'expired', 'removed', 'failed')", name='ck_publication_status'),
+        CheckConstraint("platform IN ('web', 'milanuncios', 'facebook', 'instagram', 'tiktok')", name='ck_publication_platform'),
     )

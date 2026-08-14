@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.database import get_db
 from app.dependencies.auth import get_current_agent, require_write
 from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
 from app.schemas import (
@@ -27,6 +26,7 @@ from app.schemas import (
     PaginationParams,
 )
 from app.core.exceptions import NotFoundException
+from app.services.dog_service import get_dog_service
 
 router = APIRouter(prefix="/dogs", tags=["Dogs"])
 settings = get_settings()
@@ -39,17 +39,22 @@ async def list_dogs(
     litter_id: Optional[int] = Query(None, description="Filtrar por camada"),
     status: Optional[str] = Query(None, description="Filtrar por estado"),
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Listar perros con paginación y filtros.
     """
-    # TODO: Implementar consulta real
+    dogs, total = await dog_service.list_dogs(
+        pagination=pagination,
+        breed_id=breed_id,
+        litter_id=litter_id,
+        status=status,
+    )
     return PaginatedResponse(
         success=True,
-        data=[],
-        total=0,
+        data=dogs,
+        total=total,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -59,14 +64,16 @@ async def list_dogs(
 async def get_dog(
     dog_id: int,
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Obtener un perro por ID.
     """
-    # TODO: Implementar consulta real
-    raise NotFoundException("Perro", str(dog_id))
+    dog = await dog_service.get_dog(dog_id)
+    if not dog:
+        raise NotFoundException("Perro", str(dog_id))
+    return dog
 
 
 @router.post(
@@ -77,15 +84,18 @@ async def get_dog(
 async def create_dog(
     dog: DogCreate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Crear nuevo perro.
     """
-    # TODO: Implementar creación
-    raise NotFoundException("Perro", "no implementado")
+    created_dog = await dog_service.create_dog(
+        dog_data=dog,
+        created_by=agent.get("agent_id", 1),
+    )
+    return created_dog
 
 
 @router.put("/{dog_id}", response_model=DogResponse)
@@ -93,29 +103,32 @@ async def update_dog(
     dog_id: int,
     dog: DogUpdate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Actualizar perro existente.
     """
-    # TODO: Implementar actualización
-    raise NotFoundException("Perro", str(dog_id))
+    updated_dog = await dog_service.update_dog(
+        dog_id=dog_id,
+        dog_data=dog,
+        updated_by=agent.get("agent_id", 1),
+    )
+    return updated_dog
 
 
 @router.delete("/{dog_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dog(
     dog_id: int,
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Eliminar perro (solo si está en estado draft o inactive).
     """
-    # TODO: Implementar eliminación
-    raise NotFoundException("Perro", str(dog_id))
+    await dog_service.delete_dog(dog_id)
 
 
 # Rutas para razas
@@ -123,16 +136,17 @@ async def delete_dog(
 async def list_breeds(
     pagination: PaginationParams = Depends(),
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Listar razas de perros.
     """
+    breeds, total = await dog_service.list_breeds(pagination)
     return PaginatedResponse(
         success=True,
-        data=[],
-        total=0,
+        data=breeds,
+        total=total,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -142,14 +156,15 @@ async def list_breeds(
 async def create_breed(
     breed: BreedCreate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Crear nueva raza.
     """
-    raise NotFoundException("Raza", "no implementado")
+    created_breed = await dog_service.create_breed(breed)
+    return created_breed
 
 
 # Rutas para camadas
@@ -157,16 +172,17 @@ async def create_breed(
 async def list_litters(
     pagination: PaginationParams = Depends(),
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Listar camadas de perros.
     """
+    litters, total = await dog_service.list_litters(pagination)
     return PaginatedResponse(
         success=True,
-        data=[],
-        total=0,
+        data=litters,
+        total=total,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -176,14 +192,15 @@ async def list_litters(
 async def create_litter(
     litter: LitterCreate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Crear nueva camada.
     """
-    raise NotFoundException("Camada", "no implementado")
+    created_litter = await dog_service.create_litter(litter)
+    return created_litter
 
 
 # Rutas para media
@@ -192,14 +209,15 @@ async def add_dog_media(
     dog_id: int,
     media: DogMediaCreate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Añadir media (foto/video) a un perro.
     """
-    raise NotFoundException("Media", "no implementado")
+    created_media = await dog_service.add_media(dog_id, media)
+    return created_media
 
 
 @router.get("/{dog_id}/media", response_model=PaginatedResponse[DogMediaResponse])
@@ -209,16 +227,22 @@ async def get_dog_media(
     media_type: Optional[str] = Query(None, pattern=r"^(photo|video)$"),
     purpose: Optional[str] = Query(None, pattern=r"^(original|processed|social|listing)$"),
     agent: dict = Depends(get_current_agent),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Obtener media de un perro.
     """
+    media, total = await dog_service.get_dog_media(
+        dog_id=dog_id,
+        pagination=pagination,
+        media_type=media_type,
+        purpose=purpose,
+    )
     return PaginatedResponse(
         success=True,
-        data=[],
-        total=0,
+        data=media,
+        total=total,
         limit=pagination.limit,
         offset=pagination.offset,
     )
@@ -230,27 +254,29 @@ async def add_dog_health(
     dog_id: int,
     health: DogHealthCreate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Añadir registro de salud a un perro.
     """
-    raise NotFoundException("Salud", "no implementado")
+    created_health = await dog_service.add_health_record(dog_id, health)
+    return created_health
 
 
 # Rutas para historial de estados
 @router.post("/{dog_id}/status", response_model=DogStatusHistoryResponse, status_code=status.HTTP_201_CREATED)
 async def add_dog_status_history(
     dog_id: int,
-    status: DogStatusHistoryCreate,
+    status_data: DogStatusHistoryCreate,
     agent: dict = Depends(require_write),
-    db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
+    dog_service = Depends(get_dog_service),
 ):
     """
     Añadir entrada al historial de estados de un perro.
     """
-    raise NotFoundException("Estado", "no implementado")
+    created_history = await dog_service.add_status_history(dog_id, status_data)
+    return created_history

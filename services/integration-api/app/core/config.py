@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Configuración centralizada de la aplicación."""
 
     model_config = SettingsConfigDict(
-        env_file="/home/saulo/transvega-animal/.env.local",
+        env_file=".env.local",
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
@@ -140,6 +140,11 @@ class Settings(BaseSettings):
             "marketing": self.AGENT_API_KEY_MARKETING,
             "technical": self.AGENT_API_KEY_TECHNICAL,
         }
+
+    @property
+    def AGENT_API_KEYS(self) -> Dict[str, str]:
+        """Property para compatibilidad con código que accede a settings.AGENT_API_KEYS."""
+        return self.get_agent_api_keys()
 
 
 # URLs computadas como funciones externas (evitan recursión en __repr__ de Pydantic)
