@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     # Redis
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
-    REDIS_PASSWORD: str
+    REDIS_PASSWORD: str = ""
 
     # Dolibarr
     DOLIBARR_API_URL: str
