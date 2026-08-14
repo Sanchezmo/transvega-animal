@@ -112,10 +112,21 @@ class SupervisorAgent:
         """
         Entry point for Telegram webhook.
         Routes to DogIntakeAgent for multi-step dog creation.
+        
+        Expects a Telegram update object with message/edited_message containing:
+        - chat.id, from.id, text, photo, etc.
         """
-        chat_id = message.get("chat_id")
-        user_id = message.get("user_id")
-        text = message.get("text", "")
+        # Extract message from update
+        tg_message = message.get("message") or message.get("edited_message")
+        if not tg_message:
+            return {"success": False, "error": "No message in update"}
+        
+        chat_id = tg_message.get("chat", {}).get("id")
+        user_id = tg_message.get("from", {}).get("id")
+        text = tg_message.get("text", "")
+        
+        if chat_id is None or user_id is None:
+            return {"success": False, "error": "Could not extract chat/user ID"}
         
         workflow_id = f"wf-{chat_id}-{user_id}"
         
@@ -137,8 +148,13 @@ class SupervisorAgent:
         
         workflow = self.active_workflows[workflow_id]
         
-        # Delegate to DogIntakeAgent
-        result = await self.dog_intake_agent.process_message(message)
+        # Delegate to DogIntakeAgent - pass the full message for it to handle
+        result = await self.dog_intake_agent.process_message({
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "text": text,
+            "message": tg_message,
+        })
         
         if result.get("completed") and result.get("dog"):
             # Dog created successfully - advance workflow
