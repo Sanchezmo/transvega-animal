@@ -1,31 +1,54 @@
 """
 Privacy Router - Deterministic routing for data based on sensitivity.
 """
-from typing import Any, Dict, List, Set
+
+from typing import Any
+
 import structlog
 
 logger = structlog.get_logger()
 
 
 # Define what constitutes sensitive data
-SENSITIVE_FIELDS: Set[str] = {
+SENSITIVE_FIELDS: set[str] = {
     # Personal identification
-    "dni", "nif", "cif", "nie", "passport", "id_number",
+    "dni",
+    "nif",
+    "cif",
+    "nie",
+    "passport",
+    "id_number",
     # Financial
-    "iban", "account_number", "credit_card", "cvc", "bic", "swift",
+    "iban",
+    "account_number",
+    "credit_card",
+    "cvc",
+    "bic",
+    "swift",
     # Contact
-    "phone", "mobile", "fax",
+    "phone",
+    "mobile",
+    "fax",
     # Address
-    "address", "street", "zip", "postcode",
+    "address",
+    "street",
+    "zip",
+    "postcode",
     # Health
-    "medical_record", "health_record", "medical_history",
+    "medical_record",
+    "health_record",
+    "medical_history",
     # Business
-    "internal_note", "confidential", "proprietary",
+    "internal_note",
+    "confidential",
+    "proprietary",
     # Media that should be LOCAL_ONLY by default
-    "original_photo", "original_video", "raw_media",
+    "original_photo",
+    "original_video",
+    "raw_media",
 }
 
-SENSITIVE_PATTERNS: List[str] = [
+SENSITIVE_PATTERNS: list[str] = [
     r"^.*_(dni|nif|cif|nie|passport|id_number)$",
     r"^.*_(iban|account|card|cvc|bic|swift)$",
     r"^.*_(phone|mobile|fax)$",
@@ -40,13 +63,13 @@ class PrivacyRouter:
     """
     Deterministic privacy router to decide if data should be treated as
     LOCAL_ONLY or can be sent to external services (ONLINE_ALLOWED).
-    
+
     The decision is based on field names and patterns, not on LLM judgment.
     """
-    
+
     def __init__(self):
         pass
-    
+
     @staticmethod
     def is_sensitive_field(field_name: str) -> bool:
         """Check if a field name is considered sensitive."""
@@ -57,11 +80,12 @@ class PrivacyRouter:
             return True
         # Check patterns
         import re
+
         for pattern in SENSITIVE_PATTERNS:
             if re.match(pattern, field_lower):
                 return True
         return False
-    
+
     @staticmethod
     def contains_sensitive_data(data: Any) -> bool:
         """
@@ -83,7 +107,7 @@ class PrivacyRouter:
         # For other types (str, int, etc.) we don't consider the value itself
         # as sensitive unless the field name indicates it.
         return False
-    
+
     @staticmethod
     def filter_sensitive_data(data: Any) -> Any:
         """
@@ -106,7 +130,7 @@ class PrivacyRouter:
             return {PrivacyRouter.filter_sensitive_data(item) for item in data}
         else:
             return data
-    
+
     @staticmethod
     def get_privacy_scope(data: Any) -> str:
         """

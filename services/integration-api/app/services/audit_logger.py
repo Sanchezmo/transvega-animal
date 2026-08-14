@@ -1,26 +1,23 @@
 """
 Servicio de logging de auditoría inmutable.
 """
-import json
-import hashlib
-from datetime import datetime
-from typing import Optional, Dict, Any
-from uuid import UUID
-import structlog
 
-from app.core.database import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+import hashlib
+import json
+from datetime import datetime
+from uuid import UUID
+
+import structlog
 
 logger = structlog.get_logger()
 
 
 class AuditLogger:
     """Registra eventos de auditoría de forma inmutable."""
-    
+
     def __init__(self, db_pool):
         self.db_pool = db_pool
-    
+
     async def log(
         self,
         *,
@@ -31,24 +28,24 @@ class AuditLogger:
         method: str,
         path: str,
         query_params: dict,
-        request_body: Optional[dict],
-        resource_type: Optional[str],
-        resource_id: Optional[str],
+        request_body: dict | None,
+        resource_type: str | None,
+        resource_id: str | None,
         action: str,
-        previous_state: Optional[dict],
-        new_state: Optional[dict],
+        previous_state: dict | None,
+        new_state: dict | None,
         status_code: int,
         success: bool,
-        error_code: Optional[str] = None,
-        error_message: Optional[str] = None,
-        error_details: Optional[dict] = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        error_details: dict | None = None,
         duration_ms: float,
-        idempotency_key: Optional[str] = None,
+        idempotency_key: str | None = None,
         idempotent: bool = False,
-        correlation_id: Optional[UUID] = None,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        api_key_hash: Optional[str] = None,
+        correlation_id: UUID | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        api_key_hash: str | None = None,
     ) -> None:
         """
         Registra un evento de auditoría de forma asíncrona y no bloqueante.
@@ -60,24 +57,24 @@ class AuditLogger:
                 request_body_hash = hashlib.sha256(
                     json.dumps(request_body, sort_keys=True).encode()
                 ).hexdigest()
-            
+
             new_state_hash = None
             if new_state:
                 new_state_hash = hashlib.sha256(
                     json.dumps(new_state, sort_keys=True).encode()
                 ).hexdigest()
-            
+
             previous_state_hash = None
             if previous_state:
                 previous_state_hash = hashlib.sha256(
                     json.dumps(previous_state, sort_keys=True).encode()
                 ).hexdigest()
-            
+
             # Calcular diff si ambos estados existen
             diff = None
             if previous_state and new_state:
                 diff = self._calculate_diff(previous_state, new_state)
-            
+
             query = """
                 INSERT INTO audit_log (
                     request_id, correlation_id,
@@ -96,23 +93,38 @@ class AuditLogger:
                     $23, $24, $25, $26, $26, NOW()
                 )
             """
-            
+
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
                     query,
-                    str(request_id), str(correlation_id) if correlation_id else None,
-                    agent_id, agent_name, json.dumps(agent_roles), api_key_hash,
-                    method, path, json.dumps(query_params), request_body_hash,
-                    resource_type, resource_id, action,
+                    str(request_id),
+                    str(correlation_id) if correlation_id else None,
+                    agent_id,
+                    agent_name,
+                    json.dumps(agent_roles),
+                    api_key_hash,
+                    method,
+                    path,
+                    json.dumps(query_params),
+                    request_body_hash,
+                    resource_type,
+                    resource_id,
+                    action,
                     json.dumps(previous_state) if previous_state else None,
                     json.dumps(new_state) if new_state else None,
                     json.dumps(diff) if diff else None,
-                    status_code, success,
-                    error_code, error_message, json.dumps(error_details) if error_details else None,
-                    duration_ms, idempotency_key, idempotent,
-                    ip_address, user_agent,
+                    status_code,
+                    success,
+                    error_code,
+                    error_message,
+                    json.dumps(error_details) if error_details else None,
+                    duration_ms,
+                    idempotency_key,
+                    idempotent,
+                    ip_address,
+                    user_agent,
                 )
-                
+
         except Exception as e:
             # No fallar la request principal por error de auditoría
             logger.error(
@@ -121,7 +133,7 @@ class AuditLogger:
                 request_id=str(request_id),
                 path=path,
             )
-    
+
     def _calculate_diff(self, old: dict, new: dict) -> dict:
         """Calcular diferencia entre dos estados."""
         diff = {
@@ -129,32 +141,32 @@ class AuditLogger:
             "removed": {},
             "changed": {},
         }
-        
+
         all_keys = set(old.keys()) | set(new.keys())
-        
+
         for key in all_keys:
             old_val = old.get(key)
             new_val = new.get(key)
-            
+
             if key not in old:
                 diff["added"][key] = new_val
             elif key not in new:
                 diff["removed"][key] = old_val
             elif old_val != new_val:
                 diff["changed"][key] = {"from": old_val, "to": new_val}
-        
+
         return diff
-    
+
     async def query_logs(
         self,
         *,
-        agent_id: Optional[str] = None,
-        resource_type: Optional[str] = None,
-        resource_id: Optional[str] = None,
-        action: Optional[str] = None,
-        success: Optional[bool] = None,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
+        agent_id: str | None = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        action: str | None = None,
+        success: bool | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list:
@@ -162,44 +174,44 @@ class AuditLogger:
         conditions = ["1=1"]
         params = []
         param_num = 1
-        
+
         if agent_id:
             conditions.append(f"agent_id = ${param_num}")
             params.append(agent_id)
             param_num += 1
-        
+
         if resource_type:
             conditions.append(f"resource_type = ${param_num}")
             params.append(resource_type)
             param_num += 1
-        
+
         if resource_id:
             conditions.append(f"resource_id = ${param_num}")
             params.append(resource_id)
             param_num += 1
-        
+
         if action:
             conditions.append(f"action = ${param_num}")
             params.append(action)
             param_num += 1
-        
+
         if success is not None:
             conditions.append(f"success = ${param_num}")
             params.append(success)
             param_num += 1
-        
+
         if start_date:
             conditions.append(f"created_at >= ${param_num}")
             params.append(start_date)
             param_num += 1
-        
+
         if end_date:
             conditions.append(f"created_at <= ${param_num}")
             params.append(end_date)
             param_num += 1
-        
+
         where_clause = " AND ".join(conditions)
-        
+
         query = f"""
             SELECT * FROM audit_log
             WHERE {where_clause}
@@ -207,11 +219,11 @@ class AuditLogger:
             LIMIT ${param_num} OFFSET ${param_num + 1}
         """
         params.extend([limit, offset])
-        
+
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
             return [dict(row) for row in rows]
-    
+
     async def get_summary(
         self,
         start_date: datetime,
@@ -232,11 +244,11 @@ class AuditLogger:
             GROUP BY DATE_TRUNC('day', created_at)
             ORDER BY day DESC
         """
-        
+
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(query, start_date, end_date)
             return [dict(row) for row in rows]
-    
+
     async def cleanup_old_logs(self, retention_days: int = 90) -> int:
         """Limpiar logs antiguos (solo exitosos, no acciones críticas)."""
         query = """
@@ -245,7 +257,7 @@ class AuditLogger:
             AND success = TRUE
             AND action NOT IN ('login', 'logout', 'permission_change', 'approval_decision')
         """
-        
+
         async with self.db_pool.acquire() as conn:
             result = await conn.execute(query, retention_days)
             # Extraer número de filas afectadas

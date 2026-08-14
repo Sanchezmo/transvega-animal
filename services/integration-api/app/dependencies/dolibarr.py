@@ -1,7 +1,9 @@
 """
 Dependency para inyectar cliente Dolibarr.
 """
-from typing import AsyncGenerator
+
+from collections.abc import AsyncGenerator
+
 from app.adapters.dolibarr.client import DolibarrClient
 from app.core.config import get_settings
 

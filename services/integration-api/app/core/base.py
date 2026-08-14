@@ -2,8 +2,9 @@
 Base class for SQLAlchemy models.
 Defined separately to avoid circular imports.
 """
-from sqlalchemy.orm import DeclarativeBase
+
 from sqlalchemy import MetaData
+from sqlalchemy.orm import DeclarativeBase
 
 # Convención de nombres para constraints (mejora migraciones Alembic)
 NAMING_CONVENTION = {

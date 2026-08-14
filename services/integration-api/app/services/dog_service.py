@@ -1,25 +1,26 @@
 """
 Dog service - CRUD operations for dogs and related entities using SQLAlchemy.
 """
-from datetime import datetime
-from typing import Optional, List, Tuple
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
-from sqlalchemy.orm import selectinload
-from fastapi import Depends
 
-from app.models import Dog, Breed, Litter, DogMedia, DogHealth, DogStatusHistory
-from app.schemas import (
-    DogCreate, DogUpdate, DogResponse,
-    BreedCreate, BreedResponse,
-    LitterCreate, LitterResponse,
-    DogMediaCreate, DogMediaResponse,
-    DogHealthCreate, DogHealthResponse,
-    DogStatusHistoryCreate, DogStatusHistoryResponse,
-    PaginatedResponse, PaginationParams,
-)
-from app.core.exceptions import NotFoundException, ValidationException
+from datetime import datetime
+
 from app.core.database import get_db
+from app.core.exceptions import NotFoundException, ValidationException
+from app.models import Breed, Dog, DogHealth, DogMedia, DogStatusHistory, Litter
+from app.schemas import (
+    BreedCreate,
+    DogCreate,
+    DogHealthCreate,
+    DogMediaCreate,
+    DogStatusHistoryCreate,
+    DogUpdate,
+    LitterCreate,
+    PaginationParams,
+)
+from fastapi import Depends
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 
 class DogService:
@@ -40,12 +41,14 @@ class DogService:
         await self.db.refresh(breed)
         return breed
 
-    async def get_breed(self, breed_id: int) -> Optional[Breed]:
+    async def get_breed(self, breed_id: int) -> Breed | None:
         """Get breed by ID."""
         result = await self.db.execute(select(Breed).where(Breed.id == breed_id))
         return result.scalar_one_or_none()
 
-    async def list_breeds(self, pagination: PaginationParams) -> Tuple[List[Breed], int]:
+    async def list_breeds(
+        self, pagination: PaginationParams
+    ) -> tuple[list[Breed], int]:
         """List breeds with pagination."""
         count_result = await self.db.execute(select(func.count(Breed.id)))
         total = count_result.scalar_one()
@@ -69,13 +72,17 @@ class DogService:
         if not breed:
             raise NotFoundException("Raza", str(litter_data.breed_id))
 
-        mother_result = await self.db.execute(select(Dog).where(Dog.id == litter_data.mother_id))
+        mother_result = await self.db.execute(
+            select(Dog).where(Dog.id == litter_data.mother_id)
+        )
         mother = mother_result.scalar_one_or_none()
         if not mother:
             raise NotFoundException("Madre", str(litter_data.mother_id))
 
         if litter_data.father_id:
-            father_result = await self.db.execute(select(Dog).where(Dog.id == litter_data.father_id))
+            father_result = await self.db.execute(
+                select(Dog).where(Dog.id == litter_data.father_id)
+            )
             father = father_result.scalar_one_or_none()
             if not father:
                 raise NotFoundException("Padre", str(litter_data.father_id))
@@ -86,16 +93,22 @@ class DogService:
         await self.db.refresh(litter)
         return litter
 
-    async def get_litter(self, litter_id: int) -> Optional[Litter]:
+    async def get_litter(self, litter_id: int) -> Litter | None:
         """Get litter by ID with relationships."""
         result = await self.db.execute(
             select(Litter)
-            .options(selectinload(Litter.breed), selectinload(Litter.mother), selectinload(Litter.father))
+            .options(
+                selectinload(Litter.breed),
+                selectinload(Litter.mother),
+                selectinload(Litter.father),
+            )
             .where(Litter.id == litter_id)
         )
         return result.scalar_one_or_none()
 
-    async def list_litters(self, pagination: PaginationParams) -> Tuple[List[Litter], int]:
+    async def list_litters(
+        self, pagination: PaginationParams
+    ) -> tuple[list[Litter], int]:
         """List litters with pagination."""
         count_result = await self.db.execute(select(func.count(Litter.id)))
         total = count_result.scalar_one()
@@ -158,7 +171,7 @@ class DogService:
         await self.db.refresh(dog)
         return dog
 
-    async def get_dog(self, dog_id: int) -> Optional[Dog]:
+    async def get_dog(self, dog_id: int) -> Dog | None:
         """Get dog by ID with relationships."""
         result = await self.db.execute(
             select(Dog)
@@ -173,7 +186,7 @@ class DogService:
         )
         return result.scalar_one_or_none()
 
-    async def get_dog_by_internal_id(self, internal_id: str) -> Optional[Dog]:
+    async def get_dog_by_internal_id(self, internal_id: str) -> Dog | None:
         """Get dog by internal ID."""
         result = await self.db.execute(
             select(Dog).where(Dog.internal_id == internal_id)
@@ -183,10 +196,10 @@ class DogService:
     async def list_dogs(
         self,
         pagination: PaginationParams,
-        breed_id: Optional[int] = None,
-        litter_id: Optional[int] = None,
-        status: Optional[str] = None,
-    ) -> Tuple[List[Dog], int]:
+        breed_id: int | None = None,
+        litter_id: int | None = None,
+        status: str | None = None,
+    ) -> tuple[list[Dog], int]:
         """List dogs with filters and pagination."""
         query = select(Dog).options(selectinload(Dog.breed))
 
@@ -216,7 +229,9 @@ class DogService:
         dogs = list(result.scalars().all())
         return dogs, total
 
-    async def update_dog(self, dog_id: int, dog_data: DogUpdate, updated_by: int = 1) -> Dog:
+    async def update_dog(
+        self, dog_id: int, dog_data: DogUpdate, updated_by: int = 1
+    ) -> Dog:
         """Update an existing dog."""
         dog = await self.get_dog(dog_id)
         if not dog:
@@ -283,9 +298,9 @@ class DogService:
         self,
         dog_id: int,
         pagination: PaginationParams,
-        media_type: Optional[str] = None,
-        purpose: Optional[str] = None,
-    ) -> Tuple[List[DogMedia], int]:
+        media_type: str | None = None,
+        purpose: str | None = None,
+    ) -> tuple[list[DogMedia], int]:
         """Get media for a dog with filters."""
         query = select(DogMedia).where(DogMedia.dog_id == dog_id)
 
@@ -315,7 +330,9 @@ class DogService:
     # HEALTH OPERATIONS
     # =========================================================================
 
-    async def add_health_record(self, dog_id: int, health_data: DogHealthCreate) -> DogHealth:
+    async def add_health_record(
+        self, dog_id: int, health_data: DogHealthCreate
+    ) -> DogHealth:
         """Add health record to a dog."""
         dog = await self.get_dog(dog_id)
         if not dog:
@@ -334,7 +351,9 @@ class DogService:
     # STATUS HISTORY OPERATIONS
     # =========================================================================
 
-    async def add_status_history(self, dog_id: int, status_data: DogStatusHistoryCreate) -> DogStatusHistory:
+    async def add_status_history(
+        self, dog_id: int, status_data: DogStatusHistoryCreate
+    ) -> DogStatusHistory:
         """Add status history entry for a dog."""
         dog = await self.get_dog(dog_id)
         if not dog:

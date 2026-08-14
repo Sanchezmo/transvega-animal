@@ -1,16 +1,14 @@
 """
 Dependencias de autenticación y autorización.
 """
-from typing import Optional, List
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.exceptions import AuthenticationException, AuthorizationException
-
+from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
 
 security = HTTPBearer(auto_error=False)
 
@@ -28,12 +26,14 @@ AGENT_ROLES = {
     "tax": ["tax", "read", "write"],
     "marketing": ["marketing", "read", "write"],
     "technical": ["technical", "read", "write"],
+    "expedientes": ["expedientes", "read", "write"],
+    "facturacion": ["facturacion", "read", "write"],
 }
 
 
 class AgentIdentity:
     """Identidad del agente autenticado."""
-    
+
     def __init__(
         self,
         agent_id: str,
@@ -45,35 +45,35 @@ class AgentIdentity:
         self.agent_name = agent_name
         self.roles = roles
         self.api_key = api_key
-    
+
     def has_role(self, role: str) -> bool:
         return role in self.roles or "admin" in self.roles
-    
+
     def has_any_role(self, roles: list[str]) -> bool:
         return any(r in self.roles for r in roles) or "admin" in self.roles
 
 
 async def get_current_agent(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> AgentIdentity:
     """
     Autentica y valida la identidad del agente via API Key o JWT.
-    
+
     Soporta dos métodos:
     1. API Key en header: Authorization: Bearer ***
     2. JWT token en header: Authorization: Bearer ***
     """
     if not credentials:
         raise AuthenticationException("Credenciales requeridas")
-    
+
     token = credentials.credentials
-    
+
     # Intentar como API Key (formato: tvsk_...)
     if token.startswith("tvsk_"):
         return await _verify_api_key(token)
-    
+
     # Intentar como JWT
     settings = get_settings()
     try:
@@ -85,10 +85,10 @@ async def get_current_agent(
         agent_id = payload.get("sub")
         agent_name = payload.get("agent_name")
         roles = payload.get("roles", [])
-        
+
         if not agent_id or not agent_name:
             raise AuthenticationException("Token JWT inválido")
-        
+
         return AgentIdentity(
             agent_id=agent_id,
             agent_name=agent_name,
@@ -102,7 +102,7 @@ async def get_current_agent(
 async def _verify_api_key(api_key: str) -> AgentIdentity:
     """Verifica API key contra configuración."""
     settings = get_settings()
-    
+
     for agent_name, expected_key in settings.get_agent_api_keys().items():
         if expected_key and api_key == expected_key:
             roles = AGENT_ROLES.get(agent_name, ["read"])
@@ -112,18 +112,22 @@ async def _verify_api_key(api_key: str) -> AgentIdentity:
                 roles=roles,
                 api_key=api_key[:8] + "..." + api_key[-4:],
             )
-    
+
     raise AuthenticationException("API Key inválida")
 
 
-def require_role(required_roles: List[str]):
+def require_role(required_roles: list[str]):
     """Dependency factory para requerir roles específicos."""
-    async def _check_role(agent: AgentIdentity = Depends(get_current_agent)) -> AgentIdentity:
+
+    async def _check_role(
+        agent: AgentIdentity = Depends(get_current_agent),
+    ) -> AgentIdentity:
         if not agent.has_any_role(required_roles):
             raise AuthorizationException(
                 f"Se requiere uno de los roles: {required_roles}"
             )
         return agent
+
     return _check_role
 
 

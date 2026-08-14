@@ -1,14 +1,19 @@
 """
 Configuración de base de datos - SQLAlchemy + asyncpg para auditoría.
 """
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import MetaData
-from redis.asyncio import Redis
-from app.core.config import settings, get_audit_db_url, get_redis_url
-from app.core.base import Base, metadata
-from app.models import Breed, Litter, DogMedia, DogHealth, DogStatusHistory, Dog  # noqa: F401
 
+from app.core.base import Base
+from app.core.config import get_audit_db_url, settings
+from app.models import (  # noqa: F401
+    Breed,
+    Dog,
+    DogHealth,
+    DogMedia,
+    DogStatusHistory,
+    Litter,
+)
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Convención de nombres para constraints (mejora migraciones Alembic)
 NAMING_CONVENTION = {

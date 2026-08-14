@@ -1,22 +1,21 @@
 """
 Publication service - CRUD operations for publications/listings using SQLAlchemy.
 """
+
 import json
 from datetime import datetime
-from typing import Optional, List, Tuple
-from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
-from fastapi import Depends
 
+from app.core.database import get_db
+from app.core.exceptions import NotFoundException, ValidationException
 from app.models import Publication
 from app.schemas import (
-    PublicationCreate, PublicationUpdate, PublicationResponse,
-    PaginatedResponse, PaginationParams,
+    PaginationParams,
+    PublicationCreate,
+    PublicationUpdate,
 )
-from app.core.exceptions import NotFoundException, ValidationException
-from app.core.database import get_db
+from fastapi import Depends
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class PublicationService:
@@ -25,11 +24,11 @@ class PublicationService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    def _serialize_photos(self, photos: List[str]) -> str:
+    def _serialize_photos(self, photos: list[str]) -> str:
         """Serialize photos list to JSON string."""
         return json.dumps(photos) if photos else "[]"
 
-    def _deserialize_photos(self, photos_str: str) -> List[str]:
+    def _deserialize_photos(self, photos_str: str) -> list[str]:
         """Deserialize photos JSON string to list."""
         if not photos_str:
             return []
@@ -38,12 +37,16 @@ class PublicationService:
         except (json.JSONDecodeError, TypeError):
             return []
 
-    async def create_publication(self, pub_data: PublicationCreate, created_by: int = 1) -> Publication:
+    async def create_publication(
+        self, pub_data: PublicationCreate, created_by: int = 1
+    ) -> Publication:
         """Create a new publication draft."""
         # Verify platform is valid
         valid_platforms = ["web", "milanuncios", "facebook", "instagram", "tiktok"]
         if pub_data.platform not in valid_platforms:
-            raise ValidationException(f"Plataforma inválida. Válidas: {valid_platforms}")
+            raise ValidationException(
+                f"Plataforma inválida. Válidas: {valid_platforms}"
+            )
 
         # Convert photos list to JSON string
         pub_dict = pub_data.model_dump()
@@ -60,7 +63,7 @@ class PublicationService:
         await self.db.refresh(publication)
         return publication
 
-    async def get_publication(self, pub_id: int) -> Optional[Publication]:
+    async def get_publication(self, pub_id: int) -> Publication | None:
         """Get publication by ID."""
         result = await self.db.execute(
             select(Publication).where(Publication.id == pub_id)
@@ -70,10 +73,10 @@ class PublicationService:
     async def list_publications(
         self,
         pagination: PaginationParams,
-        platform: Optional[str] = None,
-        status: Optional[str] = None,
-        expediente_id: Optional[int] = None,
-    ) -> Tuple[List[Publication], int]:
+        platform: str | None = None,
+        status: str | None = None,
+        expediente_id: int | None = None,
+    ) -> tuple[list[Publication], int]:
         """List publications with filters and pagination."""
         query = select(Publication)
 
@@ -105,7 +108,9 @@ class PublicationService:
         publications = list(result.scalars().all())
         return publications, total
 
-    async def update_publication(self, pub_id: int, pub_data: PublicationUpdate, updated_by: int = 1) -> Publication:
+    async def update_publication(
+        self, pub_id: int, pub_data: PublicationUpdate, updated_by: int = 1
+    ) -> Publication:
         """Update an existing publication."""
         publication = await self.get_publication(pub_id)
         if not publication:
@@ -115,7 +120,7 @@ class PublicationService:
         # Serialize photos if present
         if "photos" in update_data and update_data["photos"] is not None:
             update_data["photos"] = self._serialize_photos(update_data["photos"])
-        
+
         for field, value in update_data.items():
             setattr(publication, field, value)
 
@@ -126,14 +131,18 @@ class PublicationService:
         await self.db.refresh(publication)
         return publication
 
-    async def approve_publication(self, pub_id: int, approved_by: int = 1) -> Publication:
+    async def approve_publication(
+        self, pub_id: int, approved_by: int = 1
+    ) -> Publication:
         """Approve a publication for publishing."""
         publication = await self.get_publication(pub_id)
         if not publication:
             raise NotFoundException("Publicación", str(pub_id))
 
         if publication.status not in ["draft", "pending_approval"]:
-            raise ValidationException(f"Cannot approve publication in status: {publication.status}")
+            raise ValidationException(
+                f"Cannot approve publication in status: {publication.status}"
+            )
 
         publication.status = "approved"
         publication.approved_by = approved_by
@@ -145,7 +154,9 @@ class PublicationService:
         await self.db.refresh(publication)
         return publication
 
-    async def reject_publication(self, pub_id: int, reason: str, rejected_by: int = 1) -> Publication:
+    async def reject_publication(
+        self, pub_id: int, reason: str, rejected_by: int = 1
+    ) -> Publication:
         """Reject a publication."""
         publication = await self.get_publication(pub_id)
         if not publication:
@@ -162,14 +173,18 @@ class PublicationService:
         await self.db.refresh(publication)
         return publication
 
-    async def publish_publication(self, pub_id: int, published_by: int = 1) -> Publication:
+    async def publish_publication(
+        self, pub_id: int, published_by: int = 1
+    ) -> Publication:
         """Mark publication as published."""
         publication = await self.get_publication(pub_id)
         if not publication:
             raise NotFoundException("Publicación", str(pub_id))
 
         if publication.status != "approved":
-            raise ValidationException(f"Only approved publications can be published. Current status: {publication.status}")
+            raise ValidationException(
+                f"Only approved publications can be published. Current status: {publication.status}"
+            )
 
         publication.status = "published"
         publication.published_by = published_by
@@ -181,7 +196,9 @@ class PublicationService:
         await self.db.refresh(publication)
         return publication
 
-    async def unpublish_publication(self, pub_id: int, reason: str, unpublished_by: int = 1) -> Publication:
+    async def unpublish_publication(
+        self, pub_id: int, reason: str, unpublished_by: int = 1
+    ) -> Publication:
         """Unpublish/retire a publication."""
         publication = await self.get_publication(pub_id)
         if not publication:
@@ -205,7 +222,9 @@ class PublicationService:
             raise NotFoundException("Publicación", str(pub_id))
 
         if publication.status != "published":
-            raise ValidationException(f"Only published publications can be renewed. Current status: {publication.status}")
+            raise ValidationException(
+                f"Only published publications can be renewed. Current status: {publication.status}"
+            )
 
         # For Milanuncios, renewal typically means refreshing the listing
         publication.last_renewed_at = datetime.utcnow()
@@ -218,8 +237,8 @@ class PublicationService:
         return publication
 
 
-from fastapi import Depends
-
-async def get_publication_service(db: AsyncSession = Depends(get_db)) -> PublicationService:
+async def get_publication_service(
+    db: AsyncSession = Depends(get_db),
+) -> PublicationService:
     """Dependency to get PublicationService instance with DB session injected."""
     return PublicationService(db)
