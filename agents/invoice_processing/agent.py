@@ -225,14 +225,12 @@ Return ONLY the JSON, no extra text.
         return errors
 
     async def _lookup_supplier(self, tax_id: str) -> Optional[Dict[str, Any]]:
-        """Call DolibarrIntegrationService to find supplier by tax_id."""
-        # Placeholder: we assume a service exists; we'll mock for now.
-        # In real code, we would import DolibarrIntegrationService and call its method.
+        """Call InvoiceIntegrationService to find supplier by tax_id."""
         try:
-            from app.services.integration_service import DolibarrIntegrationService
-            service = DolibarrIntegrationService()
-            # Example method: get_supplier_by_tax_id
-            result = await service.get_supplier_by_tax_id(tax_id)
+            from app.services.invoice_integration_service import InvoiceIntegrationService
+            service = InvoiceIntegrationService()
+            async with service as s:
+                result = await s.get_supplier_by_tax_id(tax_id)
             return result
         except Exception as e:
             self.logger.warning("dolibarr_supplier_lookup_failed", error=str(e))
@@ -241,9 +239,10 @@ Return ONLY the JSON, no extra text.
     async def _check_duplicate(self, supplier_tax_id: str, invoice_number: str) -> bool:
         """Check if invoice already exists in Dolibarr."""
         try:
-            from app.services.integration_service import DolibarrIntegrationService
-            service = DolibarrIntegrationService()
-            return await service.invoice_exists(supplier_tax_id, invoice_number)
+            from app.services.invoice_integration_service import InvoiceIntegrationService
+            service = InvoiceIntegrationService()
+            async with service as s:
+                return await s.invoice_exists(supplier_tax_id, invoice_number)
         except Exception as e:
             self.logger.warning("duplicate_check_failed", error=str(e))
             # Fail closed: assume duplicate to avoid creating duplicate
@@ -354,18 +353,18 @@ Return ONLY the JSON, no extra text.
 
         # Create invoice in Dolibarr
         try:
-            from app.services.integration_service import DolibarrIntegrationService
-            service = DolibarrIntegrationService()
-            result = await service.create_supplier_invoice(
-                supplier_tax_id=invoice_data["supplier"]["tax_id"],
-                invoice_number=invoice_data["invoice"]["number"],
-                invoice_date=invoice_data["invoice"]["date"],
-                lines=invoice_data["lines"],
-                taxes=invoice_data["taxes"],
-                currency=invoice_data.get("currency", "EUR"),
-                # Optionally attach file reference
-                attached_file=final_path
-            )
+            from app.services.invoice_integration_service import InvoiceIntegrationService
+            service = InvoiceIntegrationService()
+            async with service as s:
+                result = await s.create_supplier_invoice(
+                    supplier_tax_id=invoice_data["supplier"]["tax_id"],
+                    invoice_number=invoice_data["invoice"]["number"],
+                    invoice_date=invoice_data["invoice"]["date"],
+                    lines=invoice_data["lines"],
+                    taxes=invoice_data["taxes"],
+                    currency=invoice_data.get("currency", "EUR"),
+                    attached_file=final_path
+                )
             return {"success": True, "message": "Invoice created in Dolibarr", "dolibarr_invoice_id": result.get("id")}
         except Exception as e:
             self.logger.error("dolibarr_invoice_create_failed", error=str(e))
