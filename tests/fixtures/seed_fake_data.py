@@ -1,9 +1,8 @@
 """
 Datos ficticios de prueba para desarrollo.
 """
+
 import json
-from datetime import date, datetime
-from decimal import Decimal
 
 # Terceros ficticios (clientes y proveedores/criadores)
 TERCEROS_FICTICIOS = [
@@ -283,16 +282,36 @@ EXPEDIENTES_ANIMALES = [
         "pedigree": "LOE-2845678",
         "vet_status": "healthy",
         "vaccines": [
-            {"name": "Polivalente", "date": "2024-01-15", "batch": "L24001", "vet": "Dr. Martínez"},
-            {"name": "Rabia", "date": "2024-02-01", "batch": "R24001", "vet": "Dr. Martínez"},
+            {
+                "name": "Polivalente",
+                "date": "2024-01-15",
+                "batch": "L24001",
+                "vet": "Dr. Martínez",
+            },
+            {
+                "name": "Rabia",
+                "date": "2024-02-01",
+                "batch": "R24001",
+                "vet": "Dr. Martínez",
+            },
         ],
         "deworming": [
             {"product": "Milbemax", "date": "2024-01-10", "next_due": "2024-04-10"},
         ],
         "passport": "ES2809010001",
         "certificates": [
-            {"type": "veterinary_health", "date": "2024-02-15", "vet": "Dr. Martínez", "document_url": "/docs/cert_vet_1.pdf"},
-            {"type": "genetic_tests", "date": "2023-12-01", "issuer": "Laboklin", "document_url": "/docs/genetic_1.pdf"},
+            {
+                "type": "veterinary_health",
+                "date": "2024-02-15",
+                "vet": "Dr. Martínez",
+                "document_url": "/docs/cert_vet_1.pdf",
+            },
+            {
+                "type": "genetic_tests",
+                "date": "2023-12-01",
+                "issuer": "Laboklin",
+                "document_url": "/docs/genetic_1.pdf",
+            },
         ],
         "photos": [
             "https://transvega-animal.es/photos/exp_001_1.jpg",
@@ -338,8 +357,18 @@ EXPEDIENTES_ANIMALES = [
         "pedigree": "LOE-2845679",
         "vet_status": "healthy",
         "vaccines": [
-            {"name": "Polivalente", "date": "2024-01-20", "batch": "L24002", "vet": "Dr. Martínez"},
-            {"name": "Rabia", "date": "2024-02-10", "batch": "R24002", "vet": "Dr. Martínez"},
+            {
+                "name": "Polivalente",
+                "date": "2024-01-20",
+                "batch": "L24002",
+                "vet": "Dr. Martínez",
+            },
+            {
+                "name": "Rabia",
+                "date": "2024-02-10",
+                "batch": "R24002",
+                "vet": "Dr. Martínez",
+            },
         ],
         "deworming": [
             {"product": "Milbemax", "date": "2024-01-15", "next_due": "2024-04-15"},
@@ -393,8 +422,18 @@ EXPEDIENTES_ANIMALES = [
         "pedigree": "LOE-2845680",
         "vet_status": "healthy",
         "vaccines": [
-            {"name": "Polivalente", "date": "2024-01-10", "batch": "L24003", "vet": "Dr. Gómez"},
-            {"name": "Rabia", "date": "2024-01-25", "batch": "R24003", "vet": "Dr. Gómez"},
+            {
+                "name": "Polivalente",
+                "date": "2024-01-10",
+                "batch": "L24003",
+                "vet": "Dr. Gómez",
+            },
+            {
+                "name": "Rabia",
+                "date": "2024-01-25",
+                "batch": "R24003",
+                "vet": "Dr. Gómez",
+            },
         ],
         "deworming": [
             {"product": "Milbemax", "date": "2024-01-05", "next_due": "2024-04-05"},
@@ -402,8 +441,18 @@ EXPEDIENTES_ANIMALES = [
         "passport": "ES2100010001",
         "certificates": [
             {"type": "veterinary_health", "date": "2024-02-10", "vet": "Dr. Gómez"},
-            {"type": "hip_dysplasia", "date": "2024-01-15", "issuer": "AVEPA", "result": "A/A"},
-            {"type": "elbow_dysplasia", "date": "2024-01-15", "issuer": "AVEPA", "result": "0/0"},
+            {
+                "type": "hip_dysplasia",
+                "date": "2024-01-15",
+                "issuer": "AVEPA",
+                "result": "A/A",
+            },
+            {
+                "type": "elbow_dysplasia",
+                "date": "2024-01-15",
+                "issuer": "AVEPA",
+                "result": "0/0",
+            },
         ],
         "photos": [
             "https://transvega-animal.es/photos/exp_003_1.jpg",
@@ -457,21 +506,21 @@ FACTURAS_FICTICIAS = [
 def save_fixtures():
     """Guardar fixtures en archivos JSON."""
     import os
-    
+
     os.makedirs("/app/fixtures/dolibarr", exist_ok=True)
-    
+
     with open("/app/fixtures/dolibarr/thirdparties.json", "w") as f:
         json.dump(TERCEROS_FICTICIOS, f, indent=2, ensure_ascii=False)
-    
+
     with open("/app/fixtures/dolibarr/products.json", "w") as f:
         json.dump(PRODUCTOS_FICTICIOS, f, indent=2, ensure_ascii=False)
-    
+
     with open("/app/fixtures/dolibarr/expedientes_animal.json", "w") as f:
         json.dump(EXPEDIENTES_ANIMALES, f, indent=2, ensure_ascii=False)
-    
+
     with open("/app/fixtures/dolibarr/invoices.json", "w") as f:
         json.dump(FACTURAS_FICTICIAS, f, indent=2, ensure_ascii=False)
-    
+
     print("Fixtures guardados en /app/fixtures/dolibarr/")
 
 

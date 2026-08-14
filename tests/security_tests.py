@@ -1,22 +1,29 @@
-import pytest
-from httpx import AsyncClient
-from app.main import app
-from app.dependencies.auth import AgentIdentity
 import uuid
+
+import pytest
+from app.main import app
+from httpx import AsyncClient
+
 
 class FakeAgent:
     def __init__(self, agent_id, agent_name, roles):
         self.agent_id = agent_id
         self.agent_name = agent_name
         self.roles = roles
-    def has_role(self, role): return role in self.roles
-    def has_any_role(self, roles): return any(r in self.roles for r in roles)
+
+    def has_role(self, role):
+        return role in self.roles
+
+    def has_any_role(self, roles):
+        return any(r in self.roles for r in roles)
+
 
 @pytest.mark.asyncio
 async def test_protected_endpoint_requires_auth():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         resp = await ac.get("/api/v1/expedientes/expedientes")
         assert resp.status_code == 401
+
 
 @pytest.mark.asyncio
 async def test_invalid_token_rejected():
@@ -25,20 +32,32 @@ async def test_invalid_token_rejected():
         resp = await ac.get("/api/v1/expedientes/expedientes", headers=headers)
         assert resp.status_code == 401
 
+
 @pytest.mark.asyncio
 async def test_no_extra_fields_allowed():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         fake = FakeAgent("test_agent", "expedientes", ["expedientes", "write"])
         app.dependency_overrides[
-            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
+            __import__(
+                "app.dependencies.auth", fromlist=["get_current_agent"]
+            ).get_current_agent
         ] = lambda: fake
         resp = await ac.post(
             "/api/v1/expedientes/expedientes",
-            json={"name": "Test", "breed": "Labrador", "sex": "M", "birth_date": "2024-01-01", "color": "Yellow", "weight_kg": 10.0, "microchip": "123456789012345"},
+            json={
+                "name": "Test",
+                "breed": "Labrador",
+                "sex": "M",
+                "birth_date": "2024-01-01",
+                "color": "Yellow",
+                "weight_kg": 10.0,
+                "microchip": "123456789012345",
+            },
             headers={"Authorization": "Bearer fake-token"},
         )
         assert resp.status_code == 422
         app.dependency_overrides.clear()
+
 
 @pytest.mark.asyncio
 async def test_no_secret_leak():
@@ -50,6 +69,7 @@ async def test_no_secret_leak():
         assert "apikey" not in str(data).lower()
         assert "secret" not in str(data).lower()
 
+
 @pytest.mark.asyncio
 async def test_cors_headers():
     async with AsyncClient(app=app, base_url="http://test") as ac:
@@ -57,19 +77,22 @@ async def test_cors_headers():
         assert resp.status_code == 200
         assert "access-control-allow-origin" in resp.headers
 
+
 @pytest.mark.asyncio
 async def test_rate_limit():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         # Use a fake agent to bypass auth
         fake = FakeAgent("test_agent", "expedientes", ["expedientes", "read"])
         app.dependency_overrides[
-            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
+            __import__(
+                "app.dependencies.auth", fromlist=["get_current_agent"]
+            ).get_current_agent
         ] = lambda: fake
 
         token = "fake-token"
         headers = {
             "Authorization": f"Bearer {token}",
-            "Idempotency-Key": str(uuid.uuid4())
+            "Idempotency-Key": str(uuid.uuid4()),
         }
         # Make multiple requests quickly to hit rate limit
         for _ in range(5):
@@ -78,12 +101,15 @@ async def test_rate_limit():
             assert resp.status_code in [200, 429]
         app.dependency_overrides.clear()
 
+
 @pytest.mark.asyncio
 async def test_create_and_get_expediente():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         fake = FakeAgent("test_agent", "expedientes", ["expedientes", "write"])
         app.dependency_overrides[
-            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
+            __import__(
+                "app.dependencies.auth", fromlist=["get_current_agent"]
+            ).get_current_agent
         ] = lambda: fake
         expediente_data = {
             "name": "Test Animal",
@@ -113,13 +139,16 @@ async def test_create_and_get_expediente():
         assert data["data"]["name"] == "Test Animal"
         app.dependency_overrides.clear()
 
+
 @pytest.mark.asyncio
 async def test_invoice_flow():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         # Create thirdparty
         fake = FakeAgent("test_agent", "terceros", ["invoicing", "write"])
         app.dependency_overrides[
-            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
+            __import__(
+                "app.dependencies.auth", fromlist=["get_current_agent"]
+            ).get_current_agent
         ] = lambda: fake
         tercero_data = {
             "name": "Test Client",
@@ -144,7 +173,9 @@ async def test_invoice_flow():
         # Create invoice
         fake = FakeAgent("test_agent", "facturacion", ["invoicing", "write"])
         app.dependency_overrides[
-            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
+            __import__(
+                "app.dependencies.auth", fromlist=["get_current_agent"]
+            ).get_current_agent
         ] = lambda: fake
         invoice_data = {
             "thirdparty_id": tercero_id,

@@ -1,20 +1,22 @@
 """
 Unit tests for dog-related Pydantic schemas.
 """
+
 from datetime import date, datetime
+
 from app.schemas import (
-    DogCreate,
-    DogResponse,
     BreedCreate,
     BreedResponse,
-    LitterCreate,
-    LitterResponse,
-    DogMediaCreate,
-    DogMediaResponse,
+    DogCreate,
     DogHealthCreate,
     DogHealthResponse,
+    DogMediaCreate,
+    DogMediaResponse,
+    DogResponse,
     DogStatusHistoryCreate,
     DogStatusHistoryResponse,
+    LitterCreate,
+    LitterResponse,
 )
 
 
@@ -35,14 +37,16 @@ def test_breed_schema():
     breed = BreedCreate(**data)
     assert breed.name == "Labrador Retriever"
     assert breed.average_weight_kg == 30.0
-    
+
     # Test response schema includes id and timestamps
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+        }
+    )
     response = BreedResponse(**response_data)
     assert response.id == 1
     assert response.name == "Labrador Retriever"
@@ -62,13 +66,15 @@ def test_litter_schema():
     litter = LitterCreate(**data)
     assert litter.name == "Litter of Champions"
     assert litter.size == 6
-    
+
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+        }
+    )
     response = LitterResponse(**response_data)
     assert response.id == 1
     assert response.breed_id == 1
@@ -97,16 +103,18 @@ def test_dog_schema():
     assert dog.name == "Buddy"
     assert dog.microchip == "123456789012345"
     assert dog.sex == "M"
-    
+
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "internal_id": "DOG-2026-00001",
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-        "created_by": 1,
-        "updated_by": 1,
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "internal_id": "DOG-2026-00001",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "created_by": 1,
+            "updated_by": 1,
+        }
+    )
     response = DogResponse(**response_data)
     assert response.id == 1
     assert response.internal_id == "DOG-2026-00001"
@@ -130,12 +138,14 @@ def test_dog_media_schema():
     assert media.file_path.startswith("/data/dogs/")
     assert len(media.file_hash) == 64
     assert media.media_type == "photo"
-    
+
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "created_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "created_at": datetime.now(),
+        }
+    )
     response = DogMediaResponse(**response_data)
     assert response.id == 1
     assert response.dog_id == 1
@@ -159,13 +169,15 @@ def test_dog_health_schema():
     health = DogHealthCreate(**data)
     assert health.weight_kg == 5.5
     assert health.temperature_celsius == 38.5
-    
+
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "dog_id": 1,
-        "recorded_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "dog_id": 1,
+            "recorded_at": datetime.now(),
+        }
+    )
     response = DogHealthResponse(**response_data)
     assert response.id == 1
     assert response.dog_id == 1
@@ -182,13 +194,15 @@ def test_dog_status_history_schema():
     history = DogStatusHistoryCreate(**data)
     assert history.status == "available"
     assert history.changed_by == 1
-    
+
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "dog_id": 1,
-        "changed_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "dog_id": 1,
+            "changed_at": datetime.now(),
+        }
+    )
     response = DogStatusHistoryResponse(**response_data)
     assert response.id == 1
     assert response.dog_id == 1

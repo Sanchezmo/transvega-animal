@@ -1,32 +1,31 @@
 """
 Tests unitarios para esquemas y validaciones.
 """
-import pytest
-from pydantic import ValidationError
 
+import pytest
 from app.schemas import (
-    ThirdPartyCreate,
-    ThirdPartyUpdate,
-    ProductCreate,
-    ProductUpdate,
+    ApprovalRequestCreate,
+    CertificateRecord,
     ExpedienteAnimalCreate,
     ExpedienteAnimalUpdate,
-    VaccineRecord,
-    DewormingRecord,
-    CertificateRecord,
     InvoiceCreate,
     InvoiceLineCreate,
     LeadCreate,
     LeadUpdate,
+    ProductCreate,
+    ProductUpdate,
     PublicationCreate,
-    ApprovalRequestCreate,
     TaskCreate,
+    ThirdPartyCreate,
+    ThirdPartyUpdate,
+    VaccineRecord,
 )
+from pydantic import ValidationError
 
 
 class TestThirdPartySchemas:
     """Tests para esquemas de terceros."""
-    
+
     def test_create_tercero_valido(self):
         """Crear tercero válido."""
         data = {
@@ -40,7 +39,7 @@ class TestThirdPartySchemas:
         assert tercero.name == "Juan Pérez"
         assert tercero.client == 1
         assert tercero.supplier == 0
-    
+
     def test_create_tercero_email_invalido(self):
         """Email inválido debe fallar."""
         with pytest.raises(ValidationError):
@@ -49,14 +48,14 @@ class TestThirdPartySchemas:
                 email="email-invalido",
                 client=1,
             )
-    
+
     def test_create_tercero_campos_obligatorios(self):
         """Nombre es obligatorio."""
         with pytest.raises(ValidationError):
             ThirdPartyCreate(
                 email="test@test.es",
             )
-    
+
     def test_update_tercero_parcial(self):
         """Actualización parcial válida."""
         update = ThirdPartyUpdate(
@@ -70,7 +69,7 @@ class TestThirdPartySchemas:
 
 class TestProductSchemas:
     """Tests para esquemas de productos."""
-    
+
     def test_create_producto_valido(self):
         """Crear producto válido."""
         data = {
@@ -84,7 +83,7 @@ class TestProductSchemas:
         assert producto.ref == "DOG-GOLDEN-001"
         assert producto.price == 1500.00
         assert producto.tva_tx == 21.0
-    
+
     def test_create_producto_precio_negativo_falla(self):
         """Precio negativo debe fallar."""
         with pytest.raises(ValidationError):
@@ -93,7 +92,7 @@ class TestProductSchemas:
                 label="Test",
                 price=-100.0,
             )
-    
+
     def test_update_producto_parcial(self):
         """Actualización parcial."""
         update = ProductUpdate(
@@ -107,7 +106,7 @@ class TestProductSchemas:
 
 class TestExpedienteAnimalSchemas:
     """Tests para esquemas de expedientes animales."""
-    
+
     def test_create_expediente_valido(self):
         """Crear expediente válido con todos los campos requeridos."""
         data = {
@@ -130,7 +129,7 @@ class TestExpedienteAnimalSchemas:
         assert exp.breed == "Golden Retriever"
         assert exp.microchip == "941000012345678"
         assert exp.sex == "H"
-    
+
     def test_microchip_invalido_corta(self):
         """Microchip demasiado corto debe fallar."""
         with pytest.raises(ValidationError):
@@ -143,7 +142,7 @@ class TestExpedienteAnimalSchemas:
                 weight_kg=10.0,
                 microchip="12345",  # Muy corto
             )
-    
+
     def test_microchip_invalido_letras(self):
         """Microchip con letras debe fallar."""
         with pytest.raises(ValidationError):
@@ -156,7 +155,7 @@ class TestExpedienteAnimalSchemas:
                 weight_kg=10.0,
                 microchip="94100001234567A",  # Con letra
             )
-    
+
     def test_sexo_invalido(self):
         """Sexo inválido debe fallar."""
         with pytest.raises(ValidationError):
@@ -169,7 +168,7 @@ class TestExpedienteAnimalSchemas:
                 weight_kg=10.0,
                 microchip="941000012345678",
             )
-    
+
     def test_vaccine_record_valido(self):
         """Registro de vacuna válido."""
         vaccine = VaccineRecord(
@@ -180,7 +179,7 @@ class TestExpedienteAnimalSchemas:
         )
         assert vaccine.name == "Polivalente"
         assert vaccine.batch == "L24001"
-    
+
     def test_certificate_record_valido(self):
         """Registro de certificado válido."""
         cert = CertificateRecord(
@@ -191,7 +190,7 @@ class TestExpedienteAnimalSchemas:
         )
         assert cert.type == "veterinary_health"
         assert cert.issuer == "Dr. Gómez"
-    
+
     def test_estado_comercial_invalido(self):
         """Estado comercial inválido debe fallar."""
         with pytest.raises(ValidationError):
@@ -205,7 +204,7 @@ class TestExpedienteAnimalSchemas:
                 microchip="941000012345678",
                 commercial_status="estado_inexistente",
             )
-    
+
     def test_update_expediente_parcial(self):
         """Actualización parcial de expediente."""
         update = ExpedienteAnimalUpdate(
@@ -221,7 +220,7 @@ class TestExpedienteAnimalSchemas:
 
 class TestInvoiceSchemas:
     """Tests para esquemas de facturas."""
-    
+
     def test_create_invoice_valida(self):
         """Crear factura válida con líneas."""
         data = {
@@ -240,7 +239,7 @@ class TestInvoiceSchemas:
         assert invoice.thirdparty_id == 1
         assert len(invoice.lines) == 1
         assert invoice.lines[0].unit_price == 1500.00
-    
+
     def test_invoice_sin_lineas_falla(self):
         """Factura sin líneas debe fallar."""
         with pytest.raises(ValidationError):
@@ -248,7 +247,7 @@ class TestInvoiceSchemas:
                 thirdparty_id=1,
                 lines=[],
             )
-    
+
     def test_linea_con_descuento(self):
         """Línea con descuento válido."""
         line = InvoiceLineCreate(
@@ -264,7 +263,7 @@ class TestInvoiceSchemas:
 
 class TestLeadSchemas:
     """Tests para esquemas de leads."""
-    
+
     def test_create_lead_valido(self):
         """Crear lead válido."""
         data = {
@@ -279,7 +278,7 @@ class TestLeadSchemas:
         assert lead.first_name == "Juan"
         assert lead.email == "juan@test.es"
         assert lead.country == "ES"
-    
+
     def test_lead_email_invalido(self):
         """Email inválido debe fallar."""
         with pytest.raises(ValidationError):
@@ -291,7 +290,7 @@ class TestLeadSchemas:
                 country="ES",
                 source="web",
             )
-    
+
     def test_lead_pais_codigo_invalido(self):
         """Código de país inválido debe fallar."""
         with pytest.raises(ValidationError):
@@ -303,7 +302,7 @@ class TestLeadSchemas:
                 country="ESPAÑA",  # Debe ser código ISO
                 source="web",
             )
-    
+
     def test_update_lead_parcial(self):
         """Actualización parcial de lead."""
         update = LeadUpdate(
@@ -320,7 +319,7 @@ class TestLeadSchemas:
 
 class TestPublicationSchemas:
     """Tests para esquemas de publicaciones."""
-    
+
     def test_create_publicacion_valida(self):
         """Crear publicación válida."""
         data = {
@@ -334,7 +333,7 @@ class TestPublicationSchemas:
         assert pub.expediente_id == 1
         assert pub.platform == "milanuncios"
         assert pub.price == 1500.00
-    
+
     def test_platform_invalida(self):
         """Plataforma inválida debe fallar."""
         with pytest.raises(ValidationError):
@@ -344,7 +343,7 @@ class TestPublicationSchemas:
                 title="Test",
                 description="Desc",
             )
-    
+
     def test_titulo_muy_corto(self):
         """Título muy corto debe fallar."""
         with pytest.raises(ValidationError):
@@ -358,7 +357,7 @@ class TestPublicationSchemas:
 
 class TestApprovalSchemas:
     """Tests para esquemas de aprobaciones."""
-    
+
     def test_create_aprobacion_valida(self):
         """Crear solicitud de aprobación válida."""
         data = {
@@ -373,7 +372,7 @@ class TestApprovalSchemas:
         assert approval.action == "validate_invoice"
         assert approval.resource_type == "invoice"
         assert approval.resource_id == "1"
-    
+
     def test_aprobacion_sin_razon_falla(self):
         """Aprobación sin razón debe fallar."""
         with pytest.raises(ValidationError):
@@ -389,7 +388,7 @@ class TestApprovalSchemas:
 
 class TestTaskSchemas:
     """Tests para esquemas de tareas."""
-    
+
     def test_create_tarea_valida(self):
         """Crear tarea válida."""
         data = {
@@ -403,7 +402,7 @@ class TestTaskSchemas:
         assert task.task_type == "publish_announcement"
         assert task.priority == 5
         assert task.agent_id == "agent_publishing"
-    
+
     def test_tarea_prioridad_invalida(self):
         """Prioridad fuera de rango debe fallar."""
         with pytest.raises(ValidationError):
@@ -411,7 +410,7 @@ class TestTaskSchemas:
                 task_type="test",
                 priority=15,  # Max 10
             )
-    
+
     def test_tarea_timeout_invalido(self):
         """Timeout fuera de rango debe fallar."""
         with pytest.raises(ValidationError):
