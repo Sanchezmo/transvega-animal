@@ -30,6 +30,90 @@ router = APIRouter(tags=["Dogs"])
 settings = get_settings()
 
 
+# =============================================================================
+# STATIC ROUTES (must come before parameterized routes like /{dog_id})
+# =============================================================================
+
+# Rutas para razas
+@router.get("/breeds", response_model=PaginatedResponse[BreedResponse])
+async def list_breeds(
+    pagination: PaginationParams = Depends(),
+    agent: dict = Depends(get_current_agent),
+    _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service=Depends(get_dog_service),
+):
+    """
+    Listar razas de perros.
+    """
+    breeds, total = await dog_service.list_breeds(pagination)
+    return PaginatedResponse(
+        success=True,
+        data=breeds,
+        total=total,
+        limit=pagination.limit,
+        offset=pagination.offset,
+    )
+
+
+@router.post(
+    "/breeds", response_model=BreedResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_breed(
+    breed: BreedCreate,
+    agent: dict = Depends(require_write),
+    _rate_limit: None = Depends(rate_limit_dependency),
+    _idempotency: None = Depends(idempotency_dependency),
+    dog_service=Depends(get_dog_service),
+):
+    """
+    Crear nueva raza.
+    """
+    created_breed = await dog_service.create_breed(breed)
+    return created_breed
+
+
+# Rutas para camadas
+@router.get("/litters", response_model=PaginatedResponse[LitterResponse])
+async def list_litters(
+    pagination: PaginationParams = Depends(),
+    agent: dict = Depends(get_current_agent),
+    _rate_limit: None = Depends(rate_limit_dependency),
+    dog_service=Depends(get_dog_service),
+):
+    """
+    Listar camadas de perros.
+    """
+    litters, total = await dog_service.list_litters(pagination)
+    return PaginatedResponse(
+        success=True,
+        data=litters,
+        total=total,
+        limit=pagination.limit,
+        offset=pagination.offset,
+    )
+
+
+@router.post(
+    "/litters", response_model=LitterResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_litter(
+    litter: LitterCreate,
+    agent: dict = Depends(require_write),
+    _rate_limit: None = Depends(rate_limit_dependency),
+    _idempotency: None = Depends(idempotency_dependency),
+    dog_service=Depends(get_dog_service),
+):
+    """
+    Crear nueva camada.
+    """
+    created_litter = await dog_service.create_litter(litter)
+    return created_litter
+
+
+# =============================================================================
+# DOG ROUTES (parameterized - must come after static routes)
+# =============================================================================
+
 @router.get("", response_model=PaginatedResponse[DogResponse])
 async def list_dogs(
     pagination: PaginationParams = Depends(),
@@ -127,82 +211,6 @@ async def delete_dog(
     Eliminar perro (solo si está en estado draft o inactive).
     """
     await dog_service.delete_dog(dog_id)
-
-
-# Rutas para razas
-@router.get("/breeds", response_model=PaginatedResponse[BreedResponse])
-async def list_breeds(
-    pagination: PaginationParams = Depends(),
-    agent: dict = Depends(get_current_agent),
-    _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service=Depends(get_dog_service),
-):
-    """
-    Listar razas de perros.
-    """
-    breeds, total = await dog_service.list_breeds(pagination)
-    return PaginatedResponse(
-        success=True,
-        data=breeds,
-        total=total,
-        limit=pagination.limit,
-        offset=pagination.offset,
-    )
-
-
-@router.post(
-    "/breeds", response_model=BreedResponse, status_code=status.HTTP_201_CREATED
-)
-async def create_breed(
-    breed: BreedCreate,
-    agent: dict = Depends(require_write),
-    _rate_limit: None = Depends(rate_limit_dependency),
-    _idempotency: None = Depends(idempotency_dependency),
-    dog_service=Depends(get_dog_service),
-):
-    """
-    Crear nueva raza.
-    """
-    created_breed = await dog_service.create_breed(breed)
-    return created_breed
-
-
-# Rutas para camadas
-@router.get("/litters", response_model=PaginatedResponse[LitterResponse])
-async def list_litters(
-    pagination: PaginationParams = Depends(),
-    agent: dict = Depends(get_current_agent),
-    _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service=Depends(get_dog_service),
-):
-    """
-    Listar camadas de perros.
-    """
-    litters, total = await dog_service.list_litters(pagination)
-    return PaginatedResponse(
-        success=True,
-        data=litters,
-        total=total,
-        limit=pagination.limit,
-        offset=pagination.offset,
-    )
-
-
-@router.post(
-    "/litters", response_model=LitterResponse, status_code=status.HTTP_201_CREATED
-)
-async def create_litter(
-    litter: LitterCreate,
-    agent: dict = Depends(require_write),
-    _rate_limit: None = Depends(rate_limit_dependency),
-    _idempotency: None = Depends(idempotency_dependency),
-    dog_service=Depends(get_dog_service),
-):
-    """
-    Crear nueva camada.
-    """
-    created_litter = await dog_service.create_litter(litter)
-    return created_litter
 
 
 # Rutas para media

@@ -54,7 +54,7 @@ class ContentMarketingAgent:
             await self.api_client.start()
         logger.info("content_marketing_agent_started")
 
-    async def close(self):
+    async def stop(self):
         """Close the internal API client."""
         if self.api_client:
             await self.api_client.close()

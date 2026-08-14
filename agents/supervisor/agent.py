@@ -66,6 +66,7 @@ class SupervisorAgent:
         self.media_pipeline_agent = create_media_pipeline_agent(config)
         self.content_agent = create_content_marketing_agent(config)
         self.publishing_agent = create_publishing_agent(config)
+        self.listing_agent = create_listing_agent(config)
         
         # Workflow state
         self.active_workflows: Dict[str, Dict] = {}
@@ -93,6 +94,10 @@ class SupervisorAgent:
         
         # Start sub-agents
         await self.dog_intake_agent.start()
+        await self.media_pipeline_agent.start()
+        await self.content_agent.start()
+        await self.publishing_agent.start()
+        await self.listing_agent.start()
         
         # Start background tasks
         asyncio.create_task(self._monitor_workflows())
@@ -105,10 +110,11 @@ class SupervisorAgent:
         logger.info("stopping_supervisor")
         self.status = "stopped"
         await self.api_client.aclose()
-        await self.media_pipeline_agent.close()
-        await self.content_agent.client.aclose()
-        await self.publishing_agent.close()
+        await self.media_pipeline_agent.stop()
+        await self.content_agent.stop()
+        await self.publishing_agent.stop()
         await self.dog_intake_agent.stop()
+        await self.listing_agent.stop()
 
     # =========================================================================
     # WORKFLOW ENTRY POINTS

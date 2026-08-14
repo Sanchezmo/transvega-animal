@@ -79,6 +79,16 @@ class MediaPipelineAgent:
         self.auto_select = config.get("MEDIA_PIPELINE_AUTO_SELECT", True)
         self.auto_generate_variants = config.get("MEDIA_PIPELINE_AUTO_GENERATE_VARIANTS", False)
 
+    async def start(self):
+        """Initialize sub-agents."""
+        await self.generation_agent.start()
+        logger.info("media_pipeline_agent_started")
+
+    async def stop(self):
+        """Close sub-agents."""
+        await self.generation_agent.stop()
+        logger.info("media_pipeline_agent_stopped")
+
     async def ingest_media(
         self,
         file_content: bytes,

@@ -6,6 +6,7 @@ import structlog
 import os
 import hashlib
 import io
+import shutil
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import mimetypes
@@ -107,9 +108,15 @@ class InvoiceProcessingAgent:
             nvidia_base_url=nvidia_base_url,
         )
 
-        # Storage roots
+        # Storage roots - separate directories for each stage
         self.invoice_storage_root = config.get("INVOICE_STORAGE_ROOT", "/data/invoices")
-        os.makedirs(self.invoice_storage_root, exist_ok=True)
+        self.pending_dir = os.path.join(self.invoice_storage_root, "pending")
+        self.processed_dir = os.path.join(self.invoice_storage_root, "processed")
+        self.rejected_dir = os.path.join(self.invoice_storage_root, "rejected")
+        
+        # Create all directories
+        for d in [self.invoice_storage_root, self.pending_dir, self.processed_dir, self.rejected_dir]:
+            os.makedirs(d, exist_ok=True)
 
         # OCR configuration (CPU-optimized defaults)
         self.ocr_dpi = config.get("OCR_DPI", 150)
@@ -125,20 +132,45 @@ class InvoiceProcessingAgent:
             "no_cloud_fallback_for_private",
         ]
 
-        self.logger = logger.bind(component=self.agent_id)
+    async def start(self):
+        """Initialize the agent."""
+        logger.info("invoice_processing_agent_started")
 
-    async def _store_file(self, file_content: bytes, filename: str, supplier_folder: str) -> str:
-        """Store file under invoice_storage_root/supplier_folder/ and return path."""
-        supplier_path = os.path.join(self.invoice_storage_root, supplier_folder)
+    async def stop(self):
+        """Close the router connections."""
+        await self.router.aclose()
+        logger.info("invoice_processing_agent_stopped")
+
+    def _get_supplier_folder(self, tax_id: str) -> str:
+        """Get sanitized supplier folder name from tax_id."""
+        return tax_id.replace("/", "_").replace("\\", "_")
+
+    def _get_pending_path(self, tax_id: str, filename: str) -> str:
+        """Get the pending storage path for a supplier's invoice."""
+        supplier_folder = self._get_supplier_folder(tax_id)
+        supplier_path = os.path.join(self.pending_dir, supplier_folder)
         os.makedirs(supplier_path, exist_ok=True)
         # Avoid overwriting: add hash if needed
-        file_hash = hashlib.sha256(file_content).hexdigest()[:8]
+        file_hash = hashlib.sha256(filename.encode()).hexdigest()[:8]
         base, ext = os.path.splitext(filename)
         stored_filename = f"{base}_{file_hash}{ext}" if not base.endswith(file_hash) else filename
-        file_path = os.path.join(supplier_path, stored_filename)
-        with open(file_path, "wb") as f:
-            f.write(file_content)
-        return file_path
+        return os.path.join(supplier_path, stored_filename)
+
+    def _get_processed_path(self, tax_id: str, filename: str) -> str:
+        """Get the processed storage path for a supplier's invoice."""
+        supplier_folder = self._get_supplier_folder(tax_id)
+        supplier_path = os.path.join(self.processed_dir, supplier_folder)
+        os.makedirs(supplier_path, exist_ok=True)
+        base, ext = os.path.splitext(filename)
+        return os.path.join(supplier_path, f"{base}{ext}")
+
+    def _get_rejected_path(self, tax_id: str, filename: str) -> str:
+        """Get the rejected storage path for a supplier's invoice."""
+        supplier_folder = self._get_supplier_folder(tax_id)
+        supplier_path = os.path.join(self.rejected_dir, supplier_folder)
+        os.makedirs(supplier_path, exist_ok=True)
+        base, ext = os.path.splitext(filename)
+        return os.path.join(supplier_path, f"{base}{ext}")
 
     async def _extract_text_from_pdf(self, file_path: str) -> str:
         """Try to extract text layer; if fails, return empty string."""
@@ -324,6 +356,18 @@ Return ONLY the JSON, no extra text.
         """
         Main entry point: process an invoice file.
         Returns a dict with success, extracted data, validation errors, and next steps.
+        
+        Flow:
+        1. Store file temporarily for OCR/extraction
+        2. Extract text (PDF text layer or OCR)
+        3. Extract structured data via Ollama
+        4. Validate with Pydantic
+        5. Deterministic checks
+        6. Lookup supplier in Dolibarr
+        7. Check duplicate
+        8. COPY file to pending storage (persists after approval)
+        9. CLEANUP temp file
+        10. Return pending file path for approval
         """
         self.logger.info("processing_invoice", filename=filename, size=len(file_content))
 
@@ -346,16 +390,20 @@ Return ONLY the JSON, no extra text.
         # Step 0: Determine privacy scope (should be LOCAL_ONLY for invoices)
         privacy_scope = "LOCAL_ONLY"
 
-        # Step 1: Store file temporarily using tempfile for automatic cleanup
+        # Step 1: Store file temporarily using tempfile for processing
         import tempfile
         temp_file_path = None
+        raw_text = ""
+        supplier_tax_id = None
+        invoice_number = None
+        pending_file_path = None
+        
         try:
             with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as tmp:
                 tmp.write(file_content)
                 temp_file_path = tmp.name
 
             # Step 2: Extract text with timeout
-            raw_text = ""
             mime_type, _ = mimetypes.guess_type(filename)
             if mime_type == "application/pdf" or filename.lower().endswith('.pdf'):
                 # First try to extract text layer
@@ -393,56 +441,59 @@ Return ONLY the JSON, no extra text.
                     raw_text = ""
 
             if not raw_text:
-                return {"success": False, "error": "Failed to extract text from file", "file_path": temp_file_path}
+                return {"success": False, "error": "Failed to extract text from file"}
+
+            # Step 3: Extract structured data via Ollama
+            try:
+                extracted = await self._extract_structured_data(raw_text)
+            except Exception as e:
+                return {"success": False, "error": f"Structured extraction failed: {e}", "raw_text": raw_text[:500]}
+
+            # Step 4: Validate with Pydantic
+            try:
+                invoice = await self._validate_with_pydantic(extracted)
+            except Exception as e:
+                return {"success": False, "error": f"Pydantic validation failed: {e}", "extracted": extracted}
+
+            # Step 5: Deterministic checks
+            check_errors = await self._deterministic_checks(invoice)
+            if check_errors:
+                return {"success": False, "error": "Deterministic checks failed", "details": check_errors, "invoice": invoice.dict()}
+
+            # Step 6: Lookup supplier in Dolibarr
+            supplier_tax_id = invoice.supplier.tax_id
+            supplier_info = await self._lookup_supplier(supplier_tax_id)
+            if not supplier_info:
+                return {"success": False, "error": "Supplier not found in Dolibarr", "tax_id": supplier_tax_id, "invoice": invoice.dict()}
+
+            # Step 7: Check duplicate
+            invoice_number = invoice.invoice.get("number", "")
+            is_dup = await self._check_duplicate(supplier_tax_id, invoice_number)
+            if is_dup:
+                return {"success": False, "error": "Duplicate invoice found", "supplier": supplier_info, "invoice_number": invoice_number, "invoice": invoice.dict()}
+
+            # Step 8: COPY file to PENDING storage (persists after approval)
+            # This is the critical fix: we copy the ORIGINAL file to pending BEFORE cleaning up temp
+            pending_file_path = self._get_pending_path(supplier_tax_id, filename)
+            shutil.copy2(temp_file_path, pending_file_path)
+            self.logger.info("invoice_copied_to_pending", pending_path=pending_file_path, supplier_tax_id=supplier_tax_id)
+
         finally:
-            # Always cleanup temp file
+            # Step 9: Always cleanup temp file (after we've copied to pending)
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
                     os.unlink(temp_file_path)
                 except Exception as e:
                     self.logger.warning("temp_file_cleanup_failed", path=temp_file_path, error=str(e))
 
-        # Step 3: Extract structured data via Ollama
-        try:
-            extracted = await self._extract_structured_data(raw_text)
-        except Exception as e:
-            return {"success": False, "error": f"Structured extraction failed: {e}", "raw_text": raw_text[:500]}
-
-        # Step 4: Validate with Pydantic
-        try:
-            invoice = await self._validate_with_pydantic(extracted)
-        except Exception as e:
-            return {"success": False, "error": f"Pydantic validation failed: {e}", "extracted": extracted}
-
-        # Step 5: Deterministic checks
-        check_errors = await self._deterministic_checks(invoice)
-        if check_errors:
-            return {"success": False, "error": "Deterministic checks failed", "details": check_errors, "invoice": invoice.dict()}
-
-        # Step 6: Lookup supplier in Dolibarr
-        supplier_tax_id = invoice.supplier.tax_id
-        supplier_info = await self._lookup_supplier(supplier_tax_id)
-        if not supplier_info:
-            return {"success": False, "error": "Supplier not found in Dolibarr", "tax_id": supplier_tax_id, "invoice": invoice.dict()}
-
-        # Step 7: Check duplicate
-        invoice_number = invoice.invoice.get("number", "")
-        is_dup = await self._check_duplicate(supplier_tax_id, invoice_number)
-        if is_dup:
-            return {"success": False, "error": "Duplicate invoice found", "supplier": supplier_info, "invoice_number": invoice_number, "invoice": invoice.dict()}
-
-        # Step 8: Prepare for approval
-        # We'll move file to final supplier folder after approval.
-        supplier_folder = supplier_tax_id.replace("/", "_")
-        final_path = os.path.join(self.invoice_storage_root, supplier_folder, os.path.basename(file_path))
-        os.makedirs(os.path.dirname(final_path), exist_ok=True)
-        # Note: we keep the file in temp for now; after approval we will move.
+        # Step 10: Return success with pending file path for approval
+        final_path = self._get_processed_path(supplier_tax_id, filename)
 
         return {
             "success": True,
             "message": "Invoice processed successfully, awaiting approval",
             "privacy_scope": privacy_scope,
-            "file_path": file_path,
+            "pending_file_path": pending_file_path,
             "final_path": final_path,
             "supplier": supplier_info,
             "invoice": invoice.dict(),
@@ -461,13 +512,20 @@ Return ONLY the JSON, no extra text.
             }
         }
 
-    async def approve_invoice(self, file_path: str, final_path: str, invoice_data: Dict[str, Any], uploaded_by: int = 0) -> Dict[str, Any]:
+    async def approve_invoice(self, pending_file_path: str, final_path: str, invoice_data: Dict[str, Any], uploaded_by: int = 0) -> Dict[str, Any]:
         """
-        Call after human approval: move file, create invoice in Dolibarr via integration service.
+        Call after human approval: move file from pending to processed, create invoice in Dolibarr via integration service.
         """
+        # Verify pending file exists
+        if not os.path.exists(pending_file_path):
+            self.logger.error("pending_file_not_found", path=pending_file_path)
+            return {"success": False, "error": f"Pending file not found: {pending_file_path}"}
+
         try:
-            # Move file
-            os.rename(file_path, final_path)
+            # Move file from pending to processed
+            os.makedirs(os.path.dirname(final_path), exist_ok=True)
+            shutil.move(pending_file_path, final_path)
+            self.logger.info("invoice_moved_pending_to_processed", pending=pending_file_path, final=final_path)
         except Exception as e:
             self.logger.error("file_move_failed", error=str(e))
             return {"success": False, "error": f"Failed to move file: {e}"}
@@ -492,8 +550,29 @@ Return ONLY the JSON, no extra text.
             # Optionally move file back? We'll leave it stored.
             return {"success": False, "error": f"Failed to create invoice in Dolibarr: {e}"}
 
-    async def close(self):
-        await self.router.aclose()
+    async def reject_invoice(self, pending_file_path: str, reason: str) -> Dict[str, Any]:
+        """
+        Call after human rejection: move file from pending to rejected.
+        """
+        if not os.path.exists(pending_file_path):
+            self.logger.error("pending_file_not_found", path=pending_file_path)
+            return {"success": False, "error": f"Pending file not found: {pending_file_path}"}
+
+        try:
+            # Extract tax_id from path to determine rejected location
+            # Path format: /data/invoices/pending/{tax_id}/{filename}
+            rel_path = os.path.relpath(pending_file_path, self.pending_dir)
+            tax_id = rel_path.split(os.sep)[0]
+            filename = os.path.basename(pending_file_path)
+            rejected_path = self._get_rejected_path(tax_id, filename)
+            
+            os.makedirs(os.path.dirname(rejected_path), exist_ok=True)
+            shutil.move(pending_file_path, rejected_path)
+            self.logger.info("invoice_moved_pending_to_rejected", pending=pending_file_path, rejected=rejected_path, reason=reason)
+            return {"success": True, "message": f"Invoice rejected and archived: {reason}", "rejected_path": rejected_path}
+        except Exception as e:
+            self.logger.error("file_reject_failed", error=str(e))
+            return {"success": False, "error": f"Failed to archive rejected invoice: {e}"}
 
 
 def create_invoice_processing_agent(config: Dict) -> InvoiceProcessingAgent:

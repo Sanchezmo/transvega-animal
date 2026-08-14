@@ -82,6 +82,13 @@ class DogIntakeAgent:
         if self.api_client:
             await self.api_client.close()
 
+    def _ensure_client(self) -> None:
+        """Ensure API client is initialized; raise clear error if not."""
+        if self.api_client is None:
+            raise RuntimeError(
+                "DogIntakeAgent not initialized. Call await start() before using the agent."
+            )
+
     async def process_message(self, message: Dict) -> Dict:
         """
         Process a Telegram message for the intake flow.
@@ -221,7 +228,7 @@ class DogIntakeAgent:
             required = ["name", "sex", "birth_date", "color", "microchip"]
             if all(field in session.data for field in required) and "breed_name" in session.data:
                 # Look up breed by name
-                breed_resp = await self.api_client.get("/dogs/breeds/")
+                breed_resp = await self.api_client.get("/dogs/breeds")
                 if breed_resp.get("data"):
                     breeds = breed_resp.get("data", [])
                     for breed in breeds:
@@ -365,6 +372,7 @@ class DogIntakeAgent:
         }
 
     async def process_task(self, task: Dict) -> Dict:
+        self._ensure_client()
         task_type = task.get("task_type")
 
         handlers = {
@@ -395,6 +403,7 @@ class DogIntakeAgent:
 
     async def _create_dog(self, data: Dict) -> Dict:
         """Crear nuevo perro via API."""
+        self._ensure_client()
         # Validate required fields
         required = ["name", "breed_id", "sex", "birth_date", "color", "microchip"]
         for field in required:
@@ -440,6 +449,7 @@ class DogIntakeAgent:
 
     async def _update_dog(self, data: Dict) -> Dict:
         """Actualizar perro existente via API."""
+        self._ensure_client()
         dog_id = data.get("dog_id")
         if not dog_id:
             return {"success": False, "error": "Dog ID required"}
@@ -478,6 +488,7 @@ class DogIntakeAgent:
 
     async def _add_media(self, data: Dict) -> Dict:
         """Asociar media (foto/video) a un perro via API."""
+        self._ensure_client()
         dog_id = data.get("dog_id")
         if not dog_id:
             return {"success": False, "error": "Dog ID required"}
@@ -552,6 +563,7 @@ class DogIntakeAgent:
 
     async def _set_parents(self, data: Dict) -> Dict:
         """Asociar padre y/o madre a un perro via API."""
+        self._ensure_client()
         dog_id = data.get("dog_id")
         if not dog_id:
             return {"success": False, "error": "Dog ID required"}
@@ -585,6 +597,7 @@ class DogIntakeAgent:
 
     async def _set_litter(self, data: Dict) -> Dict:
         """Asociar perro a una camada via API."""
+        self._ensure_client()
         dog_id = data.get("dog_id")
         if not dog_id:
             return {"success": False, "error": "Dog ID required"}
@@ -615,6 +628,7 @@ class DogIntakeAgent:
 
     async def _update_health(self, data: Dict) -> Dict:
         """Actualizar o agregar registro de salud via API."""
+        self._ensure_client()
         dog_id = data.get("dog_id")
         if not dog_id:
             return {"success": False, "error": "Dog ID required"}
@@ -653,6 +667,7 @@ class DogIntakeAgent:
 
     async def _change_status(self, data: Dict) -> Dict:
         """Cambiar el estado de disponibilidad del perro via API."""
+        self._ensure_client()
         dog_id = data.get("dog_id")
         if not dog_id:
             return {"success": False, "error": "Dog ID required"}
@@ -683,6 +698,7 @@ class DogIntakeAgent:
 
     async def _get_dog(self, data: Dict) -> Dict:
         """Obtener un perro por ID via API."""
+        self._ensure_client()
         dog_id = data.get("dog_id")
         if not dog_id:
             return {"success": False, "error": "Dog ID required"}
@@ -704,6 +720,7 @@ class DogIntakeAgent:
 
     async def _list_dogs(self, data: Dict) -> Dict:
         """Listar perros con filtros opcionales via API."""
+        self._ensure_client()
         # Build query params
         params = {}
         if data.get("breed_id") is not None:

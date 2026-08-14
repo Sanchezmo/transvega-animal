@@ -41,6 +41,15 @@ class MediaGenerationAgent:
             "provider_optional",  # The agent works even if providers fail (will return error)
         ]
 
+    async def start(self):
+        """Initialize the agent."""
+        logger.info("media_generation_agent_started")
+
+    async def stop(self):
+        """Close the router connections."""
+        await self.router.aclose()
+        logger.info("media_generation_agent_stopped")
+
     def _validate_output_file(self, output_path: str) -> Dict[str, Any]:
         """Validate that the output file exists, has size > 0, and is a valid format."""
         path = Path(output_path)
@@ -180,9 +189,6 @@ class MediaGenerationAgent:
         except Exception as e:
             logger.error("tts_synthesis_failed", error=str(e))
             return {"success": False, "error": str(e), "privacy_scope": privacy_scope}
-
-    async def close(self):
-        await self.router.aclose()
 
 
 # Factory function
