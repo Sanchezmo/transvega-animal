@@ -10,11 +10,11 @@ from typing import Dict, List, Optional, Any
 from uuid import uuid4
 from enum import Enum
 
-from app.agents.dog_intake.agent import DogIntakeAgent
-from app.agents.media_pipeline.agent import create_media_pipeline_agent
-from app.agents.content_marketing.agent import create_content_marketing_agent
-from app.agents.publishing.agent import create_publishing_agent
-from app.agents.listing.agent import create_listing_agent
+from agents.dog_intake.agent import DogIntakeAgent
+from agents.media_pipeline.agent import create_media_pipeline_agent
+from agents.content_marketing.agent import create_content_marketing_agent
+from agents.publishing.agent import create_publishing_agent
+from agents.listing.agent import create_listing_agent
 
 logger = structlog.get_logger()
 

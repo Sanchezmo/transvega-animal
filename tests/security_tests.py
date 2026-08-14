@@ -1,8 +1,9 @@
 import uuid
 
 import pytest
-from app.main import app
 from httpx import AsyncClient
+
+from app.main import app
 
 
 class FakeAgent:
@@ -38,9 +39,7 @@ async def test_no_extra_fields_allowed():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         fake = FakeAgent("test_agent", "expedientes", ["expedientes", "write"])
         app.dependency_overrides[
-            __import__(
-                "app.dependencies.auth", fromlist=["get_current_agent"]
-            ).get_current_agent
+            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
         resp = await ac.post(
             "/api/v1/expedientes/expedientes",
@@ -84,9 +83,7 @@ async def test_rate_limit():
         # Use a fake agent to bypass auth
         fake = FakeAgent("test_agent", "expedientes", ["expedientes", "read"])
         app.dependency_overrides[
-            __import__(
-                "app.dependencies.auth", fromlist=["get_current_agent"]
-            ).get_current_agent
+            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
 
         token = "fake-token"
@@ -107,9 +104,7 @@ async def test_create_and_get_expediente():
     async with AsyncClient(app=app, base_url="http://test") as ac:
         fake = FakeAgent("test_agent", "expedientes", ["expedientes", "write"])
         app.dependency_overrides[
-            __import__(
-                "app.dependencies.auth", fromlist=["get_current_agent"]
-            ).get_current_agent
+            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
         expediente_data = {
             "name": "Test Animal",
@@ -146,9 +141,7 @@ async def test_invoice_flow():
         # Create thirdparty
         fake = FakeAgent("test_agent", "terceros", ["invoicing", "write"])
         app.dependency_overrides[
-            __import__(
-                "app.dependencies.auth", fromlist=["get_current_agent"]
-            ).get_current_agent
+            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
         tercero_data = {
             "name": "Test Client",
@@ -173,9 +166,7 @@ async def test_invoice_flow():
         # Create invoice
         fake = FakeAgent("test_agent", "facturacion", ["invoicing", "write"])
         app.dependency_overrides[
-            __import__(
-                "app.dependencies.auth", fromlist=["get_current_agent"]
-            ).get_current_agent
+            __import__("app.dependencies.auth", fromlist=["get_current_agent"]).get_current_agent
         ] = lambda: fake
         invoice_data = {
             "thirdparty_id": tercero_id,

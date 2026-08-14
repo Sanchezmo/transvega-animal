@@ -122,27 +122,25 @@ async def create_aprobacion(
     - Borrar datos
     - Exportar grandes volúmenes
     """
-    # Validar acción permitida
-    allowed_actions = [
-        "publish",
-        "price_change",
-        "discount",
-        "confirm_reservation",
-        "validate_invoice",
-        "rectify_invoice",
-        "cancel_invoice",
-        "present_taxes",
-        "make_payment",
-        "modify_chart_accounts",
-        "modify_tax_rates",
-        "modify_fiscal_data",
-        "launch_paid_campaign",
-        "update_production",
-        "delete_data",
-        "bulk_export",
-    ]
-
-    # TODO: Validar acción
+    # TODO: Validar acción permitida
+    # allowed_actions = [
+    #     "publish",
+    #     "price_change",
+    #     "discount",
+    #     "confirm_reservation",
+    #     "validate_invoice",
+    #     "rectify_invoice",
+    #     "cancel_invoice",
+    #     "present_taxes",
+    #     "make_payment",
+    #     "modify_chart_accounts",
+    #     "modify_tax_rates",
+    #     "modify_fiscal_data",
+    #     "launch_paid_campaign",
+    #     "update_production",
+    #     "delete_data",
+    #     "bulk_export",
+    # ]
     # if accion not in allowed_actions:
     #     raise ValidationException(f"Acción no permitida: {accion}")
 

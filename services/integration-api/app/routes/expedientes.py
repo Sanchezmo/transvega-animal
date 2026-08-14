@@ -209,12 +209,14 @@ async def validate_documentation(
 @router.post("/{expediente_id}/publish", status_code=status.HTTP_202_ACCEPTED)
 async def publish_expediente(
     expediente_id: int,
-    platforms: list[str] = ["web", "milanuncios"],
+    platforms: list[str] | None = None,
     agent: dict = Depends(require_write),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
 ):
+    if platforms is None:
+        platforms = ["web", "milanuncios"]
     """
     Solicitar publicación del expediente en canales.
 

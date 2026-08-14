@@ -2,13 +2,13 @@
 Tests de integración para la API.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
 from app.main import app
-from httpx import AsyncClient, ASGITransport
-from redis.asyncio import Redis
 
 
 class MockRedis:
@@ -82,9 +82,7 @@ def create_mock_dolibarr_request():
     _invoices = []
     _next_invoice_id = 1
 
-    async def mock_request(
-        self, method: str, endpoint: str, params=None, json=None, data=None
-    ):
+    async def mock_request(self, method: str, endpoint: str, params=None, json=None, data=None):
         nonlocal _next_id, _next_invoice_id
 
         if method == "POST" and endpoint == "thirdparties":
@@ -192,9 +190,7 @@ def create_mock_dolibarr_request():
         # For other endpoints, raise not implemented
         from app.core.exceptions import DolibarrException
 
-        raise DolibarrException(
-            message=f"Mock not implemented for {method} {endpoint}", status_code=501
-        )
+        raise DolibarrException(message=f"Mock not implemented for {method} {endpoint}", status_code=501)
 
     return mock_request
 
@@ -209,13 +205,8 @@ async def mock_redis():
 async def client(mock_redis: MockRedis):
     """Cliente HTTP para testing."""
     # Override the get_redis dependency
-    from app.core.database import get_redis
-    from app.dependencies.dolibarr import get_dolibarr_client
     from app.adapters.dolibarr.client import DolibarrClient
-    from app.dependencies.rate_limit import (
-        rate_limit_dependency,
-        idempotency_dependency,
-    )
+    from app.core.database import get_redis
 
     app.dependency_overrides[get_redis] = lambda: mock_redis
 
@@ -484,9 +475,7 @@ async def test_no_extra_fields_allowed(client: AsyncClient):
             "microchip": "123456789012345",
             "extra_field": "no_allowed",
         }
-        response = await client.post(
-            "/api/v1/expedientes", json=payload, headers=headers
-        )
+        response = await client.post("/api/v1/expedientes", json=payload, headers=headers)
         # Should reject extra field via Pydantic -> 422
         assert response.status_code == 422
 
@@ -553,9 +542,7 @@ async def test_create_and_get_expediente(client: AsyncClient):
         assert resp.status_code == 201
         data = resp.json()
         expediente_id = data["id"]
-        resp2 = await client.get(
-            f"/api/v1/expedientes/{expediente_id}", headers=headers
-        )
+        resp2 = await client.get(f"/api/v1/expedientes/{expediente_id}", headers=headers)
         assert resp2.status_code == 200
         assert resp2.json()["name"] == "Fido"
 

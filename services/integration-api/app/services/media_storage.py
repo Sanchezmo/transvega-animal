@@ -4,7 +4,6 @@ import hashlib
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import List, Optional
 
 from app.core.config import settings
 from app.core.exceptions import ValidationException
@@ -145,7 +144,8 @@ def save_uploaded_file(
         file_content: raw bytes of the file
         filename: original filename (for extension, etc.)
         dog_internal_id: the dog's internal ID (e.g., DOG-2026-00001)
-        variant: one of 'original', 'cover', 'listing_01'-'listing_10', 'social_square', 'social_story', 'social_facebook', 'processed'
+        variant: one of 'original', 'cover', 'listing_01'-'listing_10',
+            'social_square', 'social_story', 'social_facebook', 'processed'
         uploaded_by: user ID who uploaded
 
     Returns:
@@ -236,7 +236,6 @@ def save_uploaded_file(
 
 def get_media_asset(dog_internal_id: str, asset_id: str, variant: str) -> MediaAsset | None:
     """Locate a stored asset by hash and variant."""
-    base = get_media_root() / dog_internal_id
     variant_dir = get_variant_dir(dog_internal_id, variant)
     if not variant_dir.exists():
         return None
@@ -245,7 +244,6 @@ def get_media_asset(dog_internal_id: str, asset_id: str, variant: str) -> MediaA
     for ext in [".jpg", ".jpeg", ".png", ".mp4"]:
         candidate = variant_dir / f"{asset_id}{ext}"
         if candidate.exists():
-            stat = candidate.stat()
             return MediaAsset(
                 id=asset_id,
                 dog_id=dog_internal_id,

@@ -16,8 +16,8 @@ from app.services.media_storage import (
     list_dog_assets,
     get_assets_for_publishing,
 )
-from app.agents.media_selection.agent import MediaSelectionAgent
-from app.agents.media_generation.agent import MediaGenerationAgent, create_media_generation_agent
+from agents.media_selection.agent import MediaSelectionAgent
+from agents.media_generation.agent import MediaGenerationAgent, create_media_generation_agent
 from app.schemas import DogMediaCreate
 
 logger = structlog.get_logger()

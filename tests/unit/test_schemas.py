@@ -3,6 +3,8 @@ Tests unitarios para esquemas y validaciones.
 """
 
 import pytest
+from pydantic import ValidationError
+
 from app.schemas import (
     ApprovalRequestCreate,
     CertificateRecord,
@@ -20,7 +22,6 @@ from app.schemas import (
     ThirdPartyUpdate,
     VaccineRecord,
 )
-from pydantic import ValidationError
 
 
 class TestThirdPartySchemas:

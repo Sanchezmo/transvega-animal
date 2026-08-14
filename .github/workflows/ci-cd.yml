@@ -50,12 +50,12 @@ jobs:
 
       - name: Run Ruff (linting)
         run: |
-          ruff check services/integration-api/app tests/
-          ruff format --check services/integration-api/app tests/
+          PYTHONPATH=.:services/integration-api ruff check services/integration-api/app tests/
+          PYTHONPATH=.:services/integration-api ruff format --check services/integration-api/app tests/
 
       - name: Run MyPy (type checking)
         run: |
-          mypy services/integration-api/app --strict
+          PYTHONPATH=.:services/integration-api mypy services/integration-api/app --strict
 
       - name: Run Bandit (security)
         run: |
@@ -128,7 +128,7 @@ jobs:
           ENVIRONMENT: test
           MOCK_DOLIBARR_ENABLED: "true"
 
-          PYTHONPATH: services/integration-api
+          PYTHONPATH: .:services/integration-api
         run: |
           pytest tests/unit -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing
 
@@ -214,7 +214,7 @@ jobs:
           ENVIRONMENT: test
           MOCK_DOLIBARR_ENABLED: "true"
 
-          PYTHONPATH: services/integration-api
+          PYTHONPATH: .:services/integration-api
         run: |
           pytest tests/integration -v --tb=short
 

@@ -83,7 +83,6 @@ class IntakeSessionStore:
         self._sessions.pop(key, None)
 
     def cleanup_expired(self):
-        now = time.time()
         to_del = []
         for key, sess in self._sessions.items():
             if sess.is_expired():

@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.agents.supervisor.agent import create_supervisor_agent
+from agents.supervisor.agent import create_supervisor_agent
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

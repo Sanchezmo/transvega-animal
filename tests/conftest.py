@@ -4,9 +4,10 @@ Configuración de pytest y fixtures compartidas.
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
 from app.core.config import get_settings
 from app.main import app
-from httpx import AsyncClient, ASGITransport
 
 
 @pytest.fixture(scope="session")

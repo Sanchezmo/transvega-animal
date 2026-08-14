@@ -3,10 +3,10 @@ Esquemas Pydantic para validación de datos de entrada/salida.
 """
 
 import datetime
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # =============================================================================
 # ESQUEMAS BASE
