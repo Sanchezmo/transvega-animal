@@ -183,12 +183,12 @@ class TestExpedienteAnimalSchemas:
     def test_certificate_record_valido(self):
         """Registro de certificado válido."""
         cert = CertificateRecord(
-            type="veterinary_health",
+            cert_type="veterinary_health",
             date="2024-01-20",
             issuer="Dr. Gómez",
             expires_at="2024-07-20",
         )
-        assert cert.type == "veterinary_health"
+        assert cert.cert_type == "veterinary_health"
         assert cert.issuer == "Dr. Gómez"
 
     def test_estado_comercial_invalido(self):
@@ -307,12 +307,10 @@ class TestLeadSchemas:
         """Actualización parcial de lead."""
         update = LeadUpdate(
             status="qualified",
-            score=85,
             budget_min=1500,
             budget_max=2500,
         )
         assert update.status == "qualified"
-        assert update.score == 85
         assert update.budget_min == 1500
         assert update.budget_max == 2500
 
@@ -392,16 +390,17 @@ class TestTaskSchemas:
     def test_create_tarea_valida(self):
         """Crear tarea válida."""
         data = {
-            "task_type": "publish_announcement",
-            "priority": 5,
-            "agent_id": "agent_publishing",
-            "input_data": {"expediente_id": 1, "platform": "milanuncios"},
-            "timeout_seconds": 3600,
+            "title": "Publicar anuncio en Milanuncios",
+            "description": "Publicar anuncio de cachorro en Milanuncios",
+            "priority": "high",
+            "status": "pending",
+            "metadata": {"expediente_id": 1, "platform": "milanuncios"},
         }
         task = TaskCreate(**data)
-        assert task.task_type == "publish_announcement"
-        assert task.priority == 5
-        assert task.agent_id == "agent_publishing"
+        assert task.title == "Publicar anuncio en Milanuncios"
+        assert task.priority == "high"
+        assert task.status == "pending"
+        assert task.metadata == {"expediente_id": 1, "platform": "milanuncios"}
 
     def test_tarea_prioridad_invalida(self):
         """Prioridad fuera de rango debe fallar."""

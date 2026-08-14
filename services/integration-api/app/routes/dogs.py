@@ -2,6 +2,8 @@
 Rutas para gestión de perros.
 """
 
+from fastapi import APIRouter, Depends, Query, status
+
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundException
 from app.dependencies.auth import get_current_agent, require_write
@@ -24,7 +26,6 @@ from app.schemas import (
     PaginationParams,
 )
 from app.services.dog_service import get_dog_service
-from fastapi import APIRouter, Depends, Query, status
 
 router = APIRouter(tags=["Dogs"])
 settings = get_settings()
@@ -33,6 +34,7 @@ settings = get_settings()
 # =============================================================================
 # STATIC ROUTES (must come before parameterized routes like /{dog_id})
 # =============================================================================
+
 
 # Rutas para razas
 @router.get("/breeds", response_model=PaginatedResponse[BreedResponse])
@@ -55,9 +57,7 @@ async def list_breeds(
     )
 
 
-@router.post(
-    "/breeds", response_model=BreedResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/breeds", response_model=BreedResponse, status_code=status.HTTP_201_CREATED)
 async def create_breed(
     breed: BreedCreate,
     agent: dict = Depends(require_write),
@@ -93,9 +93,7 @@ async def list_litters(
     )
 
 
-@router.post(
-    "/litters", response_model=LitterResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/litters", response_model=LitterResponse, status_code=status.HTTP_201_CREATED)
 async def create_litter(
     litter: LitterCreate,
     agent: dict = Depends(require_write),
@@ -113,6 +111,7 @@ async def create_litter(
 # =============================================================================
 # DOG ROUTES (parameterized - must come after static routes)
 # =============================================================================
+
 
 @router.get("", response_model=PaginatedResponse[DogResponse])
 async def list_dogs(

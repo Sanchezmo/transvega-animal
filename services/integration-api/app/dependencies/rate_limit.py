@@ -5,11 +5,12 @@ Dependencias de rate limiting e idempotencia.
 import json
 import time
 
+from fastapi import Depends, HTTPException, Request, status
+from redis.asyncio import Redis
+
 from app.core.config import get_settings
 from app.core.database import get_redis
 from app.core.exceptions import IdempotencyException, RateLimitException
-from fastapi import Depends, HTTPException, Request, status
-from redis.asyncio import Redis
 
 settings = get_settings()
 
@@ -44,9 +45,7 @@ async def rate_limit_dependency(
 
     # Headers informativos
     request.state.rate_limit_remaining = settings.RATE_LIMIT_REQUESTS - current
-    request.state.rate_limit_reset = (
-        int(time.time()) + settings.RATE_LIMIT_WINDOW_SECONDS
-    )
+    request.state.rate_limit_reset = int(time.time()) + settings.RATE_LIMIT_WINDOW_SECONDS
 
 
 async def idempotency_dependency(
@@ -102,10 +101,7 @@ async def save_idempotency_result(
     status_code: int = 200,
 ):
     """Guardar resultado de operación idempotente."""
-    if (
-        hasattr(request.state, "idempotency_cache_key")
-        and request.state.idempotency_cache_key
-    ):
+    if hasattr(request.state, "idempotency_cache_key") and request.state.idempotency_cache_key:
         await redis.setex(
             request.state.idempotency_cache_key,
             settings.IDEMPOTENCY_TTL_HOURS * 3600,

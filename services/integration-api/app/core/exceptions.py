@@ -37,9 +37,7 @@ class ValidationException(TransvegaException):
 class AuthenticationException(TransvegaException):
     """Error de autenticación."""
 
-    def __init__(
-        self, message: str = "Credenciales inválidas", details: dict | None = None
-    ):
+    def __init__(self, message: str = "Credenciales inválidas", details: dict | None = None):
         super().__init__(
             message=message,
             error_code="AUTHENTICATION_ERROR",
@@ -51,9 +49,7 @@ class AuthenticationException(TransvegaException):
 class AuthorizationException(TransvegaException):
     """Error de autorización - permisos insuficientes."""
 
-    def __init__(
-        self, message: str = "Permisos insuficientes", details: dict | None = None
-    ):
+    def __init__(self, message: str = "Permisos insuficientes", details: dict | None = None):
         super().__init__(
             message=message,
             error_code="AUTHORIZATION_ERROR",

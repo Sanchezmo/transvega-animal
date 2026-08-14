@@ -2,6 +2,8 @@
 Rutas para Proveedores (Terceros con supplier=1) y Facturas/Órdenes de Proveedor.
 """
 
+from fastapi import APIRouter, Depends, Query, status
+
 from app.adapters.dolibarr.client import DolibarrClient
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundException, ValidationException
@@ -24,7 +26,6 @@ from app.schemas import (
     ThirdPartyResponse,
     ThirdPartyUpdate,
 )
-from fastapi import APIRouter, Depends, Query, status
 
 settings = get_settings()
 
@@ -90,13 +91,8 @@ async def create_proveedor(
     proveedor_data.client = 0
 
     # Validar código proveedor si se proporciona (Dolibarr requiere formato SU...)
-    if (
-        proveedor_data.code_fournisseur
-        and not proveedor_data.code_fournisseur.startswith("SU")
-    ):
-        raise ValidationException(
-            "El código de proveedor debe empezar con 'SU' (ej: SU2407-00001)"
-        )
+    if proveedor_data.code_fournisseur and not proveedor_data.code_fournisseur.startswith("SU"):
+        raise ValidationException("El código de proveedor debe empezar con 'SU' (ej: SU2407-00001)")
 
     # Dolibarr usa 'code_fournisseur' para proveedores
     data = proveedor_data.model_dump(exclude_none=True)
@@ -140,14 +136,10 @@ async def delete_proveedor(
 # FACTURAS PROVEEDOR (COMPRAS)
 # =============================================================================
 
-supplier_invoices_router = APIRouter(
-    prefix="/facturas-proveedor", tags=["Facturas Proveedor"]
-)
+supplier_invoices_router = APIRouter(prefix="/facturas-proveedor", tags=["Facturas Proveedor"])
 
 
-@supplier_invoices_router.get(
-    "", response_model=PaginatedResponse[SupplierInvoiceResponse]
-)
+@supplier_invoices_router.get("", response_model=PaginatedResponse[SupplierInvoiceResponse])
 async def list_supplier_invoices(
     pagination: PaginationParams = Depends(),
     status: int | None = Query(default=None, ge=0, le=2),
@@ -190,9 +182,7 @@ async def get_supplier_invoice(
         raise NotFoundException(f"Factura proveedor {invoice_id} no encontrada: {e!s}")
 
 
-@supplier_invoices_router.post(
-    "", response_model=SupplierInvoiceResponse, status_code=status.HTTP_201_CREATED
-)
+@supplier_invoices_router.post("", response_model=SupplierInvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_supplier_invoice(
     invoice_data: SupplierInvoiceCreate,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),
@@ -223,9 +213,7 @@ async def update_supplier_invoice(
     return invoice
 
 
-@supplier_invoices_router.post(
-    "/{invoice_id}/validate", response_model=SupplierInvoiceResponse
-)
+@supplier_invoices_router.post("/{invoice_id}/validate", response_model=SupplierInvoiceResponse)
 async def validate_supplier_invoice(
     invoice_id: int,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),
@@ -237,9 +225,7 @@ async def validate_supplier_invoice(
     return invoice
 
 
-@supplier_invoices_router.post(
-    "/{invoice_id}/cancel", response_model=SupplierInvoiceResponse
-)
+@supplier_invoices_router.post("/{invoice_id}/cancel", response_model=SupplierInvoiceResponse)
 async def cancel_supplier_invoice(
     invoice_id: int,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),
@@ -274,9 +260,7 @@ async def add_supplier_invoice_line(
 # PEDIDOS PROVEEDOR (ÓRDENES DE COMPRA)
 # =============================================================================
 
-supplier_orders_router = APIRouter(
-    prefix="/pedidos-proveedor", tags=["Pedidos Proveedor"]
-)
+supplier_orders_router = APIRouter(prefix="/pedidos-proveedor", tags=["Pedidos Proveedor"])
 
 
 @supplier_orders_router.get("", response_model=PaginatedResponse[SupplierOrderResponse])
@@ -322,9 +306,7 @@ async def get_supplier_order(
         raise NotFoundException(f"Pedido proveedor {order_id} no encontrado: {e!s}")
 
 
-@supplier_orders_router.post(
-    "", response_model=SupplierOrderResponse, status_code=status.HTTP_201_CREATED
-)
+@supplier_orders_router.post("", response_model=SupplierOrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_supplier_order(
     order_data: SupplierOrderCreate,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),
@@ -348,15 +330,11 @@ async def update_supplier_order(
     _rate_limit=Depends(rate_limit_dependency),
 ):
     """Actualizar pedido proveedor."""
-    order = await dolibarr.update_supplier_order(
-        order_id, order_data.model_dump(exclude_none=True, exclude_unset=True)
-    )
+    order = await dolibarr.update_supplier_order(order_id, order_data.model_dump(exclude_none=True, exclude_unset=True))
     return order
 
 
-@supplier_orders_router.post(
-    "/{order_id}/validate", response_model=SupplierOrderResponse
-)
+@supplier_orders_router.post("/{order_id}/validate", response_model=SupplierOrderResponse)
 async def validate_supplier_order(
     order_id: int,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),
@@ -390,14 +368,10 @@ async def add_supplier_order_line(
 # PROPUESTAS PROVEEDOR
 # =============================================================================
 
-supplier_proposals_router = APIRouter(
-    prefix="/propuestas-proveedor", tags=["Propuestas Proveedor"]
-)
+supplier_proposals_router = APIRouter(prefix="/propuestas-proveedor", tags=["Propuestas Proveedor"])
 
 
-@supplier_proposals_router.get(
-    "", response_model=PaginatedResponse[SupplierProposalResponse]
-)
+@supplier_proposals_router.get("", response_model=PaginatedResponse[SupplierProposalResponse])
 async def list_supplier_proposals(
     pagination: PaginationParams = Depends(),
     status: int | None = Query(default=None, ge=0, le=2),
@@ -422,9 +396,7 @@ async def list_supplier_proposals(
     )
 
 
-@supplier_proposals_router.get(
-    "/{proposal_id}", response_model=SupplierProposalResponse
-)
+@supplier_proposals_router.get("/{proposal_id}", response_model=SupplierProposalResponse)
 async def get_supplier_proposal(
     proposal_id: int,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),
@@ -439,14 +411,10 @@ async def get_supplier_proposal(
     except NotFoundException:
         raise
     except Exception as e:
-        raise NotFoundException(
-            f"Propuesta proveedor {proposal_id} no encontrada: {e!s}"
-        )
+        raise NotFoundException(f"Propuesta proveedor {proposal_id} no encontrada: {e!s}")
 
 
-@supplier_proposals_router.post(
-    "", response_model=SupplierProposalResponse, status_code=status.HTTP_201_CREATED
-)
+@supplier_proposals_router.post("", response_model=SupplierProposalResponse, status_code=status.HTTP_201_CREATED)
 async def create_supplier_proposal(
     proposal_data: SupplierProposalCreate,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),
@@ -461,9 +429,7 @@ async def create_supplier_proposal(
     return proposal
 
 
-@supplier_proposals_router.put(
-    "/{proposal_id}", response_model=SupplierProposalResponse
-)
+@supplier_proposals_router.put("/{proposal_id}", response_model=SupplierProposalResponse)
 async def update_supplier_proposal(
     proposal_id: int,
     proposal_data: SupplierProposalUpdate,
@@ -478,9 +444,7 @@ async def update_supplier_proposal(
     return proposal
 
 
-@supplier_proposals_router.post(
-    "/{proposal_id}/convert-to-order", response_model=SupplierOrderResponse
-)
+@supplier_proposals_router.post("/{proposal_id}/convert-to-order", response_model=SupplierOrderResponse)
 async def convert_supplier_proposal_to_order(
     proposal_id: int,
     dolibarr: DolibarrClient = Depends(get_dolibarr_client),

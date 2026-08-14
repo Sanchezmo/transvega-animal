@@ -139,9 +139,7 @@ class ProductBase(BaseModel):
     poids: float = Field(default=0.0, ge=0)
     poids_unites: int = Field(default=1, ge=1)
     statut: int = Field(default=1, ge=0, le=1)
-    type: int = Field(
-        default=0, ge=0, le=2
-    )  # renamed from 'product_type' to match Dolibarr field
+    type: int = Field(default=0, ge=0, le=2)  # renamed from 'product_type' to match Dolibarr field
     fk_product_type: int | None = None
 
 
@@ -384,9 +382,7 @@ class SupplierInvoiceLineResponse(SupplierInvoiceLineBase):
 
 
 class SupplierInvoiceBase(BaseModel):
-    thirdparty_id: int = Field(
-        ..., gt=0, description="ID del proveedor (debe ser supplier=1)"
-    )
+    thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
     date: datetime.date = Field(default_factory=datetime.date.today)
     lines: list[SupplierInvoiceLineCreate] = Field(..., min_length=1)
     payment_term_id: int | None = None
@@ -394,9 +390,7 @@ class SupplierInvoiceBase(BaseModel):
     mode_reglement_id: int | None = None
     note_private: str | None = None
     note_public: str | None = None
-    ref_supplier: str | None = Field(
-        None, max_length=50, description="Referencia del proveedor"
-    )
+    ref_supplier: str | None = Field(None, max_length=50, description="Referencia del proveedor")
 
 
 class SupplierInvoiceCreate(SupplierInvoiceBase):
@@ -453,9 +447,7 @@ class SupplierOrderLineResponse(SupplierOrderLineBase):
 
 
 class SupplierOrderBase(BaseModel):
-    thirdparty_id: int = Field(
-        ..., gt=0, description="ID del proveedor (debe ser supplier=1)"
-    )
+    thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
     date: datetime.date = Field(default_factory=datetime.date.today)
     lines: list[SupplierOrderLineCreate] = Field(..., min_length=1)
     payment_term_id: int | None = None
@@ -542,9 +534,7 @@ class SupplierProposalResponse(SupplierProposalBase):
 
 class PublicationBase(BaseModel):
     expediente_id: int = Field(..., gt=0)
-    platform: str = Field(
-        ..., max_length=50
-    )  # milanuncios, facebook, instagram, tiktok, web, etc.
+    platform: str = Field(..., max_length=50)  # milanuncios, facebook, instagram, tiktok, web, etc.
     title: str = Field(..., min_length=5, max_length=200)
     description: str = Field(..., min_length=20)
     photos: list[str] = Field(default_factory=list)
@@ -679,9 +669,7 @@ class ApprovalDecision(BaseModel):
 
 class ApprovalResponse(ApprovalRequestBase):
     id: UUID
-    status: str = Field(
-        default="pending", pattern=r"^(pending|approved|rejected|expired|cancelled)$"
-    )
+    status: str = Field(default="pending", pattern=r"^(pending|approved|rejected|expired|cancelled)$")
     requested_by: str
     requested_at: datetime.datetime
     reviewed_by: str | None = None
@@ -698,9 +686,7 @@ class TaskBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str | None = None
     priority: str = Field(default="medium", pattern=r"^(low|medium|high)$")
-    status: str = Field(
-        default="pending", pattern=r"^(pending|in_progress|completed|failed)$"
-    )
+    status: str = Field(default="pending", pattern=r"^(pending|in_progress|completed|failed)$")
     assigned_to: int | None = None
     due_date: datetime.date | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -714,9 +700,7 @@ class TaskUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=200)
     description: str | None = None
     priority: str | None = Field(None, pattern=r"^(low|medium|high)$")
-    status: str | None = Field(
-        None, pattern=r"^(pending|in_progress|completed|failed)$"
-    )
+    status: str | None = Field(None, pattern=r"^(pending|in_progress|completed|failed)$")
     assigned_to: int | None = None
     due_date: datetime.date | None = None
     metadata: dict[str, Any] | None = None
@@ -842,9 +826,7 @@ class DogHealthBase(BaseModel):
     temperature_celsius: float | None = Field(None, ge=35, le=42)
     heart_rate_bpm: int | None = Field(None, gt=0)
     respiratory_rate: int | None = Field(None, gt=0)
-    stool_condition: str | None = Field(
-        None, pattern=r"^(normal|soft|diarrhea|constipated)$"
-    )
+    stool_condition: str | None = Field(None, pattern=r"^(normal|soft|diarrhea|constipated)$")
     urine_condition: str | None = Field(None, pattern=r"^(normal|cloudy|bloody)$")
     appetite: str | None = Field(None, pattern=r"^(poor|fair|good|excellent)$")
     energy_level: str | None = Field(None, pattern=r"^(low|medium|high)$")
@@ -862,9 +844,7 @@ class DogHealthUpdate(BaseModel):
     temperature_celsius: float | None = Field(None, ge=35, le=42)
     heart_rate_bpm: int | None = Field(None, gt=0)
     respiratory_rate: int | None = Field(None, gt=0)
-    stool_condition: str | None = Field(
-        None, pattern=r"^(normal|soft|diarrhea|constipated)$"
-    )
+    stool_condition: str | None = Field(None, pattern=r"^(normal|soft|diarrhea|constipated)$")
     urine_condition: str | None = Field(None, pattern=r"^(normal|cloudy|bloody)$")
     appetite: str | None = Field(None, pattern=r"^(poor|fair|good|excellent)$")
     energy_level: str | None = Field(None, pattern=r"^(low|medium|high)$")

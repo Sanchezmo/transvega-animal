@@ -4,6 +4,9 @@ Rutas para facturación.
 
 from datetime import date, datetime
 
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.adapters.dolibarr.client import DolibarrClient
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -19,8 +22,6 @@ from app.schemas import (
     PaginatedResponse,
     PaginationParams,
 )
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Facturación"])
 settings = get_settings()
@@ -29,9 +30,7 @@ settings = get_settings()
 @router.get("", response_model=PaginatedResponse[InvoiceResponse])
 async def list_invoices(
     pagination: PaginationParams = Depends(),
-    status: int | None = Query(
-        None, description="Filtrar por estado (0=borrador, 1=validada, 2=anulada)"
-    ),
+    status: int | None = Query(None, description="Filtrar por estado (0=borrador, 1=validada, 2=anulada)"),
     agent: dict = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
@@ -147,9 +146,7 @@ async def create_invoice(
         id=invoice_id,
         ref=invoice_data.get("ref", ""),
         thirdparty_id=invoice_data.get("thirdparty_id", invoice.thirdparty_id),
-        date=datetime.strptime(
-            invoice_data.get("date", date.today().isoformat()), "%Y-%m-%d"
-        ).date(),
+        date=datetime.strptime(invoice_data.get("date", date.today().isoformat()), "%Y-%m-%d").date(),
         payment_term_id=invoice_data.get("fk_paiement"),
         cond_reglement_id=invoice_data.get("cond_reglement_id"),
         mode_reglement_id=invoice_data.get("mode_reglement_id"),
@@ -159,12 +156,8 @@ async def create_invoice(
         total_tva=float(invoice_data.get("total_tva", 0)),
         total_ttc=float(invoice_data.get("total_ttc", 0)),
         lines=lines_response,
-        datec=datetime.fromtimestamp(
-            invoice_data.get("date_creation", datetime.now().timestamp())
-        ),
-        datem=datetime.fromtimestamp(
-            invoice_data.get("date_modification", datetime.now().timestamp())
-        ),
+        datec=datetime.fromtimestamp(invoice_data.get("date_creation", datetime.now().timestamp())),
+        datem=datetime.fromtimestamp(invoice_data.get("date_modification", datetime.now().timestamp())),
         fk_user_author=invoice_data.get("fk_user_creat", 1),
         fk_user_modif=invoice_data.get("fk_user_modif", 1),
     )

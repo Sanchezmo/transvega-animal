@@ -2,13 +2,14 @@
 Dependencias de autenticación y autorización.
 """
 
-from app.core.config import get_settings
-from app.core.database import get_db
-from app.core.exceptions import AuthenticationException, AuthorizationException
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.core.database import get_db
+from app.core.exceptions import AuthenticationException, AuthorizationException
 
 security = HTTPBearer(auto_error=False)
 
@@ -123,9 +124,7 @@ def require_role(required_roles: list[str]):
         agent: AgentIdentity = Depends(get_current_agent),
     ) -> AgentIdentity:
         if not agent.has_any_role(required_roles):
-            raise AuthorizationException(
-                f"Se requiere uno de los roles: {required_roles}"
-            )
+            raise AuthorizationException(f"Se requiere uno de los roles: {required_roles}")
         return agent
 
     return _check_role

@@ -2,8 +2,9 @@
 Rutas de health check y información del sistema.
 """
 
-from app.core.config import get_settings
 from fastapi import APIRouter
+
+from app.core.config import get_settings
 
 router = APIRouter(tags=["Salud"])
 settings = get_settings()

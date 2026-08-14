@@ -2,9 +2,9 @@
 
 import hashlib
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 from app.core.config import settings
 from app.core.exceptions import ValidationException
@@ -14,7 +14,7 @@ from app.core.exceptions import ValidationException
 class MediaAsset:
     """
     Unified media asset structure.
-    
+
     Attributes:
         id: Unique identifier (file hash)
         dog_id: Dog's internal ID (e.g., DOG-2026-00001)
@@ -26,17 +26,20 @@ class MediaAsset:
         height: Image height in pixels
         status: "pending", "ready", "failed", "published"
     """
+
     id: str
     dog_id: str
     type: str  # "photo" | "video"
-    variant: str  # "original" | "cover" | "listing_01" | "listing_02" | "social_square" | "social_story" | "social_facebook"
+    variant: (
+        str  # "original" | "cover" | "listing_01" | "listing_02" | "social_square" | "social_story" | "social_facebook"
+    )
     path: str
     mime_type: str
-    width: Optional[int] = None
-    height: Optional[int] = None
-    duration_seconds: Optional[int] = None
+    width: int | None = None
+    height: int | None = None
+    duration_seconds: int | None = None
     status: str = "ready"
-    
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -53,7 +56,7 @@ def get_media_root() -> Path:
 def ensure_media_dirs(dog_internal_id: str) -> tuple[Path, Path, Path, Path]:
     """Ensure the directory structure for a dog exists.
     Returns (originals_dir, listing_dir, social_dir, processed_dir)
-    
+
     Structure:
     /data/dogs/{dog_internal_id}/
         originals/
@@ -83,7 +86,19 @@ def get_variant_dir(dog_internal_id: str, variant: str) -> Path:
     base = get_media_root() / dog_internal_id
     if variant == "original":
         return base / "originals"
-    elif variant in ["cover", "listing_01", "listing_02", "listing_03", "listing_04", "listing_05", "listing_06", "listing_07", "listing_08", "listing_09", "listing_10"]:
+    elif variant in [
+        "cover",
+        "listing_01",
+        "listing_02",
+        "listing_03",
+        "listing_04",
+        "listing_05",
+        "listing_06",
+        "listing_07",
+        "listing_08",
+        "listing_09",
+        "listing_10",
+    ]:
         return base / "listing"
     elif variant in ["social_square", "social_story", "social_facebook"]:
         return base / "social"
@@ -125,21 +140,34 @@ def save_uploaded_file(
     uploaded_by: int = 1,
 ) -> MediaAsset:
     """Save an uploaded file with unified structure and return MediaAsset.
-    
+
     Args:
         file_content: raw bytes of the file
         filename: original filename (for extension, etc.)
         dog_internal_id: the dog's internal ID (e.g., DOG-2026-00001)
         variant: one of 'original', 'cover', 'listing_01'-'listing_10', 'social_square', 'social_story', 'social_facebook', 'processed'
         uploaded_by: user ID who uploaded
-    
+
     Returns:
         MediaAsset with metadata
     """
     valid_variants = [
-        "original", "cover", "listing_01", "listing_02", "listing_03", "listing_04", "listing_05",
-        "listing_06", "listing_07", "listing_08", "listing_09", "listing_10",
-        "social_square", "social_story", "social_facebook", "processed"
+        "original",
+        "cover",
+        "listing_01",
+        "listing_02",
+        "listing_03",
+        "listing_04",
+        "listing_05",
+        "listing_06",
+        "listing_07",
+        "listing_08",
+        "listing_09",
+        "listing_10",
+        "social_square",
+        "social_story",
+        "social_facebook",
+        "processed",
     ]
     if variant not in valid_variants:
         raise ValidationException(f"Invalid variant: {variant}. Valid: {valid_variants}")
@@ -202,19 +230,17 @@ def save_uploaded_file(
         duration_seconds=duration_seconds,
         status="ready",
     )
-    
+
     return asset
 
 
-def get_media_asset(
-    dog_internal_id: str, asset_id: str, variant: str
-) -> Optional[MediaAsset]:
+def get_media_asset(dog_internal_id: str, asset_id: str, variant: str) -> MediaAsset | None:
     """Locate a stored asset by hash and variant."""
     base = get_media_root() / dog_internal_id
     variant_dir = get_variant_dir(dog_internal_id, variant)
     if not variant_dir.exists():
         return None
-    
+
     # We don't know extension; iterate files with hash as stem
     for ext in [".jpg", ".jpeg", ".png", ".mp4"]:
         candidate = variant_dir / f"{asset_id}{ext}"
@@ -235,28 +261,28 @@ def get_media_asset(
     return None
 
 
-def list_dog_assets(dog_internal_id: str) -> List[MediaAsset]:
+def list_dog_assets(dog_internal_id: str) -> list[MediaAsset]:
     """List all media assets for a dog."""
     assets = []
     base = get_media_root() / dog_internal_id
     if not base.exists():
         return assets
-    
+
     for variant_dir_name in ["originals", "listing", "social", "processed"]:
         variant_dir = base / variant_dir_name
         if not variant_dir.exists():
             continue
-        
+
         for file_path in variant_dir.iterdir():
             if not file_path.is_file():
                 continue
-            
+
             # Extract hash from filename (stem)
             asset_id = file_path.stem
             # If filename is not a hash (e.g., cover.jpg), use the filename as id
-            if len(asset_id) != 64 or not all(c in '0123456789abcdef' for c in asset_id):
+            if len(asset_id) != 64 or not all(c in "0123456789abcdef" for c in asset_id):
                 asset_id = file_path.name
-            
+
             ext = file_path.suffix.lower()
             mime_type = "application/octet-stream"
             if ext in [".jpg", ".jpeg"]:
@@ -265,9 +291,11 @@ def list_dog_assets(dog_internal_id: str) -> List[MediaAsset]:
                 mime_type = "image/png"
             elif ext == ".mp4":
                 mime_type = "video/mp4"
-            
-            media_type = "photo" if mime_type.startswith("image/") else "video" if mime_type.startswith("video/") else "unknown"
-            
+
+            media_type = (
+                "photo" if mime_type.startswith("image/") else "video" if mime_type.startswith("video/") else "unknown"
+            )
+
             # Determine variant from directory and filename
             if variant_dir_name == "originals":
                 variant = "original"
@@ -279,39 +307,41 @@ def list_dog_assets(dog_internal_id: str) -> List[MediaAsset]:
                 variant = "processed"
             else:
                 variant = "unknown"
-            
-            assets.append(MediaAsset(
-                id=asset_id,
-                dog_id=dog_internal_id,
-                type=media_type,
-                variant=variant,
-                path=str(file_path),
-                mime_type=mime_type,
-                width=None,
-                height=None,
-                duration_seconds=None,
-                status="ready",
-            ))
-    
+
+            assets.append(
+                MediaAsset(
+                    id=asset_id,
+                    dog_id=dog_internal_id,
+                    type=media_type,
+                    variant=variant,
+                    path=str(file_path),
+                    mime_type=mime_type,
+                    width=None,
+                    height=None,
+                    duration_seconds=None,
+                    status="ready",
+                )
+            )
+
     return assets
 
 
 def get_assets_for_publishing(dog_internal_id: str, platform: str) -> dict:
     """Get assets ready for publishing to a specific platform."""
     base = get_media_root() / dog_internal_id
-    
+
     assets = {
         "cover": None,
         "photos": [],
         "social": {},
     }
-    
+
     if platform == "milanuncios":
         # Cover image
         cover_path = base / "listing" / "cover.jpg"
         if cover_path.exists():
             assets["cover"] = str(cover_path)
-        
+
         # Listing photos (up to 20)
         listing_dir = base / "listing"
         if listing_dir.exists():
@@ -319,20 +349,20 @@ def get_assets_for_publishing(dog_internal_id: str, platform: str) -> dict:
                 img_path = listing_dir / f"image_{i:02d}.jpg"
                 if img_path.exists():
                     assets["photos"].append(str(img_path))
-        
+
         assets["max_photos"] = 20
-    
+
     elif platform in ["meta", "instagram", "facebook"]:
         # Social assets
         square_path = base / "social" / "square.jpg"
         story_path = base / "social" / "story.jpg"
         facebook_path = base / "social" / "facebook.jpg"
-        
+
         if square_path.exists():
             assets["social"]["post_image"] = str(square_path)
         if story_path.exists():
             assets["social"]["story_image"] = str(story_path)
         if facebook_path.exists():
             assets["social"]["facebook_image"] = str(facebook_path)
-    
+
     return assets

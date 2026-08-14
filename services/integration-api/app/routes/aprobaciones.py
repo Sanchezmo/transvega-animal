@@ -4,6 +4,9 @@ Rutas para gestión de aprobaciones humanas.
 
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.exceptions import NotFoundException
@@ -13,8 +16,6 @@ from app.schemas import (
     PaginatedResponse,
     PaginationParams,
 )
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Aprobaciones"])
 settings = get_settings()
@@ -47,9 +48,7 @@ async def list_aprobaciones(
 @router.get("/pendientes", response_model=PaginatedResponse[dict])
 async def list_aprobaciones_pendientes(
     pagination: PaginationParams = Depends(),
-    agent: dict = Depends(
-        require_admin
-    ),  # Solo admins/supervisores ven pendientes globales
+    agent: dict = Depends(require_admin),  # Solo admins/supervisores ven pendientes globales
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
 ):

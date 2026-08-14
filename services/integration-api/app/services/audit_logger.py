@@ -54,21 +54,15 @@ class AuditLogger:
             # Calcular hashes para integridad
             request_body_hash = None
             if request_body:
-                request_body_hash = hashlib.sha256(
-                    json.dumps(request_body, sort_keys=True).encode()
-                ).hexdigest()
+                request_body_hash = hashlib.sha256(json.dumps(request_body, sort_keys=True).encode()).hexdigest()
 
             new_state_hash = None
             if new_state:
-                new_state_hash = hashlib.sha256(
-                    json.dumps(new_state, sort_keys=True).encode()
-                ).hexdigest()
+                new_state_hash = hashlib.sha256(json.dumps(new_state, sort_keys=True).encode()).hexdigest()
 
             previous_state_hash = None
             if previous_state:
-                previous_state_hash = hashlib.sha256(
-                    json.dumps(previous_state, sort_keys=True).encode()
-                ).hexdigest()
+                previous_state_hash = hashlib.sha256(json.dumps(previous_state, sort_keys=True).encode()).hexdigest()
 
             # Calcular diff si ambos estados existen
             diff = None
@@ -231,7 +225,7 @@ class AuditLogger:
     ) -> dict:
         """Obtener resumen de actividad."""
         query = """
-            SELECT 
+            SELECT
                 DATE_TRUNC('day', created_at) as day,
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE success) as successful,

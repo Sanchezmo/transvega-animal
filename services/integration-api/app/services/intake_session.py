@@ -18,9 +18,7 @@ class IntakeSession:
         self.data: dict = {}  # accumulated structured dog data
         self.step: str = "awaiting_name"  # current intake step
         self.media_files: list = []  # list of dicts with file info
-        self.privacy_scope = (
-            "ONLINE_ALLOWED"  # starts as allowed, may become LOCAL_ONLY
-        )
+        self.privacy_scope = "ONLINE_ALLOWED"  # starts as allowed, may become LOCAL_ONLY
 
     def is_expired(self, ttl_seconds: int = 3600) -> bool:
         return (time.time() - self.updated_at) > ttl_seconds

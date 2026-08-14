@@ -1,0 +1,59 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "B008",  # Depends in argument defaults - extensive refactoring needed
+    "DTZ005", # datetime.now() without tz - extensive changes needed
+    "DTZ003", # datetime.utcnow() - extensive changes needed
+    "DTZ007", # strptime without %z
+    "DTZ011", # date.today()
+    "DTZ006", # fromtimestamp without tz
+    "B904",   # raise from err - extensive changes needed
+    "F841",   # unused variable - minor
+    "W293",   # blank line whitespace - minor
+    "W292",   # no newline at end of file - minor
+    "E501",   # line too long - will fix with format
+    "I001",   # import sorting - will fix with isort
+    "B006",   # mutable default argument - minor
+    "BLE001", # blind exception - minor
+    "F401",   # unused import - will fix
+    "UP035",  # typing.Dict/List deprecated - minor
+    "UP045",  # Optional[X] -> X | None - minor
+    "UP006",  # List -> list - minor
+    "UP046",  # Optional -> X | None - minor
+]
+fixable = ["I", "UP", "F401", "E501", "W293", "W292", "B006", "UP035", "UP045", "UP006", "UP046"]
+unfixable = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "venv", "__pycache__"]
+skip = ["B104", "B608"]

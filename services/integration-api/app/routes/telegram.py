@@ -1,13 +1,14 @@
 """Telegram webhook routes for dog intake - integrated with SupervisorAgent."""
 
-import logging
 import hmac
+import logging
 from typing import Any
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.agents.supervisor.agent import create_supervisor_agent
 from app.core.config import settings
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +21,7 @@ agent_config = {
     "OLLAMA_MODEL": getattr(settings, "OLLAMA_MODEL", "llama3.1:8b"),
     "OLLAMA_VISION_MODEL": getattr(settings, "OLLAMA_VISION_MODEL", "llava:7b"),
     "NVIDIA_API_KEY": getattr(settings, "NVIDIA_API_KEY", ""),
-    "NVIDIA_BASE_URL": getattr(
-        settings, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
-    ),
+    "NVIDIA_BASE_URL": getattr(settings, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
     "AGENT_API_KEY_SUPERVISOR": getattr(settings, "AGENT_API_KEY_SUPERVISOR", ""),
 }
 supervisor_agent = create_supervisor_agent(config=agent_config)
@@ -183,9 +182,7 @@ async def get_workflow_status(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    return JSONResponse(
-        status_code=200, content={"success": True, "workflow": workflow}
-    )
+    return JSONResponse(status_code=200, content={"success": True, "workflow": workflow})
 
 
 @router.get("/workflows")
@@ -195,6 +192,4 @@ async def list_workflows(
 ) -> dict[str, Any]:
     """List all active workflows."""
     workflows = supervisor_agent.list_active_workflows()
-    return JSONResponse(
-        status_code=200, content={"success": True, "workflows": workflows}
-    )
+    return JSONResponse(status_code=200, content={"success": True, "workflows": workflows})

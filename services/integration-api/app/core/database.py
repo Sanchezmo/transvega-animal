@@ -2,6 +2,9 @@
 Configuración de base de datos - SQLAlchemy + asyncpg para auditoría.
 """
 
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.core.base import Base
 from app.core.config import get_audit_db_url, settings
 from app.models import (  # noqa: F401
@@ -12,8 +15,6 @@ from app.models import (  # noqa: F401
     DogStatusHistory,
     Litter,
 )
-from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 # Convención de nombres para constraints (mejora migraciones Alembic)
 NAMING_CONVENTION = {

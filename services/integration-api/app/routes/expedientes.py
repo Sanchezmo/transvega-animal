@@ -4,6 +4,9 @@ Rutas para gestión de expedientes de animales.
 
 from datetime import datetime
 
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.exceptions import NotFoundException, ValidationException
@@ -16,8 +19,6 @@ from app.schemas import (
     PaginatedResponse,
     PaginationParams,
 )
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Expedientes"])
 settings = get_settings()
@@ -100,11 +101,7 @@ async def create_expediente(
     """
     # Validaciones de negocio
     if expediente.sale_price > 0 and expediente.purchase_price > 0:
-        margin = (
-            (expediente.sale_price - expediente.purchase_price)
-            / expediente.purchase_price
-            * 100
-        )
+        margin = (expediente.sale_price - expediente.purchase_price) / expediente.purchase_price * 100
         if margin < 10:
             raise ValidationException(
                 "Margen mínimo del 10% requerido",
@@ -113,9 +110,7 @@ async def create_expediente(
 
     # Validar microchip (formato ISO 11784/11785)
     if not expediente.microchip.isdigit() or len(expediente.microchip) != 15:
-        raise ValidationException(
-            "Microchip debe ser 15 dígitos numéricos (ISO 11784/11785)"
-        )
+        raise ValidationException("Microchip debe ser 15 dígitos numéricos (ISO 11784/11785)")
 
     # TODO: Crear en Dolibarr via API
     # dolibarr = DolibarrClient(...)

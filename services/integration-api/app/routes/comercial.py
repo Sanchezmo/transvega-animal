@@ -2,6 +2,9 @@
 Rutas para gestión comercial (leads, oportunidades, consultas).
 """
 
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.exceptions import NotFoundException
@@ -14,8 +17,6 @@ from app.schemas import (
     PaginatedResponse,
     PaginationParams,
 )
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Comercial"])
 settings = get_settings()

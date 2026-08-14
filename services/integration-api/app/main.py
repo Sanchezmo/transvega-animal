@@ -6,12 +6,26 @@ import time
 from contextlib import asynccontextmanager
 
 import structlog
-from app.core.config import get_settings
-from app.core.database import close_db, init_db
-from app.core.exceptions import TransvegaException
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+from app.core.config import get_settings
+from app.core.database import close_db, init_db
+from app.core.exceptions import TransvegaException
+from app.routes import (
+    aprobaciones,
+    comercial,
+    dogs,
+    expedientes,
+    facturacion,
+    productos,
+    proveedores,
+    publicaciones,
+    salud,
+    telegram,
+    terceros,
+)
 
 # Configurar logging estructurado
 structlog.configure(
@@ -107,9 +121,7 @@ async def logging_middleware(request: Request, call_next):
 
         # Headers de rate limit
         if hasattr(request.state, "rate_limit_remaining"):
-            response.headers["X-RateLimit-Remaining"] = str(
-                request.state.rate_limit_remaining
-            )
+            response.headers["X-RateLimit-Remaining"] = str(request.state.rate_limit_remaining)
         if hasattr(request.state, "rate_limit_reset"):
             response.headers["X-RateLimit-Reset"] = str(request.state.rate_limit_reset)
 
@@ -225,41 +237,16 @@ async def readiness_check():
 # ROUTERS
 # =============================================================================
 
-# Importar y registrar routers
-from app.routes import (
-    aprobaciones,
-    comercial,
-    dogs,
-    expedientes,
-    facturacion,
-    productos,
-    proveedores,
-    publicaciones,
-    salud,
-    telegram,
-    terceros,
-)
-
 app.include_router(salud.router, prefix="/api/v1", tags=["Health"])
-app.include_router(
-    expedientes.router, prefix="/api/v1/expedientes", tags=["Expedientes"]
-)
+app.include_router(expedientes.router, prefix="/api/v1/expedientes", tags=["Expedientes"])
 app.include_router(terceros.router, prefix="/api/v1/terceros", tags=["Terceros"])
 app.include_router(productos.router, prefix="/api/v1/productos", tags=["Productos"])
 app.include_router(dogs.router, prefix="/api/v1/dogs", tags=["Dogs"])
-app.include_router(
-    publicaciones.router, prefix="/api/v1/publicaciones", tags=["Publicaciones"]
-)
+app.include_router(publicaciones.router, prefix="/api/v1/publicaciones", tags=["Publicaciones"])
 app.include_router(comercial.router, prefix="/api/v1/comercial", tags=["Comercial"])
-app.include_router(
-    facturacion.router, prefix="/api/v1/facturacion", tags=["Facturación"]
-)
-app.include_router(
-    aprobaciones.router, prefix="/api/v1/aprobaciones", tags=["Aprobaciones"]
-)
-app.include_router(
-    proveedores.router, prefix="/api/v1/proveedores", tags=["Proveedores"]
-)
+app.include_router(facturacion.router, prefix="/api/v1/facturacion", tags=["Facturación"])
+app.include_router(aprobaciones.router, prefix="/api/v1/aprobaciones", tags=["Aprobaciones"])
+app.include_router(proveedores.router, prefix="/api/v1/proveedores", tags=["Proveedores"])
 app.include_router(telegram.router, prefix="/api/v1", tags=["Telegram"])
 
 

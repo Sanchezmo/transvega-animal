@@ -6,6 +6,7 @@ Wraps DolibarrClient for invoice-specific operations.
 from typing import Any
 
 import structlog
+
 from app.adapters.dolibarr.client import DolibarrClient
 from app.core.config import get_settings
 
@@ -40,14 +41,10 @@ class InvoiceIntegrationService:
         try:
             suppliers = await self.client.list_suppliers(limit=500)
             for supplier in suppliers:
-                if supplier.get("vat_number", "").upper() == tax_id.upper().replace(
-                    "-", ""
-                ):
+                if supplier.get("vat_number", "").upper() == tax_id.upper().replace("-", ""):
                     return supplier
                 # Also check other possible fields
-                if supplier.get("vatnumber", "").upper() == tax_id.upper().replace(
-                    "-", ""
-                ):
+                if supplier.get("vatnumber", "").upper() == tax_id.upper().replace("-", ""):
                     return supplier
             return None
         except Exception as e:
@@ -82,9 +79,7 @@ class InvoiceIntegrationService:
                 return False
 
             # List supplier invoices and check for duplicate number
-            invoices = await self.client.list_supplier_invoices(
-                thirdparty_id=supplier_id, limit=500
-            )
+            invoices = await self.client.list_supplier_invoices(thirdparty_id=supplier_id, limit=500)
             for invoice in invoices:
                 if invoice.get("ref", "").upper() == invoice_number.upper():
                     return True
@@ -118,9 +113,7 @@ class InvoiceIntegrationService:
             # Find supplier
             supplier = await self.get_supplier_by_tax_id(supplier_tax_id)
             if not supplier:
-                raise ValueError(
-                    f"Supplier with tax_id {supplier_tax_id} not found in Dolibarr"
-                )
+                raise ValueError(f"Supplier with tax_id {supplier_tax_id} not found in Dolibarr")
 
             supplier_id = supplier.get("id")
 
@@ -159,13 +152,9 @@ class InvoiceIntegrationService:
                     with open(attached_file, "rb") as f:
                         file_data = f.read()
                     filename = attached_file.split("/")[-1]
-                    await self.client.upload_document(
-                        "supplierinvoices", invoice_id, file_data, filename
-                    )
+                    await self.client.upload_document("supplierinvoices", invoice_id, file_data, filename)
                 except Exception as e:
-                    logger.warning(
-                        "file_upload_failed", file=attached_file, error=str(e)
-                    )
+                    logger.warning("file_upload_failed", file=attached_file, error=str(e))
 
             # Return full invoice
             full_invoice = await self.client.get_supplier_invoice(invoice_id)

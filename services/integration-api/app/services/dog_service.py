@@ -4,6 +4,11 @@ Dog service - CRUD operations for dogs and related entities using SQLAlchemy.
 
 from datetime import datetime
 
+from fastapi import Depends
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.core.database import get_db
 from app.core.exceptions import NotFoundException, ValidationException
 from app.models import Breed, Dog, DogHealth, DogMedia, DogStatusHistory, Litter
@@ -17,10 +22,6 @@ from app.schemas import (
     LitterCreate,
     PaginationParams,
 )
-from fastapi import Depends
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 
 class DogService:
@@ -46,18 +47,13 @@ class DogService:
         result = await self.db.execute(select(Breed).where(Breed.id == breed_id))
         return result.scalar_one_or_none()
 
-    async def list_breeds(
-        self, pagination: PaginationParams
-    ) -> tuple[list[Breed], int]:
+    async def list_breeds(self, pagination: PaginationParams) -> tuple[list[Breed], int]:
         """List breeds with pagination."""
         count_result = await self.db.execute(select(func.count(Breed.id)))
         total = count_result.scalar_one()
 
         result = await self.db.execute(
-            select(Breed)
-            .order_by(Breed.name)
-            .offset(pagination.offset)
-            .limit(pagination.limit)
+            select(Breed).order_by(Breed.name).offset(pagination.offset).limit(pagination.limit)
         )
         breeds = list(result.scalars().all())
         return breeds, total
@@ -72,17 +68,13 @@ class DogService:
         if not breed:
             raise NotFoundException("Raza", str(litter_data.breed_id))
 
-        mother_result = await self.db.execute(
-            select(Dog).where(Dog.id == litter_data.mother_id)
-        )
+        mother_result = await self.db.execute(select(Dog).where(Dog.id == litter_data.mother_id))
         mother = mother_result.scalar_one_or_none()
         if not mother:
             raise NotFoundException("Madre", str(litter_data.mother_id))
 
         if litter_data.father_id:
-            father_result = await self.db.execute(
-                select(Dog).where(Dog.id == litter_data.father_id)
-            )
+            father_result = await self.db.execute(select(Dog).where(Dog.id == litter_data.father_id))
             father = father_result.scalar_one_or_none()
             if not father:
                 raise NotFoundException("Padre", str(litter_data.father_id))
@@ -106,9 +98,7 @@ class DogService:
         )
         return result.scalar_one_or_none()
 
-    async def list_litters(
-        self, pagination: PaginationParams
-    ) -> tuple[list[Litter], int]:
+    async def list_litters(self, pagination: PaginationParams) -> tuple[list[Litter], int]:
         """List litters with pagination."""
         count_result = await self.db.execute(select(func.count(Litter.id)))
         total = count_result.scalar_one()
@@ -138,16 +128,12 @@ class DogService:
             if not litter:
                 raise NotFoundException("Camada", str(dog_data.litter_id))
 
-        existing = await self.db.execute(
-            select(Dog).where(Dog.microchip == dog_data.microchip)
-        )
+        existing = await self.db.execute(select(Dog).where(Dog.microchip == dog_data.microchip))
         if existing.scalar_one_or_none():
             raise ValidationException(f"Microchip {dog_data.microchip} ya registrado")
 
         year = datetime.now().year
-        count_result = await self.db.execute(
-            select(func.count(Dog.id)).where(Dog.internal_id.like(f"DOG-{year}-%"))
-        )
+        count_result = await self.db.execute(select(func.count(Dog.id)).where(Dog.internal_id.like(f"DOG-{year}-%")))
         seq = count_result.scalar_one() + 1
         internal_id = f"DOG-{year}-{seq:06d}"
 
@@ -188,9 +174,7 @@ class DogService:
 
     async def get_dog_by_internal_id(self, internal_id: str) -> Dog | None:
         """Get dog by internal ID."""
-        result = await self.db.execute(
-            select(Dog).where(Dog.internal_id == internal_id)
-        )
+        result = await self.db.execute(select(Dog).where(Dog.internal_id == internal_id))
         return result.scalar_one_or_none()
 
     async def list_dogs(
@@ -222,16 +206,12 @@ class DogService:
         total = count_result.scalar_one()
 
         result = await self.db.execute(
-            query.order_by(Dog.created_at.desc())
-            .offset(pagination.offset)
-            .limit(pagination.limit)
+            query.order_by(Dog.created_at.desc()).offset(pagination.offset).limit(pagination.limit)
         )
         dogs = list(result.scalars().all())
         return dogs, total
 
-    async def update_dog(
-        self, dog_id: int, dog_data: DogUpdate, updated_by: int = 1
-    ) -> Dog:
+    async def update_dog(self, dog_id: int, dog_data: DogUpdate, updated_by: int = 1) -> Dog:
         """Update an existing dog."""
         dog = await self.get_dog(dog_id)
         if not dog:
@@ -266,9 +246,7 @@ class DogService:
             raise NotFoundException("Perro", str(dog_id))
 
         if dog.status not in ["draft", "inactive"]:
-            raise ValidationException(
-                f"No se puede eliminar perro en estado {dog.status}. Solo draft o inactive."
-            )
+            raise ValidationException(f"No se puede eliminar perro en estado {dog.status}. Solo draft o inactive.")
 
         await self.db.delete(dog)
         await self.db.flush()
@@ -319,9 +297,7 @@ class DogService:
         total = count_result.scalar_one()
 
         result = await self.db.execute(
-            query.order_by(DogMedia.created_at.desc())
-            .offset(pagination.offset)
-            .limit(pagination.limit)
+            query.order_by(DogMedia.created_at.desc()).offset(pagination.offset).limit(pagination.limit)
         )
         media = list(result.scalars().all())
         return media, total
@@ -330,9 +306,7 @@ class DogService:
     # HEALTH OPERATIONS
     # =========================================================================
 
-    async def add_health_record(
-        self, dog_id: int, health_data: DogHealthCreate
-    ) -> DogHealth:
+    async def add_health_record(self, dog_id: int, health_data: DogHealthCreate) -> DogHealth:
         """Add health record to a dog."""
         dog = await self.get_dog(dog_id)
         if not dog:
@@ -351,9 +325,7 @@ class DogService:
     # STATUS HISTORY OPERATIONS
     # =========================================================================
 
-    async def add_status_history(
-        self, dog_id: int, status_data: DogStatusHistoryCreate
-    ) -> DogStatusHistory:
+    async def add_status_history(self, dog_id: int, status_data: DogStatusHistoryCreate) -> DogStatusHistory:
         """Add status history entry for a dog."""
         dog = await self.get_dog(dog_id)
         if not dog:

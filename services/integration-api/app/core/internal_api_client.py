@@ -16,9 +16,7 @@ logger = structlog.get_logger()
 class InternalAPIError(Exception):
     """Base exception for internal API errors."""
 
-    def __init__(
-        self, message: str, status_code: int | None = None, response: dict | None = None
-    ):
+    def __init__(self, message: str, status_code: int | None = None, response: dict | None = None):
         self.message = message
         self.status_code = status_code
         self.response = response
@@ -90,9 +88,7 @@ class InternalAPIClient:
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
-            raise RuntimeError(
-                "InternalAPIClient not started. Use async context manager or call start() first."
-            )
+            raise RuntimeError("InternalAPIClient not started. Use async context manager or call start() first.")
         return self._client
 
     def _generate_correlation_id(self) -> str:
@@ -106,14 +102,9 @@ class InternalAPIClient:
         duplicate resource creation on POST/PATCH retries.
         """
         idempotent_methods = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
-        return (
-            method.upper() in idempotent_methods
-            and response.status_code in self.retry_on_status
-        )
+        return method.upper() in idempotent_methods and response.status_code in self.retry_on_status
 
-    async def _request_with_retry(
-        self, method: str, path: str, correlation_id: str, **kwargs
-    ) -> httpx.Response:
+    async def _request_with_retry(self, method: str, path: str, correlation_id: str, **kwargs) -> httpx.Response:
         """Execute HTTP request with retry logic."""
         last_exception = None
 
@@ -122,9 +113,7 @@ class InternalAPIClient:
             headers["X-Correlation-ID"] = correlation_id
 
             try:
-                response = await self.client.request(
-                    method=method, url=path, headers=headers, **kwargs
-                )
+                response = await self.client.request(method=method, url=path, headers=headers, **kwargs)
 
                 # Log request
                 logger.debug(
@@ -192,49 +181,37 @@ class InternalAPIClient:
             raise InternalAPIError(f"Request failed: {last_exception}", status_code=502)
         raise InternalAPIError("Request failed unexpectedly", status_code=500)
 
-    async def get(
-        self, path: str, params: dict | None = None, correlation_id: str | None = None
-    ) -> dict[str, Any]:
+    async def get(self, path: str, params: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
         """GET request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("GET", path, cid, params=params)
         return self._handle_response(response, cid)
 
-    async def post(
-        self, path: str, json: dict | None = None, correlation_id: str | None = None
-    ) -> dict[str, Any]:
+    async def post(self, path: str, json: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
         """POST request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("POST", path, cid, json=json)
         return self._handle_response(response, cid)
 
-    async def put(
-        self, path: str, json: dict | None = None, correlation_id: str | None = None
-    ) -> dict[str, Any]:
+    async def put(self, path: str, json: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
         """PUT request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("PUT", path, cid, json=json)
         return self._handle_response(response, cid)
 
-    async def patch(
-        self, path: str, json: dict | None = None, correlation_id: str | None = None
-    ) -> dict[str, Any]:
+    async def patch(self, path: str, json: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
         """PATCH request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("PATCH", path, cid, json=json)
         return self._handle_response(response, cid)
 
-    async def delete(
-        self, path: str, correlation_id: str | None = None
-    ) -> dict[str, Any]:
+    async def delete(self, path: str, correlation_id: str | None = None) -> dict[str, Any]:
         """DELETE request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("DELETE", path, cid)
         return self._handle_response(response, cid)
 
-    def _handle_response(
-        self, response: httpx.Response, correlation_id: str
-    ) -> dict[str, Any]:
+    def _handle_response(self, response: httpx.Response, correlation_id: str) -> dict[str, Any]:
         """Handle response and raise appropriate exceptions."""
         if response.status_code >= 400:
             try:
@@ -242,11 +219,7 @@ class InternalAPIClient:
             except Exception:
                 error_data = {"message": response.text}
 
-            error_msg = (
-                error_data.get("detail")
-                or error_data.get("message")
-                or f"HTTP {response.status_code}"
-            )
+            error_msg = error_data.get("detail") or error_data.get("message") or f"HTTP {response.status_code}"
 
             logger.error(
                 "internal_api_error_response",
@@ -257,27 +230,17 @@ class InternalAPIClient:
             )
 
             if response.status_code == 401:
-                raise InternalAPIError(
-                    "Unauthorized - invalid or missing API key", status_code=401
-                )
+                raise InternalAPIError("Unauthorized - invalid or missing API key", status_code=401)
             elif response.status_code == 403:
-                raise InternalAPIError(
-                    "Forbidden - insufficient permissions", status_code=403
-                )
+                raise InternalAPIError("Forbidden - insufficient permissions", status_code=403)
             elif response.status_code == 404:
                 raise InternalAPIError("Resource not found", status_code=404)
             elif response.status_code == 409:
-                raise InternalAPIError(
-                    "Conflict - resource already exists", status_code=409
-                )
+                raise InternalAPIError("Conflict - resource already exists", status_code=409)
             elif response.status_code == 422:
-                raise InternalAPIError(
-                    f"Validation error: {error_msg}", status_code=422
-                )
+                raise InternalAPIError(f"Validation error: {error_msg}", status_code=422)
             elif response.status_code >= 500:
-                raise InternalAPIError(
-                    f"Server error: {error_msg}", status_code=response.status_code
-                )
+                raise InternalAPIError(f"Server error: {error_msg}", status_code=response.status_code)
             else:
                 raise InternalAPIError(error_msg, status_code=response.status_code)
 
@@ -312,9 +275,7 @@ async def create_internal_api_client(
     settings = get_settings()
 
     # Use provided values or get from settings
-    final_base_url = base_url or getattr(
-        settings, "INTERNAL_API_URL", "http://localhost:8000/api/v1"
-    )
+    final_base_url = base_url or getattr(settings, "INTERNAL_API_URL", "http://localhost:8000/api/v1")
     final_api_key = api_key or settings.AGENT_API_KEYS.get(agent_name)
 
     if not final_api_key:

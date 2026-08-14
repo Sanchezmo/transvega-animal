@@ -2,6 +2,8 @@
 Rutas para gestión de publicaciones/anuncios.
 """
 
+from fastapi import APIRouter, Depends, Query, status
+
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundException, ValidationException
 from app.dependencies.auth import get_current_agent, require_write
@@ -14,7 +16,6 @@ from app.schemas import (
     PublicationUpdate,
 )
 from app.services.publication_service import PublicationService, get_publication_service
-from fastapi import APIRouter, Depends, Query, status
 
 router = APIRouter(tags=["Publicaciones"])
 settings = get_settings()
@@ -169,7 +170,7 @@ async def publish_publicacion(
     Publicar en plataforma externa (Milanuncios, etc.).
 
     Requiere: aprobación previa, expediente válido, documentación completa.
-    
+
     IMPORTANTE: Requiere external_id y external_url de la confirmación real de la plataforma.
     Sin estos campos, no se puede marcar como publicada.
     """
@@ -196,7 +197,7 @@ async def publish_failed_publicacion(
 ):
     """
     Marcar publicación como fallida tras intento de publicación.
-    
+
     Se llama cuando el PublishingAgent falla al publicar en Milanuncios.
     """
     failed_pub = await pub_service.mark_publish_failed(

@@ -2,6 +2,9 @@
 Rutas para gestión de terceros (clientes/proveedores).
 """
 
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.adapters.dolibarr.client import DolibarrClient
 from app.adapters.dolibarr.mappers import (
     dolibarr_list_to_thirdparties,
@@ -22,8 +25,6 @@ from app.schemas import (
     ThirdPartyResponse,
     ThirdPartyUpdate,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["Terceros"])
 settings = get_settings()
@@ -73,9 +74,7 @@ async def list_terceros(
     except DolibarrException as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error consultando terceros: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error consultando terceros: {e!s}")
 
 
 @router.get("/{tercero_id}", response_model=ThirdPartyResponse)
@@ -166,9 +165,7 @@ async def update_tercero(
             raise NotFoundException("Tercero", str(tercero_id))
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error actualizando tercero: {e!s}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error actualizando tercero: {e!s}")
 
 
 @router.delete("/{tercero_id}", status_code=status.HTTP_204_NO_CONTENT)
