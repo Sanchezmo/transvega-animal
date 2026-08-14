@@ -82,62 +82,160 @@ class DogIntakeAgent:
         user_id = message.get("user_id")
         text = message.get("text", "")
         tg_message = message.get("message")
-        
+
         if chat_id is None or user_id is None:
             return {"success": False, "error": "chat_id and user_id required"}
-        
+
         # Get or create session
         session = intake_session_store.get_or_create(user_id, chat_id)
         session.update_privacy_scope()
-        
+
+        # Define intake steps in order
+        INTAKE_STEPS = [
+            "awaiting_name",
+            "awaiting_breed",
+            "awaiting_sex",
+            "awaiting_birth_date",
+            "awaiting_color",
+            "awaiting_microchip",
+            "awaiting_purchase_price",
+            "awaiting_sale_price",
+            "completed",
+        ]
+
+        # Map step to field name and prompt
+        STEP_INFO = {
+            "awaiting_name": ("name", "¿Cuál es el nombre del perro?"),
+            "awaiting_breed": ("breed_name", "¿Qué raza es? (ej: Bulldog francés, Golden Retriever)"),
+            "awaiting_sex": ("sex", "¿Sexo? (M/H o Macho/Hembra)"),
+            "awaiting_birth_date": ("birth_date", "¿Fecha de nacimiento? (YYYY-MM-DD)"),
+            "awaiting_color": ("color", "¿Color? (ej: Dorado, Negro, Blanco)"),
+            "awaiting_microchip": ("microchip", "¿Número de microchip? (15 dígitos)"),
+            "awaiting_purchase_price": ("purchase_price", "¿Precio de compra? (opcional, envía 0 para omitir)"),
+            "awaiting_sale_price": ("sale_price", "¿Precio de venta? (opcional, envía 0 para omitir)"),
+        }
+
         # Handle text input
         if text:
-            session.data["raw_text"] = text
             session.touch()
-            
-            # Parse structured data (key: value format)
+
+            # Check for commands
+            if text.lower().strip() in ["/start", "nuevo perro", "nuevo"]:
+                # Reset session for new intake
+                session.data = {}
+                session.step = "awaiting_name"
+                session.media_files = []
+                session.update_privacy_scope()
+                return {
+                    "success": True,
+                    "completed": False,
+                    "message": "¡Nuevo ingreso de perro! " + STEP_INFO["awaiting_name"][1],
+                    "step": session.step,
+                    "session_id": session.session_id,
+                    "privacy_scope": session.privacy_scope,
+                }
+
+            if text.lower().strip() in ["/cancel", "cancelar"]:
+                intake_session_store.delete(user_id, chat_id)
+                return {
+                    "success": True,
+                    "completed": True,
+                    "message": "Ingreso cancelado.",
+                }
+
+            # Parse structured data (key: value format) - accumulate into session.data
             parsed = {}
-            for line in text.split('\n'):
-                if ':' in line:
-                    k, v = line.split(':', 1)
+            for line in text.split("\n"):
+                if ":" in line:
+                    k, v = line.split(":", 1)
                     parsed[k.strip().lower()] = v.strip()
-            
+
             # Map to our fields
             mapping = {
-                "nombre": "name", "name": "name",
+                "nombre": "name",
+                "name": "name",
                 "raza": "breed_name",
-                "sexo": "sex", "sex": "sex",
-                "fecha de nacimiento": "birth_date", "birth_date": "birth_date",
+                "sexo": "sex",
+                "sex": "sex",
+                "fecha de nacimiento": "birth_date",
+                "birth_date": "birth_date",
                 "color": "color",
                 "microchip": "microchip",
                 "precio": "purchase_price",
                 "precio de venta": "sale_price",
             }
-            
-            dog_data = {}
+
             for k, v in parsed.items():
                 if k in mapping:
-                    dog_data[mapping[k]] = v
-            
-            # If we have enough info to create dog
+                    session.data[mapping[k]] = v
+
+            # Also handle plain text as answer to current step
+            current_step = session.step
+            if current_step in STEP_INFO and not parsed:
+                field_name = STEP_INFO[current_step][0]
+                # Normalize sex input
+                if field_name == "sex":
+                    normalized = text.strip().lower()
+                    if normalized in ["m", "macho", "male"]:
+                        session.data[field_name] = "M"
+                    elif normalized in ["h", "hembra", "female"]:
+                        session.data[field_name] = "H"
+                    else:
+                        return {
+                            "success": True,
+                            "completed": False,
+                            "message": "Sexo inválido. Usa M/H o Macho/Hembra.",
+                            "step": current_step,
+                            "session_id": session.session_id,
+                            "privacy_scope": session.privacy_scope,
+                        }
+                else:
+                    session.data[field_name] = text.strip()
+
+            # Advance step if current field is filled
+            while session.step in STEP_INFO:
+                field_name = STEP_INFO[session.step][0]
+                if field_name in session.data and session.data[field_name]:
+                    # Move to next step
+                    current_idx = INTAKE_STEPS.index(session.step)
+                    if current_idx + 1 < len(INTAKE_STEPS):
+                        session.step = INTAKE_STEPS[current_idx + 1]
+                    else:
+                        break
+                else:
+                    break
+
+            session.update_privacy_scope()
+
+            # Check if we have all required fields to create dog
             required = ["name", "sex", "birth_date", "color", "microchip"]
-            if all(field in dog_data for field in required) and "breed_name" in dog_data:
+            if all(field in session.data for field in required) and "breed_name" in session.data:
                 # Look up breed by name
                 breed_resp = await self.api_client.get("/dogs/breeds/")
                 if breed_resp.get("data"):
                     breeds = breed_resp.get("data", [])
                     for breed in breeds:
-                        if breed["name"].lower() == dog_data["breed_name"].lower():
-                            dog_data["breed_id"] = breed["id"]
+                        if breed["name"].lower() == session.data["breed_name"].lower():
+                            session.data["breed_id"] = breed["id"]
                             break
-            
-            if "breed_id" in dog_data and all(field in dog_data for field in required):
-                # Create dog
+
+            if "breed_id" in session.data and all(field in session.data for field in required):
+                # Create dog with accumulated data
+                dog_data = {
+                    "name": session.data["name"],
+                    "breed_id": session.data["breed_id"],
+                    "sex": session.data["sex"],
+                    "birth_date": session.data["birth_date"],
+                    "color": session.data["color"],
+                    "microchip": session.data["microchip"],
+                    "purchase_price": float(session.data.get("purchase_price", 0) or 0),
+                    "sale_price": float(session.data.get("sale_price", 0) or 0),
+                }
                 create_result = await self._create_dog(dog_data)
                 if create_result.get("success"):
                     dog_id = create_result["dog"]["id"]
                     internal_id = create_result["dog"]["internal_id"]
-                    
+
                     # Associate media from session
                     media_success = []
                     for mf in session.media_files:
@@ -150,33 +248,46 @@ class DogIntakeAgent:
                                 uploaded_by=mf["uploaded_by"],
                             )
                             meta["dog_id"] = dog_id
-                            media_resp = await self.api_client.post(f"/dogs/{dog_id}/media", json=meta)
+                            media_resp = await self.api_client.post(
+                                f"/dogs/{dog_id}/media", json=meta
+                            )
                             media_success.append(media_resp)
                         except Exception as e:
                             logger.error("failed_to_assoc_media", error=str(e))
-                    
+
                     intake_session_store.delete(user_id, chat_id)
-                    
+
                     return {
                         "success": True,
                         "completed": True,
                         "dog": create_result["dog"],
-                        "message": f"Perro {internal_id} creado con {len(media_success)} archivos de media."
+                        "message": f"Perro {internal_id} creado con {len(media_success)} archivos de media.",
                     }
-            
-            # Not enough info yet
-            missing = [f for f in required if f not in dog_data]
-            if "breed_id" not in dog_data:
-                missing.append("breed_id")
-            
-            return {
-                "success": True,
-                "completed": False,
-                "message": f"Recibido. Faltan: {', '.join(missing)}" if missing else "Recibido. Envía raza (nombre) para continuar.",
-                "session_id": session.session_id,
-                "privacy_scope": session.privacy_scope,
-            }
-        
+
+            # Not enough info yet - prompt for next field
+            if session.step in STEP_INFO:
+                next_prompt = STEP_INFO[session.step][1]
+                return {
+                    "success": True,
+                    "completed": False,
+                    "message": f"Recibido. {next_prompt}",
+                    "step": session.step,
+                    "session_id": session.session_id,
+                    "privacy_scope": session.privacy_scope,
+                    "collected_data": {
+                        k: v for k, v in session.data.items() if k in STEP_INFO.values()
+                    },
+                }
+            else:
+                return {
+                    "success": True,
+                    "completed": False,
+                    "message": "Ingreso completado. Envía /start para nuevo perro.",
+                    "step": "completed",
+                    "session_id": session.session_id,
+                    "privacy_scope": session.privacy_scope,
+                }
+
         # Handle photo
         if tg_message and "photo" in tg_message:
             # In a real implementation, the webhook would download the file
@@ -184,7 +295,7 @@ class DogIntakeAgent:
             file_content = tg_message.get("file_content")
             filename = tg_message.get("filename", f"photo_{int(session.updated_at)}.jpg")
             purpose = "original"
-            
+
             if file_content and isinstance(file_content, bytes):
                 session.media_files.append({
                     "content": file_content,
@@ -199,20 +310,22 @@ class DogIntakeAgent:
                     "message": f"Foto recibida y almacenada en sesión ({len(session.media_files)} total).",
                     "session_id": session.session_id,
                     "privacy_scope": session.privacy_scope,
+                    "step": session.step,
                 }
             else:
                 return {
                     "success": True,
                     "message": "Foto detectada. Para procesar, usa el endpoint /telegram/media con el archivo.",
                     "session_id": session.session_id,
+                    "step": session.step,
                 }
-        
+
         # Handle video
         if tg_message and "video" in tg_message:
             file_content = tg_message.get("file_content")
             filename = tg_message.get("filename", f"video_{int(session.updated_at)}.mp4")
             purpose = "original"
-            
+
             if file_content and isinstance(file_content, bytes):
                 session.media_files.append({
                     "content": file_content,
@@ -227,13 +340,15 @@ class DogIntakeAgent:
                     "message": f"Video recibido y almacenado en sesión ({len(session.media_files)} total). Propósito: {purpose}",
                     "session_id": session.session_id,
                     "privacy_scope": session.privacy_scope,
+                    "step": session.step,
                 }
-        
+
         return {
             "success": True,
             "message": "Texto recibido. Continúa enviando datos o archivos.",
             "session_id": session.session_id,
             "privacy_scope": session.privacy_scope,
+            "step": session.step,
         }
 
     async def process_task(self, task: Dict) -> Dict:

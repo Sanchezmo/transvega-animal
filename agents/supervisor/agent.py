@@ -88,6 +88,9 @@ class SupervisorAgent:
         logger.info("starting_supervisor", agent_id=self.agent_id)
         self.status = "running"
         
+        # Start sub-agents
+        await self.dog_intake_agent.start()
+        
         # Start background tasks
         asyncio.create_task(self._monitor_workflows())
         asyncio.create_task(self._cleanup_completed_workflows())
@@ -102,7 +105,7 @@ class SupervisorAgent:
         await self.media_pipeline_agent.close()
         await self.content_agent.client.aclose()
         await self.publishing_agent.close()
-        await self.dog_intake_agent.close()
+        await self.dog_intake_agent.stop()
 
     # =========================================================================
     # WORKFLOW ENTRY POINTS

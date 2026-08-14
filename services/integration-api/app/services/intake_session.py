@@ -1,22 +1,26 @@
 """Intake session management for Telegram dog intake flow."""
+
 import time
 import uuid
-from typing import Dict, Optional
 
 from app.core.privacy_router import privacy_router
 
 
 class IntakeSession:
     """Session state for a single user/chat."""
+
     def __init__(self, session_id: str, user_id: int, chat_id: int):
         self.session_id = session_id
         self.user_id = user_id
         self.chat_id = chat_id
         self.created_at = time.time()
         self.updated_at = self.created_at
-        self.data: Dict = {}
+        self.data: dict = {}  # accumulated structured dog data
+        self.step: str = "awaiting_name"  # current intake step
         self.media_files: list = []  # list of dicts with file info
-        self.privacy_scope = "ONLINE_ALLOWED"  # starts as allowed, may become LOCAL_ONLY
+        self.privacy_scope = (
+            "ONLINE_ALLOWED"  # starts as allowed, may become LOCAL_ONLY
+        )
 
     def is_expired(self, ttl_seconds: int = 3600) -> bool:
         return (time.time() - self.updated_at) > ttl_seconds
@@ -34,9 +38,12 @@ class IntakeSession:
         else:
             # If any media is original/raw, still LOCAL_ONLY
             for m in self.media_files:
-                if m.get('purpose') == 'original' or m.get('media_type') in ['photo', 'video']:
+                if m.get("purpose") == "original" or m.get("media_type") in [
+                    "photo",
+                    "video",
+                ]:
                     # media itself considered sensitive unless processed/social/listing
-                    if m.get('purpose') in ['original']:
+                    if m.get("purpose") in ["original"]:
                         self.privacy_scope = "LOCAL_ONLY"
                         break
             else:
@@ -45,8 +52,9 @@ class IntakeSession:
 
 class IntakeSessionStore:
     """In-memory store with basic TTL cleanup."""
+
     def __init__(self):
-        self._sessions: Dict[str, IntakeSession] = {}
+        self._sessions: dict[str, IntakeSession] = {}
 
     def get_or_create(self, user_id: int, chat_id: int) -> IntakeSession:
         # Simple key: f"{user_id}:{chat_id}"
@@ -61,7 +69,7 @@ class IntakeSessionStore:
         self._sessions[key] = session
         return session
 
-    def get(self, user_id: int, chat_id: int) -> Optional[IntakeSession]:
+    def get(self, user_id: int, chat_id: int) -> IntakeSession | None:
         key = f"{user_id}:{chat_id}"
         session = self._sessions.get(key)
         if session and not session.is_expired():
