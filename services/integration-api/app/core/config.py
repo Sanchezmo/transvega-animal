@@ -1,8 +1,8 @@
 """
 Configuración de la aplicación usando Pydantic Settings.
 """
+
 from functools import lru_cache
-from typing import List, Optional, Dict
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,12 +27,12 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
     API_WORKERS: int = 1
-    API_CORS_ORIGINS: List[str] = [
+    API_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://localhost:8002",
         "https://hermes.transvega-animal.es",
     ]
-    
+
     # Internal API URL for service-to-service communication
     INTERNAL_API_URL: str = "http://localhost:8000"
 
@@ -83,23 +83,29 @@ class Settings(BaseSettings):
     AGENT_API_KEY_MARKETING: str = "tvsk_dev_marketing_abcdef123456"
     AGENT_API_KEY_TECHNICAL: str = "tvsk_dev_technical_abcdef123456"
     AGENT_API_KEY_DOG_INTAKE: str = "tvsk_dev_dog_intake_abcdef123456"
+    AGENT_API_KEY_EXPEDIENTES: str = "tvsk_dev_expedientes_abcdef123456"
+    AGENT_API_KEY_FACTURACION: str = "tvsk_dev_facturacion_abcdef123456"
 
     # Aprobaciones
     APPROVALS_SERVICE_URL: str = "http://approvals:8000"
 
     # Notificaciones
-    NOTIFICATION_WEBHOOK_URL: Optional[str] = None
-    NOTIFICATION_WEBHOOK_SECRET: Optional[str] = None
+    NOTIFICATION_WEBHOOK_URL: str | None = None
+    NOTIFICATION_WEBHOOK_SECRET: str | None = None
+
+    # Telegram
+    TELEGRAM_WEBHOOK_SECRET: str | None = None
+    TELEGRAM_WEBHOOK_SECRET_REQUIRED: bool = True
 
     # Google Workspace
-    GOOGLE_CLIENT_ID: Optional[str] = None
-    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
     GOOGLE_WORKSPACE_DOMAIN: str = "transvega-animal.es"
 
     # Cloudflare
-    CLOUDFLARE_API_TOKEN: Optional[str] = None
-    CLOUDFLARE_ACCOUNT_ID: Optional[str] = None
-    CLOUDFLARE_ZONE_ID: Optional[str] = None
+    CLOUDFLARE_API_TOKEN: str | None = None
+    CLOUDFLARE_ACCOUNT_ID: str | None = None
+    CLOUDFLARE_ZONE_ID: str | None = None
 
     # Logs
     LOG_LEVEL: str = "INFO"
@@ -110,9 +116,9 @@ class Settings(BaseSettings):
     METRICS_PORT: int = 9090
 
     # VeriFactu
-    VERIFACTU_PROVIDER: Optional[str] = None
-    VERIFACTU_CERT_PATH: Optional[str] = None
-    VERIFACTU_KEY_PATH: Optional[str] = None
+    VERIFACTU_PROVIDER: str | None = None
+    VERIFACTU_CERT_PATH: str | None = None
+    VERIFACTU_KEY_PATH: str | None = None
     VERIFACTU_TEST_MODE: bool = True
 
     # Celery
@@ -120,7 +126,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/2"
     CELERY_TASK_SERIALIZER: str = "json"
     CELERY_RESULT_SERIALIZER: str = "json"
-    CELERY_ACCEPT_CONTENT: List[str] = ["json"]
+    CELERY_ACCEPT_CONTENT: list[str] = ["json"]
     CELERY_TIMEZONE: str = "Europe/Madrid"
     CELERY_TASK_TRACK_STARTED: bool = True
     CELERY_TASK_TIME_LIMIT: int = 3600
@@ -128,7 +134,7 @@ class Settings(BaseSettings):
     CELERY_WORKER_CONCURRENCY: int = 4
     CELERY_TASK_DEFAULT_QUEUE: str = "default"
 
-    def get_agent_api_keys(self) -> Dict[str, str]:
+    def get_agent_api_keys(self) -> dict[str, str]:
         """Obtener diccionario de API keys por agente."""
         return {
             "supervisor": self.AGENT_API_KEY_SUPERVISOR,
@@ -144,10 +150,12 @@ class Settings(BaseSettings):
             "marketing": self.AGENT_API_KEY_MARKETING,
             "technical": self.AGENT_API_KEY_TECHNICAL,
             "dog_intake": self.AGENT_API_KEY_DOG_INTAKE,
+            "expedientes": self.AGENT_API_KEY_EXPEDIENTES,
+            "facturacion": self.AGENT_API_KEY_FACTURACION,
         }
 
     @property
-    def AGENT_API_KEYS(self) -> Dict[str, str]:
+    def AGENT_API_KEYS(self) -> dict[str, str]:
         """Property para compatibilidad con código que accede a settings.AGENT_API_KEYS."""
         return self.get_agent_api_keys()
 

@@ -1,18 +1,17 @@
 """
 Punto de entrada principal de la API FastAPI.
 """
+
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response
+
+import structlog
+from app.core.config import get_settings
+from app.core.database import close_db, init_db
+from app.core.exceptions import TransvegaException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import structlog
-import time
-
-from app.core.config import get_settings
-from app.core.database import init_db, close_db
-from app.core.exceptions import TransvegaException
-from app.dependencies.auth import get_current_agent
-from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
 
 # Configurar logging estructurado
 structlog.configure(
@@ -40,14 +39,18 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """Gestión del ciclo de vida de la aplicación."""
     # Startup
-    logger.info("starting_application", version=settings.APP_VERSION, environment=settings.ENVIRONMENT)
-    
+    logger.info(
+        "starting_application",
+        version=settings.APP_VERSION,
+        environment=settings.ENVIRONMENT,
+    )
+
     # Inicializar base de datos
     await init_db()
     logger.info("database_initialized")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("shutting_down_application")
     await close_db()
@@ -79,7 +82,7 @@ app.add_middleware(
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
     start_time = time.time()
-    
+
     # Log request
     logger.info(
         "request_started",
@@ -88,10 +91,10 @@ async def logging_middleware(request: Request, call_next):
         query_params=dict(request.query_params),
         client_ip=request.client.host if request.client else "unknown",
     )
-    
+
     try:
         response = await call_next(request)
-        
+
         # Log response
         duration = time.time() - start_time
         logger.info(
@@ -101,15 +104,17 @@ async def logging_middleware(request: Request, call_next):
             status_code=response.status_code,
             duration_ms=round(duration * 1000, 2),
         )
-        
+
         # Headers de rate limit
         if hasattr(request.state, "rate_limit_remaining"):
-            response.headers["X-RateLimit-Remaining"] = str(request.state.rate_limit_remaining)
+            response.headers["X-RateLimit-Remaining"] = str(
+                request.state.rate_limit_remaining
+            )
         if hasattr(request.state, "rate_limit_reset"):
             response.headers["X-RateLimit-Reset"] = str(request.state.rate_limit_reset)
-        
+
         return response
-    
+
     except Exception as e:
         duration = time.time() - start_time
         logger.error(
@@ -169,6 +174,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
 # HEALTH CHECKS
 # =============================================================================
 
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check básico."""
@@ -185,19 +191,19 @@ async def readiness_check():
     """Readiness check - verifica dependencias."""
     checks = {}
     overall = "ready"
-    
+
     # Verificar BD auditoría
     try:
-        from app.core.database import get_db
         # Quick ping
         checks["audit_db"] = "ok"
     except Exception as e:
         checks["audit_db"] = f"error: {e}"
         overall = "not_ready"
-    
+
     # Verificar Redis
     try:
         from app.core.database import get_redis_client
+
         redis = await get_redis_client()
         await redis.ping()
         await redis.close()
@@ -205,10 +211,10 @@ async def readiness_check():
     except Exception as e:
         checks["redis"] = f"error: {e}"
         overall = "not_ready"
-    
+
     # Verificar Dolibarr (mock en dev)
     checks["dolibarr"] = "mock" if settings.ENVIRONMENT == "development" else "pending"
-    
+
     return {
         "status": overall,
         "checks": checks,
@@ -220,22 +226,45 @@ async def readiness_check():
 # =============================================================================
 
 # Importar y registrar routers
-from app.routes import expedientes, terceros, productos, publicaciones, comercial, facturacion, aprobaciones, salud, proveedores
+from app.routes import (
+    aprobaciones,
+    comercial,
+    expedientes,
+    facturacion,
+    productos,
+    proveedores,
+    publicaciones,
+    salud,
+    telegram,
+    terceros,
+)
 
 app.include_router(salud.router, prefix="/api/v1", tags=["Health"])
-app.include_router(expedientes.router, prefix="/api/v1/expedientes", tags=["Expedientes"])
+app.include_router(
+    expedientes.router, prefix="/api/v1/expedientes", tags=["Expedientes"]
+)
 app.include_router(terceros.router, prefix="/api/v1/terceros", tags=["Terceros"])
 app.include_router(productos.router, prefix="/api/v1/productos", tags=["Productos"])
-app.include_router(publicaciones.router, prefix="/api/v1/publicaciones", tags=["Publicaciones"])
+app.include_router(
+    publicaciones.router, prefix="/api/v1/publicaciones", tags=["Publicaciones"]
+)
 app.include_router(comercial.router, prefix="/api/v1/comercial", tags=["Comercial"])
-app.include_router(facturacion.router, prefix="/api/v1/facturacion", tags=["Facturación"])
-app.include_router(aprobaciones.router, prefix="/api/v1/aprobaciones", tags=["Aprobaciones"])
-app.include_router(proveedores.router, prefix="/api/v1/proveedores", tags=["Proveedores"])
+app.include_router(
+    facturacion.router, prefix="/api/v1/facturacion", tags=["Facturación"]
+)
+app.include_router(
+    aprobaciones.router, prefix="/api/v1/aprobaciones", tags=["Aprobaciones"]
+)
+app.include_router(
+    proveedores.router, prefix="/api/v1/proveedores", tags=["Proveedores"]
+)
+app.include_router(telegram.router, prefix="/api/v1", tags=["Telegram"])
 
 
 # =============================================================================
 # ROOT
 # =============================================================================
+
 
 @app.get("/", tags=["Root"])
 async def root():
@@ -250,6 +279,7 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host=settings.API_HOST,
