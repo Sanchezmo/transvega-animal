@@ -1,31 +1,30 @@
 """
 Rutas para gestión comercial (leads, oportunidades, consultas).
 """
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.exceptions import NotFoundException
 from app.dependencies.auth import get_current_agent, require_write
-from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
+from app.dependencies.rate_limit import idempotency_dependency, rate_limit_dependency
 from app.schemas import (
     LeadCreate,
-    LeadUpdate,
     LeadResponse,
+    LeadUpdate,
     PaginatedResponse,
     PaginationParams,
 )
-from app.core.exceptions import NotFoundException
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/comercial", tags=["Comercial"])
+router = APIRouter(tags=["Comercial"])
 settings = get_settings()
 
 
 @router.get("/leads", response_model=PaginatedResponse[LeadResponse])
 async def list_leads(
     pagination: PaginationParams = Depends(),
-    status: Optional[str] = Query(None, description="Filtrar por estado"),
+    status: str | None = Query(None, description="Filtrar por estado"),
     agent: dict = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
@@ -48,7 +47,6 @@ async def get_lead(
     _rate_limit: None = Depends(rate_limit_dependency),
 ):
     """Obtener lead por ID."""
-    from app.core.exceptions import NotFoundException
     raise NotFoundException("Lead", str(lead_id))
 
 
@@ -65,7 +63,6 @@ async def create_lead(
     _idempotency: None = Depends(idempotency_dependency),
 ):
     """Crear nuevo lead desde consulta web, WhatsApp, etc."""
-    from app.core.exceptions import NotFoundException
     raise NotFoundException("Lead", "no implementado")
 
 
@@ -79,7 +76,6 @@ async def update_lead(
     _idempotency: None = Depends(idempotency_dependency),
 ):
     """Actualizar lead (estado, datos, asignación)."""
-    from app.core.exceptions import NotFoundException
     raise NotFoundException("Lead", str(lead_id))
 
 
@@ -118,10 +114,11 @@ async def qualify_lead(
 # OPORTUNIDADES / PEDIDOS
 # =============================================================================
 
+
 @router.get("/oportunidades", response_model=PaginatedResponse[dict])
 async def list_oportunidades(
     pagination: PaginationParams = Depends(),
-    status: Optional[str] = Query(None),
+    status: str | None = Query(None),
     agent: dict = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),

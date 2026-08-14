@@ -1,31 +1,30 @@
 """
 Rutas para gestión de productos/servicios.
 """
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.exceptions import NotFoundException
 from app.dependencies.auth import get_current_agent, require_write
-from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
+from app.dependencies.rate_limit import idempotency_dependency, rate_limit_dependency
 from app.schemas import (
-    ProductCreate,
-    ProductUpdate,
-    ProductResponse,
     PaginatedResponse,
     PaginationParams,
+    ProductCreate,
+    ProductResponse,
+    ProductUpdate,
 )
-from app.core.exceptions import NotFoundException
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/productos", tags=["Productos"])
+router = APIRouter(tags=["Productos"])
 settings = get_settings()
 
 
 @router.get("", response_model=PaginatedResponse[ProductResponse])
 async def list_productos(
     pagination: PaginationParams = Depends(),
-    status: Optional[int] = Query(None, description="Filtrar por estado"),
+    status: int | None = Query(None, description="Filtrar por estado"),
     agent: dict = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),

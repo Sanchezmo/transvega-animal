@@ -1,11 +1,11 @@
 """
 Rutas de health check y información del sistema.
 """
-from fastapi import APIRouter, Depends
-from app.core.config import get_settings
-from app.dependencies.auth import get_current_agent
 
-router = APIRouter(prefix="/salud", tags=["Salud"])
+from app.core.config import get_settings
+from fastapi import APIRouter
+
+router = APIRouter(tags=["Salud"])
 settings = get_settings()
 
 
@@ -27,9 +27,9 @@ async def readiness_check():
         "redis": "ok",
         "dolibarr": "mock" if settings.ENVIRONMENT == "development" else "pending",
     }
-    
+
     all_ok = all(v == "ok" for v in checks.values())
-    
+
     return {
         "status": "ready" if all_ok else "not_ready",
         "checks": checks,

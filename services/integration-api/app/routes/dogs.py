@@ -1,46 +1,44 @@
 """
 Rutas para gestión de perros.
 """
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.exceptions import NotFoundException
 from app.dependencies.auth import get_current_agent, require_write
-from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
+from app.dependencies.rate_limit import idempotency_dependency, rate_limit_dependency
 from app.schemas import (
-    DogCreate,
-    DogUpdate,
-    DogResponse,
     BreedCreate,
     BreedResponse,
-    LitterCreate,
-    LitterResponse,
-    DogMediaCreate,
-    DogMediaResponse,
+    DogCreate,
     DogHealthCreate,
     DogHealthResponse,
+    DogMediaCreate,
+    DogMediaResponse,
+    DogResponse,
     DogStatusHistoryCreate,
     DogStatusHistoryResponse,
+    DogUpdate,
+    LitterCreate,
+    LitterResponse,
     PaginatedResponse,
     PaginationParams,
 )
-from app.core.exceptions import NotFoundException
 from app.services.dog_service import get_dog_service
+from fastapi import APIRouter, Depends, Query, status
 
-router = APIRouter(prefix="/dogs", tags=["Dogs"])
+router = APIRouter(tags=["Dogs"])
 settings = get_settings()
 
 
 @router.get("", response_model=PaginatedResponse[DogResponse])
 async def list_dogs(
     pagination: PaginationParams = Depends(),
-    breed_id: Optional[int] = Query(None, description="Filtrar por raza"),
-    litter_id: Optional[int] = Query(None, description="Filtrar por camada"),
-    status: Optional[str] = Query(None, description="Filtrar por estado"),
+    breed_id: int | None = Query(None, description="Filtrar por raza"),
+    litter_id: int | None = Query(None, description="Filtrar por camada"),
+    status: str | None = Query(None, description="Filtrar por estado"),
     agent: dict = Depends(get_current_agent),
     _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Listar perros con paginación y filtros.
@@ -65,7 +63,7 @@ async def get_dog(
     dog_id: int,
     agent: dict = Depends(get_current_agent),
     _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Obtener un perro por ID.
@@ -86,7 +84,7 @@ async def create_dog(
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Crear nuevo perro.
@@ -105,7 +103,7 @@ async def update_dog(
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Actualizar perro existente.
@@ -123,7 +121,7 @@ async def delete_dog(
     dog_id: int,
     agent: dict = Depends(get_current_agent),
     _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Eliminar perro (solo si está en estado draft o inactive).
@@ -137,7 +135,7 @@ async def list_breeds(
     pagination: PaginationParams = Depends(),
     agent: dict = Depends(get_current_agent),
     _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Listar razas de perros.
@@ -152,13 +150,15 @@ async def list_breeds(
     )
 
 
-@router.post("/breeds", response_model=BreedResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/breeds", response_model=BreedResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_breed(
     breed: BreedCreate,
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Crear nueva raza.
@@ -173,7 +173,7 @@ async def list_litters(
     pagination: PaginationParams = Depends(),
     agent: dict = Depends(get_current_agent),
     _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Listar camadas de perros.
@@ -188,13 +188,15 @@ async def list_litters(
     )
 
 
-@router.post("/litters", response_model=LitterResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/litters", response_model=LitterResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_litter(
     litter: LitterCreate,
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Crear nueva camada.
@@ -204,14 +206,18 @@ async def create_litter(
 
 
 # Rutas para media
-@router.post("/{dog_id}/media", response_model=DogMediaResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{dog_id}/media",
+    response_model=DogMediaResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_dog_media(
     dog_id: int,
     media: DogMediaCreate,
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Añadir media (foto/video) a un perro.
@@ -224,11 +230,11 @@ async def add_dog_media(
 async def get_dog_media(
     dog_id: int,
     pagination: PaginationParams = Depends(),
-    media_type: Optional[str] = Query(None, pattern=r"^(photo|video)$"),
-    purpose: Optional[str] = Query(None, pattern=r"^(original|processed|social|listing)$"),
+    media_type: str | None = Query(None, pattern=r"^(photo|video)$"),
+    purpose: str | None = Query(None, pattern=r"^(original|processed|social|listing)$"),
     agent: dict = Depends(get_current_agent),
     _rate_limit: None = Depends(rate_limit_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Obtener media de un perro.
@@ -249,14 +255,18 @@ async def get_dog_media(
 
 
 # Rutas para salud
-@router.post("/{dog_id}/health", response_model=DogHealthResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{dog_id}/health",
+    response_model=DogHealthResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_dog_health(
     dog_id: int,
     health: DogHealthCreate,
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Añadir registro de salud a un perro.
@@ -266,14 +276,18 @@ async def add_dog_health(
 
 
 # Rutas para historial de estados
-@router.post("/{dog_id}/status", response_model=DogStatusHistoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{dog_id}/status",
+    response_model=DogStatusHistoryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_dog_status_history(
     dog_id: int,
     status_data: DogStatusHistoryCreate,
     agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     _idempotency: None = Depends(idempotency_dependency),
-    dog_service = Depends(get_dog_service),
+    dog_service=Depends(get_dog_service),
 ):
     """
     Añadir entrada al historial de estados de un perro.

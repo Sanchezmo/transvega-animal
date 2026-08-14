@@ -1,17 +1,18 @@
 """
 Esquemas Pydantic para validación de datos de entrada/salida.
 """
-from pydantic import BaseModel, Field, validator, field_validator
-from typing import Optional, List, Dict, Any, TypeVar, Generic
+
 import datetime
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator, validator
 
 # =============================================================================
 # ESQUEMAS BASE
 # =============================================================================
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class BaseSchema(BaseModel):
@@ -27,6 +28,7 @@ class BaseSchema(BaseModel):
 
 class PaginationParams(BaseModel):
     """Parámetros de paginación estándar."""
+
     limit: int = Field(default=100, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
 
@@ -37,8 +39,9 @@ class PaginationParams(BaseModel):
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """Respuesta paginada estándar."""
+
     success: bool = True
-    data: List[T]
+    data: list[T]
     total: int
     limit: int
     offset: int
@@ -52,24 +55,33 @@ class PaginatedResponse(BaseModel, Generic[T]):
 # TERCEROS (CLIENTES/PROVEEDORES)
 # =============================================================================
 
+
 class ThirdPartyBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
-    name_alias: Optional[str] = Field(None, max_length=200)
-    email: Optional[str] = Field(None, pattern=r"^[^@]+@[^@]+\.[^@]+$")
-    phone: Optional[str] = Field(None, max_length=50)
-    address: Optional[str] = Field(None, max_length=500)
-    zip: Optional[str] = Field(None, max_length=20)
-    town: Optional[str] = Field(None, max_length=100)
-    country_id: Optional[int] = None
-    country_code: Optional[str] = Field(None, pattern=r"^[A-Z]{2}$")
-    state_id: Optional[int] = None
+    name_alias: str | None = Field(None, max_length=200)
+    email: str | None = Field(None, pattern=r"^[^@]+@[^@]+\.[^@]+$")
+    phone: str | None = Field(None, max_length=50)
+    address: str | None = Field(None, max_length=500)
+    zip: str | None = Field(None, max_length=20)
+    town: str | None = Field(None, max_length=100)
+    country_id: int | None = None
+    country_code: str | None = Field(None, pattern=r"^[A-Z]{2}$")
+    state_id: int | None = None
     client: int = Field(default=1, ge=0, le=1)
     supplier: int = Field(default=0, ge=0, le=1)
     status: int = Field(default=1, ge=0, le=1)
-    vat_number: Optional[str] = Field(None, max_length=50)
-    default_lang: Optional[str] = Field(default="es_ES", pattern=r"^[a-z]{2}_[A-Z]{2}$")
-    code_client: Optional[str] = Field(None, max_length=24, description="Código cliente (requerido por Dolibarr para clientes)")
-    code_fournisseur: Optional[str] = Field(None, max_length=24, description="Código proveedor (requerido por Dolibarr para proveedores, formato SU...)")
+    vat_number: str | None = Field(None, max_length=50)
+    default_lang: str | None = Field(default="es_ES", pattern=r"^[a-z]{2}_[A-Z]{2}$")
+    code_client: str | None = Field(
+        None,
+        max_length=24,
+        description="Código cliente (requerido por Dolibarr para clientes)",
+    )
+    code_fournisseur: str | None = Field(
+        None,
+        max_length=24,
+        description="Código proveedor (requerido por Dolibarr para proveedores, formato SU...)",
+    )
 
 
 class ThirdPartyCreate(ThirdPartyBase):
@@ -77,44 +89,49 @@ class ThirdPartyCreate(ThirdPartyBase):
 
 
 class ThirdPartyUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    name_alias: Optional[str] = Field(None, max_length=200)
-    email: Optional[str] = Field(None, pattern=r"^[^@]+@[^@]+\.[^@]+$")
-    phone: Optional[str] = Field(None, max_length=50)
-    address: Optional[str] = Field(None, max_length=500)
-    zip: Optional[str] = Field(None, max_length=20)
-    town: Optional[str] = Field(None, max_length=100)
-    country_id: Optional[int] = None
-    country_code: Optional[str] = Field(None, pattern=r"^[A-Z]{2}$")
-    state_id: Optional[int] = None
-    client: Optional[int] = Field(None, ge=0, le=1)
-    supplier: Optional[int] = Field(None, ge=0, le=1)
-    status: Optional[int] = Field(None, ge=0, le=1)
-    vat_number: Optional[str] = Field(None, max_length=50)
-    default_lang: Optional[str] = Field(None, pattern=r"^[a-z]{2}_[A-Z]{2}$")
-    code_client: Optional[str] = Field(None, max_length=24, description="Código cliente (requerido por Dolibarr para clientes)")
+    name: str | None = Field(None, min_length=1, max_length=200)
+    name_alias: str | None = Field(None, max_length=200)
+    email: str | None = Field(None, pattern=r"^[^@]+@[^@]+\.[^@]+$")
+    phone: str | None = Field(None, max_length=50)
+    address: str | None = Field(None, max_length=500)
+    zip: str | None = Field(None, max_length=20)
+    town: str | None = Field(None, max_length=100)
+    country_id: int | None = None
+    country_code: str | None = Field(None, pattern=r"^[A-Z]{2}$")
+    state_id: int | None = None
+    client: int | None = Field(None, ge=0, le=1)
+    supplier: int | None = Field(None, ge=0, le=1)
+    status: int | None = Field(None, ge=0, le=1)
+    vat_number: str | None = Field(None, max_length=50)
+    default_lang: str | None = Field(None, pattern=r"^[a-z]{2}_[A-Z]{2}$")
+    code_client: str | None = Field(
+        None,
+        max_length=24,
+        description="Código cliente (requerido por Dolibarr para clientes)",
+    )
 
 
 class ThirdPartyResponse(ThirdPartyBase):
     id: int
     ref: str
-    ref_ext: Optional[str] = None
-    canvas: Optional[str] = None
-    datec: Optional[datetime.datetime] = None
-    datem: Optional[datetime.datetime] = None
-    fk_user_author: Optional[int] = None
-    fk_user_modif: Optional[int] = None
-    country_code: Optional[str] = None
+    ref_ext: str | None = None
+    canvas: str | None = None
+    datec: datetime.datetime | None = None
+    datem: datetime.datetime | None = None
+    fk_user_author: int | None = None
+    fk_user_modif: int | None = None
+    country_code: str | None = None
 
 
 # =============================================================================
 # PRODUCTOS/SERVICIOS
 # =============================================================================
 
+
 class ProductBase(BaseModel):
     ref: str = Field(..., min_length=1, max_length=50)
     label: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: str | None = None
     price: float = Field(default=0.0, ge=0)
     price_ttc: float = Field(default=0.0, ge=0)
     tva_tx: float = Field(default=21.0, ge=0, le=100)
@@ -122,8 +139,10 @@ class ProductBase(BaseModel):
     poids: float = Field(default=0.0, ge=0)
     poids_unites: int = Field(default=1, ge=1)
     statut: int = Field(default=1, ge=0, le=1)
-    type: int = Field(default=0, ge=0, le=2)  # renamed from 'product_type' to match Dolibarr field
-    fk_product_type: Optional[int] = None
+    type: int = Field(
+        default=0, ge=0, le=2
+    )  # renamed from 'product_type' to match Dolibarr field
+    fk_product_type: int | None = None
 
 
 class ProductCreate(ProductBase):
@@ -131,23 +150,23 @@ class ProductCreate(ProductBase):
 
 
 class ProductUpdate(BaseModel):
-    ref: Optional[str] = Field(None, min_length=1, max_length=50)
-    label: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = None
-    price: Optional[float] = Field(None, ge=0)
-    price_ttc: Optional[float] = Field(None, ge=0)
-    tva_tx: Optional[float] = Field(None, ge=0, le=100)
-    prix_achat: Optional[float] = Field(None, ge=0)
-    poids: Optional[float] = Field(None, ge=0)
-    poids_unites: Optional[int] = Field(None, ge=1)
-    statut: Optional[int] = Field(None, ge=0, le=1)
-    type: Optional[int] = Field(None, ge=0, le=2)  # renamed
-    fk_product_type: Optional[int] = None
+    ref: str | None = Field(None, min_length=1, max_length=50)
+    label: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = None
+    price: float | None = Field(None, ge=0)
+    price_ttc: float | None = Field(None, ge=0)
+    tva_tx: float | None = Field(None, ge=0, le=100)
+    prix_achat: float | None = Field(None, ge=0)
+    poids: float | None = Field(None, ge=0)
+    poids_unites: int | None = Field(None, ge=1)
+    statut: int | None = Field(None, ge=0, le=1)
+    type: int | None = Field(None, ge=0, le=2)  # renamed
+    fk_product_type: int | None = None
 
 
 class ProductResponse(ProductBase):
     id: int
-    ref_ext: Optional[str] = None
+    ref_ext: str | None = None
     datec: datetime.datetime
     datem: datetime.datetime
 
@@ -156,27 +175,28 @@ class ProductResponse(ProductBase):
 # EXPEDIENTES ANIMALES
 # =============================================================================
 
+
 class VaccineRecord(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     date: datetime.date
-    batch: Optional[str] = Field(None, max_length=50)
-    vet: Optional[str] = Field(None, max_length=100)
-    next_due: Optional[datetime.date] = None
+    batch: str | None = Field(None, max_length=50)
+    vet: str | None = Field(None, max_length=100)
+    next_due: datetime.date | None = None
 
 
 class DewormingRecord(BaseModel):
     product: str = Field(..., min_length=1, max_length=100)
     date: datetime.date
-    next_due: Optional[datetime.date] = None
-    vet: Optional[str] = Field(None, max_length=100)
+    next_due: datetime.date | None = None
+    vet: str | None = Field(None, max_length=100)
 
 
 class CertificateRecord(BaseModel):
     cert_type: str = Field(..., max_length=50)  # renamed from 'type'
     date: datetime.date
-    issuer: Optional[str] = Field(None, max_length=100)
-    document_url: Optional[str] = None
-    expires_at: Optional[datetime.date] = None
+    issuer: str | None = Field(None, max_length=100)
+    document_url: str | None = None
+    expires_at: datetime.date | None = None
 
 
 class IncidentRecord(BaseModel):
@@ -185,19 +205,21 @@ class IncidentRecord(BaseModel):
     description: str
     severity: str = Field(default="low", pattern=r"^(low|medium|high|critical)$")
     resolved: bool = False
-    resolution_date: Optional[datetime.date] = None
-    resolution_notes: Optional[str] = None
+    resolution_date: datetime.date | None = None
+    resolution_notes: str | None = None
 
 
 class PostSaleFollowupRecord(BaseModel):
     date: datetime.date
     followup_type: str = Field(..., max_length=50)  # renamed from 'type'
     notes: str
-    next_action: Optional[str] = None
-    next_action_date: Optional[datetime.date] = None
+    next_action: str | None = None
+    next_action_date: datetime.date | None = None
 
 
 class ExpedienteAnimalBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(..., min_length=1, max_length=200)
     species: str = Field(default="perro", max_length=50)
     breed: str = Field(..., min_length=1, max_length=100)
@@ -206,21 +228,21 @@ class ExpedienteAnimalBase(BaseModel):
     color: str = Field(..., max_length=50)
     weight_kg: float = Field(..., gt=0, le=100)
     microchip: str = Field(..., pattern=r"^\d{15}$")
-    breeder_id: Optional[int] = None
-    breeder_registration: Optional[str] = Field(None, max_length=50)
-    zoological_nucleus: Optional[str] = Field(None, max_length=50)
+    breeder_id: int | None = None
+    breeder_registration: str | None = Field(None, max_length=50)
+    zoological_nucleus: str | None = Field(None, max_length=50)
     country_origin: str = Field(default="ES", pattern=r"^[A-Z]{2}$")
-    place_origin: Optional[str] = Field(None, max_length=100)
-    sire_name: Optional[str] = Field(None, max_length=200)
-    dam_name: Optional[str] = Field(None, max_length=200)
-    pedigree: Optional[str] = Field(None, max_length=100)
+    place_origin: str | None = Field(None, max_length=100)
+    sire_name: str | None = Field(None, max_length=200)
+    dam_name: str | None = Field(None, max_length=200)
+    pedigree: str | None = Field(None, max_length=100)
     vet_status: str = Field(default="healthy", max_length=50)
-    vaccines: List[VaccineRecord] = Field(default_factory=list)
-    deworming: List[DewormingRecord] = Field(default_factory=list)
-    passport: Optional[str] = Field(None, max_length=50)
-    certificates: List[CertificateRecord] = Field(default_factory=list)
-    photos: List[str] = Field(default_factory=list)
-    videos: List[str] = Field(default_factory=list)
+    vaccines: list[VaccineRecord] = Field(default_factory=list)
+    deworming: list[DewormingRecord] = Field(default_factory=list)
+    passport: str | None = Field(None, max_length=50)
+    certificates: list[CertificateRecord] = Field(default_factory=list)
+    photos: list[str] = Field(default_factory=list)
+    videos: list[str] = Field(default_factory=list)
     purchase_price: float = Field(default=0.0, ge=0)
     sale_price: float = Field(default=0.0, ge=0)
     associated_costs: float = Field(default=0.0, ge=0)
@@ -228,15 +250,15 @@ class ExpedienteAnimalBase(BaseModel):
         default="draft",
         pattern=r"^(draft|pending_docs|pending_review|available|published|reserved|paid|preparing_transport|in_transport|delivered|post_sale|unavailable|archived)$",
     )
-    client_id: Optional[int] = None
-    reservation_id: Optional[int] = None
-    order_id: Optional[int] = None
-    invoice_id: Optional[int] = None
-    transport_id: Optional[int] = None
-    expected_delivery_date: Optional[datetime.date] = None
-    actual_delivery_date: Optional[datetime.date] = None
-    incidents: List[IncidentRecord] = Field(default_factory=list)
-    post_sale_followup: List[PostSaleFollowupRecord] = Field(default_factory=list)
+    client_id: int | None = None
+    reservation_id: int | None = None
+    order_id: int | None = None
+    invoice_id: int | None = None
+    transport_id: int | None = None
+    expected_delivery_date: datetime.date | None = None
+    actual_delivery_date: datetime.date | None = None
+    incidents: list[IncidentRecord] = Field(default_factory=list)
+    post_sale_followup: list[PostSaleFollowupRecord] = Field(default_factory=list)
 
 
 class ExpedienteAnimalCreate(ExpedienteAnimalBase):
@@ -244,25 +266,25 @@ class ExpedienteAnimalCreate(ExpedienteAnimalBase):
 
 
 class ExpedienteAnimalUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    breed: Optional[str] = Field(None, min_length=1, max_length=100)
-    color: Optional[str] = Field(None, max_length=50)
-    weight_kg: Optional[float] = Field(None, gt=0, le=100)
-    vet_status: Optional[str] = Field(None, max_length=50)
-    vaccines: Optional[List[VaccineRecord]] = None
-    deworming: Optional[List[DewormingRecord]] = None
-    certificates: Optional[List[CertificateRecord]] = None
-    photos: Optional[List[str]] = None
-    videos: Optional[List[str]] = None
-    sale_price: Optional[float] = Field(None, ge=0)
-    associated_costs: Optional[float] = Field(None, ge=0)
-    commercial_status: Optional[str] = Field(
+    name: str | None = Field(None, min_length=1, max_length=200)
+    breed: str | None = Field(None, min_length=1, max_length=100)
+    color: str | None = Field(None, max_length=50)
+    weight_kg: float | None = Field(None, gt=0, le=100)
+    vet_status: str | None = Field(None, max_length=50)
+    vaccines: list[VaccineRecord] | None = None
+    deworming: list[DewormingRecord] | None = None
+    certificates: list[CertificateRecord] | None = None
+    photos: list[str] | None = None
+    videos: list[str] | None = None
+    sale_price: float | None = Field(None, ge=0)
+    associated_costs: float | None = Field(None, ge=0)
+    commercial_status: str | None = Field(
         None,
         pattern=r"^(draft|pending_docs|pending_review|available|published|reserved|paid|preparing_transport|in_transport|delivered|post_sale|unavailable|archived)$",
     )
-    client_id: Optional[int] = None
-    expected_delivery_date: Optional[datetime.date] = None
-    actual_delivery_date: Optional[datetime.date] = None
+    client_id: int | None = None
+    expected_delivery_date: datetime.date | None = None
+    actual_delivery_date: datetime.date | None = None
 
 
 class ExpedienteAnimalResponse(ExpedienteAnimalBase):
@@ -278,8 +300,9 @@ class ExpedienteAnimalResponse(ExpedienteAnimalBase):
 # FACTURAS
 # =============================================================================
 
+
 class InvoiceLineBase(BaseModel):
-    product_id: Optional[int] = None
+    product_id: int | None = None
     description: str = Field(..., min_length=1, max_length=500)
     qty: float = Field(default=1.0, gt=0)
     unit_price: float = Field(..., ge=0)
@@ -301,12 +324,12 @@ class InvoiceLineResponse(InvoiceLineBase):
 class InvoiceBase(BaseModel):
     thirdparty_id: int = Field(..., gt=0)
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: List[InvoiceLineCreate] = Field(..., min_length=1)
-    payment_term_id: Optional[int] = None
-    cond_reglement_id: Optional[int] = None
-    mode_reglement_id: Optional[int] = None
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
+    lines: list[InvoiceLineCreate] = Field(..., min_length=1)
+    payment_term_id: int | None = None
+    cond_reglement_id: int | None = None
+    mode_reglement_id: int | None = None
+    note_private: str | None = None
+    note_public: str | None = None
 
 
 class InvoiceCreate(InvoiceBase):
@@ -314,12 +337,12 @@ class InvoiceCreate(InvoiceBase):
 
 
 class InvoiceUpdate(BaseModel):
-    status: Optional[int] = Field(None, ge=0, le=2)
-    payment_term_id: Optional[int] = None
-    cond_reglement_id: Optional[int] = None
-    mode_reglement_id: Optional[int] = None
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
+    status: int | None = Field(None, ge=0, le=2)
+    payment_term_id: int | None = None
+    cond_reglement_id: int | None = None
+    mode_reglement_id: int | None = None
+    note_private: str | None = None
+    note_public: str | None = None
 
 
 class InvoiceResponse(InvoiceBase):
@@ -328,7 +351,7 @@ class InvoiceResponse(InvoiceBase):
     total_ht: float
     total_tva: float
     total_ttc: float
-    lines: List[InvoiceLineResponse]
+    lines: list[InvoiceLineResponse]
     datec: datetime.datetime
     datem: datetime.datetime
     fk_user_author: int = 1
@@ -339,8 +362,9 @@ class InvoiceResponse(InvoiceBase):
 # FACTURAS PROVEEDOR (COMPRAS)
 # =============================================================================
 
+
 class SupplierInvoiceLineBase(BaseModel):
-    product_id: Optional[int] = None
+    product_id: int | None = None
     description: str = Field(..., min_length=1, max_length=500)
     qty: float = Field(default=1.0, gt=0)
     unit_price: float = Field(..., ge=0)
@@ -360,15 +384,19 @@ class SupplierInvoiceLineResponse(SupplierInvoiceLineBase):
 
 
 class SupplierInvoiceBase(BaseModel):
-    thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
+    thirdparty_id: int = Field(
+        ..., gt=0, description="ID del proveedor (debe ser supplier=1)"
+    )
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: List[SupplierInvoiceLineCreate] = Field(..., min_length=1)
-    payment_term_id: Optional[int] = None
-    cond_reglement_id: Optional[int] = None
-    mode_reglement_id: Optional[int] = None
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
-    ref_supplier: Optional[str] = Field(None, max_length=50, description="Referencia del proveedor")
+    lines: list[SupplierInvoiceLineCreate] = Field(..., min_length=1)
+    payment_term_id: int | None = None
+    cond_reglement_id: int | None = None
+    mode_reglement_id: int | None = None
+    note_private: str | None = None
+    note_public: str | None = None
+    ref_supplier: str | None = Field(
+        None, max_length=50, description="Referencia del proveedor"
+    )
 
 
 class SupplierInvoiceCreate(SupplierInvoiceBase):
@@ -376,13 +404,13 @@ class SupplierInvoiceCreate(SupplierInvoiceBase):
 
 
 class SupplierInvoiceUpdate(BaseModel):
-    status: Optional[int] = Field(None, ge=0, le=2)
-    payment_term_id: Optional[int] = None
-    cond_reglement_id: Optional[int] = None
-    mode_reglement_id: Optional[int] = None
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
-    ref_supplier: Optional[str] = Field(None, max_length=50)
+    status: int | None = Field(None, ge=0, le=2)
+    payment_term_id: int | None = None
+    cond_reglement_id: int | None = None
+    mode_reglement_id: int | None = None
+    note_private: str | None = None
+    note_public: str | None = None
+    ref_supplier: str | None = Field(None, max_length=50)
 
 
 class SupplierInvoiceResponse(SupplierInvoiceBase):
@@ -391,7 +419,7 @@ class SupplierInvoiceResponse(SupplierInvoiceBase):
     total_ht: float
     total_tva: float
     total_ttc: float
-    lines: List[SupplierInvoiceLineResponse]
+    lines: list[SupplierInvoiceLineResponse]
     datec: datetime.datetime
     datem: datetime.datetime
     fk_user_author: int = 1
@@ -403,8 +431,9 @@ class SupplierInvoiceResponse(SupplierInvoiceBase):
 # PEDIDOS PROVEEDOR (ÓRDENES DE COMPRA)
 # =============================================================================
 
+
 class SupplierOrderLineBase(BaseModel):
-    product_id: Optional[int] = None
+    product_id: int | None = None
     description: str = Field(..., min_length=1, max_length=500)
     qty: float = Field(default=1.0, gt=0)
     unit_price: float = Field(..., ge=0)
@@ -424,15 +453,17 @@ class SupplierOrderLineResponse(SupplierOrderLineBase):
 
 
 class SupplierOrderBase(BaseModel):
-    thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
+    thirdparty_id: int = Field(
+        ..., gt=0, description="ID del proveedor (debe ser supplier=1)"
+    )
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: List[SupplierOrderLineCreate] = Field(..., min_length=1)
-    payment_term_id: Optional[int] = None
-    cond_reglement_id: Optional[int] = None
-    mode_reglement_id: Optional[int] = None
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
-    ref_supplier: Optional[str] = Field(None, max_length=50)
+    lines: list[SupplierOrderLineCreate] = Field(..., min_length=1)
+    payment_term_id: int | None = None
+    cond_reglement_id: int | None = None
+    mode_reglement_id: int | None = None
+    note_private: str | None = None
+    note_public: str | None = None
+    ref_supplier: str | None = Field(None, max_length=50)
 
 
 class SupplierOrderCreate(SupplierOrderBase):
@@ -440,13 +471,13 @@ class SupplierOrderCreate(SupplierOrderBase):
 
 
 class SupplierOrderUpdate(BaseModel):
-    status: Optional[int] = Field(None, ge=0, le=2)
-    payment_term_id: Optional[int] = None
-    cond_reglement_id: Optional[int] = None
-    mode_reglement_id: Optional[int] = None
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
-    ref_supplier: Optional[str] = Field(None, max_length=50)
+    status: int | None = Field(None, ge=0, le=2)
+    payment_term_id: int | None = None
+    cond_reglement_id: int | None = None
+    mode_reglement_id: int | None = None
+    note_private: str | None = None
+    note_public: str | None = None
+    ref_supplier: str | None = Field(None, max_length=50)
 
 
 class SupplierOrderResponse(SupplierOrderBase):
@@ -455,7 +486,7 @@ class SupplierOrderResponse(SupplierOrderBase):
     total_ht: float
     total_tva: float
     total_ttc: float
-    lines: List[SupplierOrderLineResponse]
+    lines: list[SupplierOrderLineResponse]
     datec: datetime.datetime
     datem: datetime.datetime
     fk_user_author: int = 1
@@ -467,15 +498,16 @@ class SupplierOrderResponse(SupplierOrderBase):
 # PROPUESTAS PROVEEDOR
 # =============================================================================
 
+
 class SupplierProposalBase(BaseModel):
     thirdparty_id: int = Field(..., gt=0)
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: List[SupplierOrderLineCreate] = Field(..., min_length=1)
-    payment_term_id: Optional[int] = None
-    cond_reglement_id: Optional[int] = None
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
-    ref_supplier: Optional[str] = Field(None, max_length=50)
+    lines: list[SupplierOrderLineCreate] = Field(..., min_length=1)
+    payment_term_id: int | None = None
+    cond_reglement_id: int | None = None
+    note_private: str | None = None
+    note_public: str | None = None
+    ref_supplier: str | None = Field(None, max_length=50)
 
 
 class SupplierProposalCreate(SupplierProposalBase):
@@ -483,10 +515,10 @@ class SupplierProposalCreate(SupplierProposalBase):
 
 
 class SupplierProposalUpdate(BaseModel):
-    status: Optional[int] = Field(None, ge=0, le=2)
-    note_private: Optional[str] = None
-    note_public: Optional[str] = None
-    ref_supplier: Optional[str] = Field(None, max_length=50)
+    status: int | None = Field(None, ge=0, le=2)
+    note_private: str | None = None
+    note_public: str | None = None
+    ref_supplier: str | None = Field(None, max_length=50)
 
 
 class SupplierProposalResponse(SupplierProposalBase):
@@ -495,7 +527,7 @@ class SupplierProposalResponse(SupplierProposalBase):
     total_ht: float
     total_tva: float
     total_ttc: float
-    lines: List[SupplierOrderLineResponse]
+    lines: list[SupplierOrderLineResponse]
     datec: datetime.datetime
     datem: datetime.datetime
     fk_user_author: int = 1
@@ -507,46 +539,53 @@ class SupplierProposalResponse(SupplierProposalBase):
 # PUBLICACIONES/ANUNCIOS
 # =============================================================================
 
+
 class PublicationBase(BaseModel):
     expediente_id: int = Field(..., gt=0)
-    platform: str = Field(..., max_length=50)  # milanuncios, facebook, instagram, tiktok, web, etc.
+    platform: str = Field(
+        ..., max_length=50
+    )  # milanuncios, facebook, instagram, tiktok, web, etc.
     title: str = Field(..., min_length=5, max_length=200)
     description: str = Field(..., min_length=20)
-    photos: List[str] = Field(default_factory=list)
-    price: Optional[float] = Field(None, ge=0)
-    external_id: Optional[str] = Field(None, max_length=100)
-    external_url: Optional[str] = None
+    photos: list[str] = Field(default_factory=list)
+    price: float | None = Field(None, ge=0)
+    external_id: str | None = Field(None, max_length=100)
+    external_url: str | None = None
 
 
 class PublicationCreate(PublicationBase):
     pass
 
-class PublicationUpdate(BaseModel):
-    expediente_id: Optional[int] = Field(None, gt=0)
-    platform: Optional[str] = Field(None, max_length=50)
-    title: Optional[str] = Field(None, min_length=5, max_length=200)
-    description: Optional[str] = Field(None, min_length=20)
-    photos: Optional[List[str]] = None
-    price: Optional[float] = Field(None, ge=0)
-    external_id: Optional[str] = Field(None, max_length=100)
-    external_url: Optional[str] = None
 
+class PublicationUpdate(BaseModel):
+    expediente_id: int | None = Field(None, gt=0)
+    platform: str | None = Field(None, max_length=50)
+    title: str | None = Field(None, min_length=5, max_length=200)
+    description: str | None = Field(None, min_length=20)
+    photos: list[str] | None = None
+    price: float | None = Field(None, ge=0)
+    external_id: str | None = Field(None, max_length=100)
+    external_url: str | None = None
 
 
 class PublicationResponse(PublicationBase):
     id: int
-    status: str = Field(default="draft", pattern=r"^(draft|pending_approval|approved|published|expired|removed|failed)$")
-    published_at: Optional[datetime.datetime] = None
-    expires_at: Optional[datetime.datetime] = None
+    status: str = Field(
+        default="draft",
+        pattern=r"^(draft|pending_approval|approved|published|expired|removed|failed)$",
+    )
+    published_at: datetime.datetime | None = None
+    expires_at: datetime.datetime | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
-    approval_id: Optional[UUID] = None
+    approval_id: UUID | None = None
 
     @field_validator("photos", mode="before")
     @classmethod
     def _parse_photos(cls, v):
         if isinstance(v, str):
             import json
+
             try:
                 return json.loads(v)
             except (json.JSONDecodeError, TypeError):
@@ -560,18 +599,19 @@ class PublicationResponse(PublicationBase):
 # COMERCIAL / LEADS
 # =============================================================================
 
+
 class LeadBase(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., pattern=r"^[^@]+@[^@]+\.[^@]+$")
     phone: str = Field(..., min_length=5, max_length=50)
     country: str = Field(..., pattern=r"^[A-Z]{2}$")
-    city: Optional[str] = Field(None, max_length=100)
+    city: str | None = Field(None, max_length=100)
     language: str = Field(default="es", pattern=r"^[a-z]{2}$")
     source: str = Field(..., max_length=50)
-    source_campaign: Optional[str] = Field(None, max_length=100)
-    source_keyword: Optional[str] = Field(None, max_length=100)
-    utm_params: Optional[Dict[str, str]] = None
+    source_campaign: str | None = Field(None, max_length=100)
+    source_keyword: str | None = Field(None, max_length=100)
+    utm_params: dict[str, str] | None = None
 
 
 class LeadCreate(LeadBase):
@@ -579,20 +619,23 @@ class LeadCreate(LeadBase):
 
 
 class LeadUpdate(BaseModel):
-    status: Optional[str] = Field(None, pattern=r"^(new|contacted|qualified|proposal_sent|negotiation|won|lost|nurturing)$")
-    interested_expediente_ids: Optional[List[int]] = None
-    budget_min: Optional[float] = Field(None, ge=0)
-    budget_max: Optional[float] = Field(None, ge=0)
-    timeline: Optional[str] = Field(None, max_length=50)
-    housing_type: Optional[str] = Field(None, max_length=50)
-    hours_alone: Optional[int] = Field(None, ge=0, le=24)
-    has_children: Optional[bool] = None
-    children_ages: Optional[List[int]] = None
-    has_dogs: Optional[bool] = None
-    current_dogs: Optional[List[str]] = None
-    has_cats: Optional[bool] = None
-    experience_level: Optional[str] = Field(None, max_length=50)
-    show_experience: Optional[bool] = None
+    status: str | None = Field(
+        None,
+        pattern=r"^(new|contacted|qualified|proposal_sent|negotiation|won|lost|nurturing)$",
+    )
+    interested_expediente_ids: list[int] | None = None
+    budget_min: float | None = Field(None, ge=0)
+    budget_max: float | None = Field(None, ge=0)
+    timeline: str | None = Field(None, max_length=50)
+    housing_type: str | None = Field(None, max_length=50)
+    hours_alone: int | None = Field(None, ge=0, le=24)
+    has_children: bool | None = None
+    children_ages: list[int] | None = None
+    has_dogs: bool | None = None
+    current_dogs: list[str] | None = None
+    has_cats: bool | None = None
+    experience_level: str | None = Field(None, max_length=50)
+    show_experience: bool | None = None
 
 
 class LeadResponse(LeadBase):
@@ -600,10 +643,10 @@ class LeadResponse(LeadBase):
     status: str = "new"
     score: int = 0
     temperature: str = "cold"
-    assigned_closer_id: Optional[int] = None
-    last_contact: Optional[datetime.datetime] = None
-    next_action: Optional[str] = None
-    next_action_due: Optional[datetime.datetime] = None
+    assigned_closer_id: int | None = None
+    last_contact: datetime.datetime | None = None
+    next_action: str | None = None
+    next_action_due: datetime.datetime | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
@@ -612,16 +655,17 @@ class LeadResponse(LeadBase):
 # APROBACIONES
 # =============================================================================
 
+
 class ApprovalRequestBase(BaseModel):
     action: str = Field(..., max_length=100)
     resource_type: str = Field(..., max_length=50)
     resource_id: str = Field(..., max_length=100)
     reason: str = Field(..., min_length=10)
-    current_state: Dict[str, Any] = Field(default_factory=dict)
-    proposed_state: Dict[str, Any] = Field(default_factory=dict)
-    risks: Optional[str] = None
-    evidence: Optional[List[str]] = None
-    expires_at: Optional[datetime.datetime] = None
+    current_state: dict[str, Any] = Field(default_factory=dict)
+    proposed_state: dict[str, Any] = Field(default_factory=dict)
+    risks: str | None = None
+    evidence: list[str] | None = None
+    expires_at: datetime.datetime | None = None
 
 
 class ApprovalRequestCreate(ApprovalRequestBase):
@@ -630,31 +674,36 @@ class ApprovalRequestCreate(ApprovalRequestBase):
 
 class ApprovalDecision(BaseModel):
     approved: bool
-    comment: Optional[str] = Field(None, max_length=1000)
+    comment: str | None = Field(None, max_length=1000)
 
 
 class ApprovalResponse(ApprovalRequestBase):
     id: UUID
-    status: str = Field(default="pending", pattern=r"^(pending|approved|rejected|expired|cancelled)$")
+    status: str = Field(
+        default="pending", pattern=r"^(pending|approved|rejected|expired|cancelled)$"
+    )
     requested_by: str
     requested_at: datetime.datetime
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[datetime.datetime] = None
-    review_comment: Optional[str] = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime.datetime | None = None
+    review_comment: str | None = None
 
 
 # =============================================================================
 # TAREAS / COLA
 # =============================================================================
 
+
 class TaskBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = None
+    description: str | None = None
     priority: str = Field(default="medium", pattern=r"^(low|medium|high)$")
-    status: str = Field(default="pending", pattern=r"^(pending|in_progress|completed|failed)$")
-    assigned_to: Optional[int] = None
-    due_date: Optional[datetime.date] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    status: str = Field(
+        default="pending", pattern=r"^(pending|in_progress|completed|failed)$"
+    )
+    assigned_to: int | None = None
+    due_date: datetime.date | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskCreate(TaskBase):
@@ -662,13 +711,15 @@ class TaskCreate(TaskBase):
 
 
 class TaskUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = None
-    priority: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
-    status: Optional[str] = Field(None, pattern=r"^(pending|in_progress|completed|failed)$")
-    assigned_to: Optional[int] = None
-    due_date: Optional[datetime.date] = None
-    metadata: Optional[Dict[str, Any]] = None
+    title: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = None
+    priority: str | None = Field(None, pattern=r"^(low|medium|high)$")
+    status: str | None = Field(
+        None, pattern=r"^(pending|in_progress|completed|failed)$"
+    )
+    assigned_to: int | None = None
+    due_date: datetime.date | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class TaskResponse(TaskBase):
@@ -677,6 +728,8 @@ class TaskResponse(TaskBase):
     updated_at: datetime.datetime
     created_by: int = 1
     updated_by: int = 1
+
+
 # =============================================================================
 # PERROS (DOGS) - NUEVOS MODELOS DE DOMINIO
 # =============================================================================
@@ -684,15 +737,15 @@ class TaskResponse(TaskBase):
 
 class BreedBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = None
-    average_weight_kg: Optional[float] = Field(None, gt=0)
-    average_height_cm: Optional[float] = Field(None, gt=0)
-    life_expectancy_years: Optional[int] = Field(None, gt=0)
-    temperament: Optional[str] = None
-    good_with_children: Optional[bool] = None
-    good_with_other_dogs: Optional[bool] = None
-    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
-    grooming_needs: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    description: str | None = None
+    average_weight_kg: float | None = Field(None, gt=0)
+    average_height_cm: float | None = Field(None, gt=0)
+    life_expectancy_years: int | None = Field(None, gt=0)
+    temperament: str | None = None
+    good_with_children: bool | None = None
+    good_with_other_dogs: bool | None = None
+    energy_level: str | None = Field(None, pattern=r"^(low|medium|high)$")
+    grooming_needs: str | None = Field(None, pattern=r"^(low|medium|high)$")
 
 
 class BreedCreate(BreedBase):
@@ -700,16 +753,16 @@ class BreedCreate(BreedBase):
 
 
 class BreedUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    description: Optional[str] = None
-    average_weight_kg: Optional[float] = Field(None, gt=0)
-    average_height_cm: Optional[float] = Field(None, gt=0)
-    life_expectancy_years: Optional[int] = Field(None, gt=0)
-    temperament: Optional[str] = None
-    good_with_children: Optional[bool] = None
-    good_with_other_dogs: Optional[bool] = None
-    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
-    grooming_needs: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+    average_weight_kg: float | None = Field(None, gt=0)
+    average_height_cm: float | None = Field(None, gt=0)
+    life_expectancy_years: int | None = Field(None, gt=0)
+    temperament: str | None = None
+    good_with_children: bool | None = None
+    good_with_other_dogs: bool | None = None
+    energy_level: str | None = Field(None, pattern=r"^(low|medium|high)$")
+    grooming_needs: str | None = Field(None, pattern=r"^(low|medium|high)$")
 
 
 class BreedResponse(BreedBase):
@@ -722,10 +775,10 @@ class LitterBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     breed_id: int = Field(..., gt=0)
     mother_id: int = Field(..., gt=0)
-    father_id: Optional[int] = Field(None, gt=0)
+    father_id: int | None = Field(None, gt=0)
     birth_date: datetime.date
     size: int = Field(..., gt=0)
-    registration_number: Optional[str] = Field(None, max_length=50)
+    registration_number: str | None = Field(None, max_length=50)
 
 
 class LitterCreate(LitterBase):
@@ -733,13 +786,13 @@ class LitterCreate(LitterBase):
 
 
 class LitterUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    breed_id: Optional[int] = Field(None, gt=0)
-    mother_id: Optional[int] = Field(None, gt=0)
-    father_id: Optional[int] = Field(None, gt=0)
-    birth_date: Optional[datetime.date] = None
-    size: Optional[int] = Field(None, gt=0)
-    registration_number: Optional[str] = Field(None, max_length=50)
+    name: str | None = Field(None, min_length=1, max_length=200)
+    breed_id: int | None = Field(None, gt=0)
+    mother_id: int | None = Field(None, gt=0)
+    father_id: int | None = Field(None, gt=0)
+    birth_date: datetime.date | None = None
+    size: int | None = Field(None, gt=0)
+    registration_number: str | None = Field(None, max_length=50)
 
 
 class LitterResponse(LitterBase):
@@ -752,9 +805,9 @@ class DogMediaBase(BaseModel):
     file_path: str = Field(..., max_length=500)
     file_hash: str = Field(..., min_length=32, max_length=128)  # SHA-256 or similar
     mime_type: str = Field(..., max_length=100)
-    width: Optional[int] = Field(None, gt=0)
-    height: Optional[int] = Field(None, gt=0)
-    duration_seconds: Optional[float] = Field(None, gt=0)  # for videos
+    width: int | None = Field(None, gt=0)
+    height: int | None = Field(None, gt=0)
+    duration_seconds: float | None = Field(None, gt=0)  # for videos
     media_type: str = Field(..., pattern=r"^(photo|video)$")
     purpose: str = Field(..., pattern=r"^(original|processed|social|listing)$")
     dog_id: int = Field(..., gt=0)
@@ -766,16 +819,16 @@ class DogMediaCreate(DogMediaBase):
 
 
 class DogMediaUpdate(BaseModel):
-    file_path: Optional[str] = Field(None, max_length=500)
-    file_hash: Optional[str] = Field(None, min_length=32, max_length=128)
-    mime_type: Optional[str] = Field(None, max_length=100)
-    width: Optional[int] = Field(None, gt=0)
-    height: Optional[int] = Field(None, gt=0)
-    duration_seconds: Optional[float] = Field(None, gt=0)
-    media_type: Optional[str] = Field(None, pattern=r"^(photo|video)$")
-    purpose: Optional[str] = Field(None, pattern=r"^(original|processed|social|listing)$")
-    dog_id: Optional[int] = Field(None, gt=0)
-    uploaded_by: Optional[int] = Field(None, gt=0)
+    file_path: str | None = Field(None, max_length=500)
+    file_hash: str | None = Field(None, min_length=32, max_length=128)
+    mime_type: str | None = Field(None, max_length=100)
+    width: int | None = Field(None, gt=0)
+    height: int | None = Field(None, gt=0)
+    duration_seconds: float | None = Field(None, gt=0)
+    media_type: str | None = Field(None, pattern=r"^(photo|video)$")
+    purpose: str | None = Field(None, pattern=r"^(original|processed|social|listing)$")
+    dog_id: int | None = Field(None, gt=0)
+    uploaded_by: int | None = Field(None, gt=0)
 
 
 class DogMediaResponse(DogMediaBase):
@@ -784,17 +837,19 @@ class DogMediaResponse(DogMediaBase):
 
 
 class DogHealthBase(BaseModel):
-    vet_check_date: Optional[datetime.date] = None
-    weight_kg: Optional[float] = Field(None, gt=0)
-    temperature_celsius: Optional[float] = Field(None, ge=35, le=42)
-    heart_rate_bpm: Optional[int] = Field(None, gt=0)
-    respiratory_rate: Optional[int] = Field(None, gt=0)
-    stool_condition: Optional[str] = Field(None, pattern=r"^(normal|soft|diarrhea|constipated)$")
-    urine_condition: Optional[str] = Field(None, pattern=r"^(normal|cloudy|bloody)$")
-    appetite: Optional[str] = Field(None, pattern=r"^(poor|fair|good|excellent)$")
-    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
-    notes: Optional[str] = None
-    next_check_date: Optional[datetime.date] = None
+    vet_check_date: datetime.date | None = None
+    weight_kg: float | None = Field(None, gt=0)
+    temperature_celsius: float | None = Field(None, ge=35, le=42)
+    heart_rate_bpm: int | None = Field(None, gt=0)
+    respiratory_rate: int | None = Field(None, gt=0)
+    stool_condition: str | None = Field(
+        None, pattern=r"^(normal|soft|diarrhea|constipated)$"
+    )
+    urine_condition: str | None = Field(None, pattern=r"^(normal|cloudy|bloody)$")
+    appetite: str | None = Field(None, pattern=r"^(poor|fair|good|excellent)$")
+    energy_level: str | None = Field(None, pattern=r"^(low|medium|high)$")
+    notes: str | None = None
+    next_check_date: datetime.date | None = None
 
 
 class DogHealthCreate(DogHealthBase):
@@ -802,17 +857,19 @@ class DogHealthCreate(DogHealthBase):
 
 
 class DogHealthUpdate(BaseModel):
-    vet_check_date: Optional[datetime.date] = None
-    weight_kg: Optional[float] = Field(None, gt=0)
-    temperature_celsius: Optional[float] = Field(None, ge=35, le=42)
-    heart_rate_bpm: Optional[int] = Field(None, gt=0)
-    respiratory_rate: Optional[int] = Field(None, gt=0)
-    stool_condition: Optional[str] = Field(None, pattern=r"^(normal|soft|diarrhea|constipated)$")
-    urine_condition: Optional[str] = Field(None, pattern=r"^(normal|cloudy|bloody)$")
-    appetite: Optional[str] = Field(None, pattern=r"^(poor|fair|good|excellent)$")
-    energy_level: Optional[str] = Field(None, pattern=r"^(low|medium|high)$")
-    notes: Optional[str] = None
-    next_check_date: Optional[datetime.date] = None
+    vet_check_date: datetime.date | None = None
+    weight_kg: float | None = Field(None, gt=0)
+    temperature_celsius: float | None = Field(None, ge=35, le=42)
+    heart_rate_bpm: int | None = Field(None, gt=0)
+    respiratory_rate: int | None = Field(None, gt=0)
+    stool_condition: str | None = Field(
+        None, pattern=r"^(normal|soft|diarrhea|constipated)$"
+    )
+    urine_condition: str | None = Field(None, pattern=r"^(normal|cloudy|bloody)$")
+    appetite: str | None = Field(None, pattern=r"^(poor|fair|good|excellent)$")
+    energy_level: str | None = Field(None, pattern=r"^(low|medium|high)$")
+    notes: str | None = None
+    next_check_date: datetime.date | None = None
 
 
 class DogHealthResponse(DogHealthBase):
@@ -824,7 +881,7 @@ class DogHealthResponse(DogHealthBase):
 class DogStatusHistoryBase(BaseModel):
     status: str = Field(..., pattern=r"^(draft|available|reserved|sold|inactive)$")
     changed_by: int = Field(..., gt=0)
-    change_reason: Optional[str] = None
+    change_reason: str | None = None
 
 
 class DogStatusHistoryCreate(DogStatusHistoryBase):
@@ -845,20 +902,20 @@ class DogStatusHistoryResponse(DogStatusHistoryBase):
 class DogBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     breed_id: int = Field(..., gt=0)
-    litter_id: Optional[int] = Field(None, gt=0)
+    litter_id: int | None = Field(None, gt=0)
     sex: str = Field(..., pattern=r"^[MH]$")
     birth_date: datetime.date
     color: str = Field(..., max_length=50)
     microchip: str = Field(..., pattern=r"^\d{15}$")
-    sire_name: Optional[str] = Field(None, max_length=200)  # father name
-    dam_name: Optional[str] = Field(None, max_length=200)  # mother name
-    pedigree: Optional[str] = Field(None, max_length=100)
+    sire_name: str | None = Field(None, max_length=200)  # father name
+    dam_name: str | None = Field(None, max_length=200)  # mother name
+    pedigree: str | None = Field(None, max_length=100)
     vet_status: str = Field(default="healthy", max_length=50)
     purchase_price: float = Field(default=0.0, ge=0)
     sale_price: float = Field(default=0.0, ge=0)
     associated_costs: float = Field(default=0.0, ge=0)
     # Reference to ExpedienteAnimal for Dolibarr sync (optional)
-    expediente_id: Optional[int] = Field(None, gt=0)
+    expediente_id: int | None = Field(None, gt=0)
 
 
 class DogCreate(DogBase):
@@ -866,20 +923,20 @@ class DogCreate(DogBase):
 
 
 class DogUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    breed_id: Optional[int] = Field(None, gt=0)
-    litter_id: Optional[int] = Field(None, gt=0)
-    sex: Optional[str] = Field(None, pattern=r"^[MH]$")
-    birth_date: Optional[datetime.date] = None
-    color: Optional[str] = Field(None, max_length=50)
-    vet_status: Optional[str] = Field(None, max_length=50)
-    sire_name: Optional[str] = Field(None, max_length=200)
-    dam_name: Optional[str] = Field(None, max_length=200)
-    pedigree: Optional[str] = Field(None, max_length=100)
-    purchase_price: Optional[float] = Field(None, ge=0)
-    sale_price: Optional[float] = Field(None, ge=0)
-    associated_costs: Optional[float] = Field(None, ge=0)
-    expediente_id: Optional[int] = Field(None, gt=0)
+    name: str | None = Field(None, min_length=1, max_length=200)
+    breed_id: int | None = Field(None, gt=0)
+    litter_id: int | None = Field(None, gt=0)
+    sex: str | None = Field(None, pattern=r"^[MH]$")
+    birth_date: datetime.date | None = None
+    color: str | None = Field(None, max_length=50)
+    vet_status: str | None = Field(None, max_length=50)
+    sire_name: str | None = Field(None, max_length=200)
+    dam_name: str | None = Field(None, max_length=200)
+    pedigree: str | None = Field(None, max_length=100)
+    purchase_price: float | None = Field(None, ge=0)
+    sale_price: float | None = Field(None, ge=0)
+    associated_costs: float | None = Field(None, ge=0)
+    expediente_id: int | None = Field(None, gt=0)
 
 
 class DogResponse(DogBase):
@@ -890,9 +947,8 @@ class DogResponse(DogBase):
     created_by: int = 1
     updated_by: int = 1
     # Computed or related fields (optional, for API responses)
-    breed: Optional[BreedResponse] = None
-    litter: Optional[LitterResponse] = None
-    media: List[DogMediaResponse] = Field(default_factory=list)
-    health_records: List[DogHealthResponse] = Field(default_factory=list)
-    status_history: List[DogStatusHistoryResponse] = Field(default_factory=list)
-
+    breed: BreedResponse | None = None
+    litter: LitterResponse | None = None
+    media: list[DogMediaResponse] = Field(default_factory=list)
+    health_records: list[DogHealthResponse] = Field(default_factory=list)
+    status_history: list[DogStatusHistoryResponse] = Field(default_factory=list)

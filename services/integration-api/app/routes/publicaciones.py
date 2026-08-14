@@ -1,35 +1,31 @@
 """
 Rutas para gestión de publicaciones/anuncios.
 """
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
 
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.exceptions import NotFoundException, ValidationException
 from app.dependencies.auth import get_current_agent, require_write
-from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
+from app.dependencies.rate_limit import idempotency_dependency, rate_limit_dependency
 from app.schemas import (
-    PublicationCreate,
-    PublicationUpdate,
-    PublicationResponse,
     PaginatedResponse,
     PaginationParams,
+    PublicationCreate,
+    PublicationResponse,
+    PublicationUpdate,
 )
-from app.core.exceptions import NotFoundException, ValidationException
-from app.services.publication_service import get_publication_service, PublicationService
+from app.services.publication_service import PublicationService, get_publication_service
+from fastapi import APIRouter, Depends, Query, status
 
-router = APIRouter(prefix="/publicaciones", tags=["Publicaciones"])
+router = APIRouter(tags=["Publicaciones"])
 settings = get_settings()
 
 
 @router.get("", response_model=PaginatedResponse[PublicationResponse])
 async def list_publicaciones(
     pagination: PaginationParams = Depends(),
-    platform: Optional[str] = Query(None, description="Filtrar por plataforma"),
-    status: Optional[str] = Query(None, description="Filtrar por estado"),
-    expediente_id: Optional[int] = Query(None, description="Filtrar por expediente"),
+    platform: str | None = Query(None, description="Filtrar por plataforma"),
+    status: str | None = Query(None, description="Filtrar por estado"),
+    expediente_id: int | None = Query(None, description="Filtrar por expediente"),
     agent: dict = Depends(get_current_agent),
     _rate_limit: None = Depends(rate_limit_dependency),
     pub_service: PublicationService = Depends(get_publication_service),
@@ -78,22 +74,22 @@ async def create_publicacion(
 ):
     """
     Crear borrador de publicación.
-    
+
     Requiere aprobación humana para publicar.
     """
     # Validar que el expediente existe y está disponible
     # expediente = await dolibarr.get_expediente(publicacion.expediente_id)
     # if expediente.commercial_status != "available":
     #     raise ValidationException("Solo expedientes 'available' pueden publicarse")
-    
+
     # if not expediente.documentation_complete:
     #     raise ValidationException("Documentación incompleta")
-    
+
     # Validar plataforma
     valid_platforms = ["web", "milanuncios", "facebook", "instagram", "tiktok"]
     if publicacion.platform not in valid_platforms:
         raise ValidationException(f"Plataforma inválida. Válidas: {valid_platforms}")
-    
+
     created_pub = await pub_service.create_publication(
         pub_data=publicacion,
         created_by=agent.get("agent_id", 1),
@@ -169,7 +165,7 @@ async def publish_publicacion(
 ):
     """
     Publicar en plataforma externa (Milanuncios, etc.).
-    
+
     Requiere: aprobación previa, expediente válido, documentación completa.
     """
     published_pub = await pub_service.publish_publication(

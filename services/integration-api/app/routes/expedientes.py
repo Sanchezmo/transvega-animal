@@ -1,35 +1,32 @@
-""""
+""" "
 Rutas para gestión de expedientes de animales.
 """
+
 from datetime import datetime
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.exceptions import NotFoundException, ValidationException
 from app.dependencies.auth import get_current_agent, require_write
-from app.dependencies.rate_limit import rate_limit_dependency, idempotency_dependency
-from datetime import datetime
+from app.dependencies.rate_limit import idempotency_dependency, rate_limit_dependency
 from app.schemas import (
     ExpedienteAnimalCreate,
-    ExpedienteAnimalUpdate,
     ExpedienteAnimalResponse,
+    ExpedienteAnimalUpdate,
     PaginatedResponse,
     PaginationParams,
 )
-from app.adapters.dolibarr.client import DolibarrClient
-from app.services.audit_logger import AuditLogger
-from app.core.exceptions import NotFoundException, ValidationException
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter(prefix="/expedientes", tags=["Expedientes"])
+router = APIRouter(tags=["Expedientes"])
 settings = get_settings()
 
 
 @router.get("", response_model=PaginatedResponse[ExpedienteAnimalResponse])
 async def list_expedientes(
     pagination: PaginationParams = Depends(),
-    status: Optional[str] = Query(None, description="Filtrar por estado comercial"),
+    status: str | None = Query(None, description="Filtrar por estado comercial"),
     agent: dict = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
@@ -103,7 +100,11 @@ async def create_expediente(
     """
     # Validaciones de negocio
     if expediente.sale_price > 0 and expediente.purchase_price > 0:
-        margin = (expediente.sale_price - expediente.purchase_price) / expediente.purchase_price * 100
+        margin = (
+            (expediente.sale_price - expediente.purchase_price)
+            / expediente.purchase_price
+            * 100
+        )
         if margin < 10:
             raise ValidationException(
                 "Margen mínimo del 10% requerido",
@@ -124,7 +125,7 @@ async def create_expediente(
     return ExpedienteAnimalResponse(
         **expediente.dict(),
         id=1,
-        internal_id=f"EXP-2024-000001",
+        internal_id="EXP-2024-000001",
         created_at=datetime.now(),
         updated_at=datetime.now(),
     )
@@ -213,7 +214,7 @@ async def validate_documentation(
 @router.post("/{expediente_id}/publish", status_code=status.HTTP_202_ACCEPTED)
 async def publish_expediente(
     expediente_id: int,
-    platforms: List[str] = ["web", "milanuncios"],
+    platforms: list[str] = ["web", "milanuncios"],
     agent: dict = Depends(require_write),
     db: AsyncSession = Depends(get_db),
     _rate_limit: None = Depends(rate_limit_dependency),
