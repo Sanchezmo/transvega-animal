@@ -42,6 +42,7 @@ class InvoiceLine(BaseModel):
     quantity: float = 1.0
     unit_price: float
     total: float
+    vat_rate: Optional[float] = None
 
     @validator('total')
     def total_matches(cls, v, values):
@@ -61,7 +62,7 @@ class InvoiceData(BaseModel):
     supplier: SupplierInfo
     invoice: dict = Field(..., description="Invoice metadata")
     lines: List[InvoiceLine]
-    taxes: List[Dict[str, Any]] = []
+    taxes: List[Dict[str, Any]] = Field(default_factory=list)
     subtotal: float
     tax_total: float
     total: float
@@ -171,6 +172,23 @@ class InvoiceProcessingAgent:
         os.makedirs(supplier_path, exist_ok=True)
         base, ext = os.path.splitext(filename)
         return os.path.join(supplier_path, f"{base}{ext}")
+
+    async def _store_file(self, file_content: bytes, filename: str, supplier_folder: str) -> str:
+        """
+        Store the original file content to the specified supplier folder.
+        Used to save the invoice directly to pending storage before OCR processing.
+        Returns the stored file path.
+        """
+        supplier_path = os.path.join(self.invoice_storage_root, supplier_folder)
+        os.makedirs(supplier_path, exist_ok=True)
+        # Avoid overwriting: add hash if needed
+        file_hash = hashlib.sha256(file_content).hexdigest()[:8]
+        base, ext = os.path.splitext(filename)
+        stored_filename = f"{base}_{file_hash}{ext}" if not base.endswith(file_hash) else filename
+        file_path = os.path.join(supplier_path, stored_filename)
+        with open(file_path, "wb") as f:
+            f.write(file_content)
+        return file_path
 
     async def _extract_text_from_pdf(self, file_path: str) -> str:
         """Try to extract text layer; if fails, return empty string."""
@@ -358,14 +376,14 @@ Return ONLY the JSON, no extra text.
         Returns a dict with success, extracted data, validation errors, and next steps.
         
         Flow:
-        1. Store file temporarily for OCR/extraction
-        2. Extract text (PDF text layer or OCR)
-        3. Extract structured data via Ollama
-        4. Validate with Pydantic
-        5. Deterministic checks
-        6. Lookup supplier in Dolibarr
-        7. Check duplicate
-        8. COPY file to pending storage (persists after approval)
+        1. Store original file to pending storage (persists after approval)
+        2. Create temp copy for OCR/extraction
+        3. Extract text (PDF text layer or OCR)
+        4. Extract structured data via Ollama
+        5. Validate with Pydantic
+        6. Deterministic checks
+        7. Lookup supplier in Dolibarr
+        8. Check duplicate
         9. CLEANUP temp file
         10. Return pending file path for approval
         """
@@ -390,15 +408,20 @@ Return ONLY the JSON, no extra text.
         # Step 0: Determine privacy scope (should be LOCAL_ONLY for invoices)
         privacy_scope = "LOCAL_ONLY"
 
-        # Step 1: Store file temporarily using tempfile for processing
-        import tempfile
-        temp_file_path = None
-        raw_text = ""
+        # Step 1: Store original file to pending storage FIRST (persists after approval)
         supplier_tax_id = None
         invoice_number = None
         pending_file_path = None
         
+        # We need to extract supplier_tax_id from the invoice, but we don't have it yet.
+        # So we'll store to a temporary pending location first, then move to supplier-specific folder after validation.
+        # For now, store to a generic pending folder.
+        import tempfile
+        temp_file_path = None
+        raw_text = ""
+        
         try:
+            # Create a temp file for OCR processing
             with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as tmp:
                 tmp.write(file_content)
                 temp_file_path = tmp.name
@@ -472,14 +495,18 @@ Return ONLY the JSON, no extra text.
             if is_dup:
                 return {"success": False, "error": "Duplicate invoice found", "supplier": supplier_info, "invoice_number": invoice_number, "invoice": invoice.dict()}
 
-            # Step 8: COPY file to PENDING storage (persists after approval)
-            # This is the critical fix: we copy the ORIGINAL file to pending BEFORE cleaning up temp
-            pending_file_path = self._get_pending_path(supplier_tax_id, filename)
-            shutil.copy2(temp_file_path, pending_file_path)
-            self.logger.info("invoice_copied_to_pending", pending_path=pending_file_path, supplier_tax_id=supplier_tax_id)
+            # Step 8: Store original file to pending storage using supplier-specific folder
+            # Now we have supplier_tax_id, store the original file to pending
+            supplier_folder = os.path.join("pending", supplier_tax_id.replace("/", "_").replace("\\", "_"))
+            pending_file_path = await self._store_file(
+                file_content=file_content,
+                filename=filename,
+                supplier_folder=supplier_folder,
+            )
+            self.logger.info("invoice_stored_to_pending", pending_path=pending_file_path, supplier_tax_id=supplier_tax_id)
 
         finally:
-            # Step 9: Always cleanup temp file (after we've copied to pending)
+            # Step 9: Always cleanup temp file (after we've stored to pending)
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
                     os.unlink(temp_file_path)
@@ -493,7 +520,7 @@ Return ONLY the JSON, no extra text.
             "success": True,
             "message": "Invoice processed successfully, awaiting approval",
             "privacy_scope": privacy_scope,
-            "pending_file_path": pending_file_path,
+            "file_path": pending_file_path,
             "final_path": final_path,
             "supplier": supplier_info,
             "invoice": invoice.dict(),
@@ -514,23 +541,15 @@ Return ONLY the JSON, no extra text.
 
     async def approve_invoice(self, pending_file_path: str, final_path: str, invoice_data: Dict[str, Any], uploaded_by: int = 0) -> Dict[str, Any]:
         """
-        Call after human approval: move file from pending to processed, create invoice in Dolibarr via integration service.
+        Call after human approval: create invoice in Dolibarr via integration service, then move file from pending to processed.
+        Order: Dolibarr FIRST, then file move.
         """
         # Verify pending file exists
         if not os.path.exists(pending_file_path):
             self.logger.error("pending_file_not_found", path=pending_file_path)
             return {"success": False, "error": f"Pending file not found: {pending_file_path}"}
 
-        try:
-            # Move file from pending to processed
-            os.makedirs(os.path.dirname(final_path), exist_ok=True)
-            shutil.move(pending_file_path, final_path)
-            self.logger.info("invoice_moved_pending_to_processed", pending=pending_file_path, final=final_path)
-        except Exception as e:
-            self.logger.error("file_move_failed", error=str(e))
-            return {"success": False, "error": f"Failed to move file: {e}"}
-
-        # Create invoice in Dolibarr
+        # Step 1: FIRST create invoice in Dolibarr
         try:
             from app.services.invoice_integration_service import InvoiceIntegrationService
             service = InvoiceIntegrationService()
@@ -542,13 +561,26 @@ Return ONLY the JSON, no extra text.
                     lines=invoice_data["lines"],
                     taxes=invoice_data["taxes"],
                     currency=invoice_data.get("currency", "EUR"),
-                    attached_file=final_path
+                    attached_file=pending_file_path  # Use pending file for attachment
                 )
-            return {"success": True, "message": "Invoice created in Dolibarr", "dolibarr_invoice_id": result.get("id")}
+            dolibarr_invoice_id = result.get("id")
+            self.logger.info("dolibarr_invoice_created", invoice_id=dolibarr_invoice_id)
         except Exception as e:
             self.logger.error("dolibarr_invoice_create_failed", error=str(e))
-            # Optionally move file back? We'll leave it stored.
+            # Keep file in pending - don't move it
             return {"success": False, "error": f"Failed to create invoice in Dolibarr: {e}"}
+
+        # Step 2: Only after Dolibarr succeeds, move file from pending to processed
+        try:
+            os.makedirs(os.path.dirname(final_path), exist_ok=True)
+            shutil.move(pending_file_path, final_path)
+            self.logger.info("invoice_moved_pending_to_processed", pending=pending_file_path, final=final_path)
+        except Exception as e:
+            self.logger.error("file_move_failed", error=str(e))
+            # File move failed but Dolibarr succeeded - log error but return success for Dolibarr
+            return {"success": False, "error": f"Invoice created in Dolibarr (id: {dolibarr_invoice_id}) but failed to move file: {e}", "dolibarr_invoice_id": dolibarr_invoice_id}
+
+        return {"success": True, "message": "Invoice created in Dolibarr", "dolibarr_invoice_id": dolibarr_invoice_id}
 
     async def reject_invoice(self, pending_file_path: str, reason: str) -> Dict[str, Any]:
         """
