@@ -109,7 +109,7 @@ jobs:
 
       - name: Run unit tests
         env:
-          AUDIT_DB_URL: postgresql://audit:test@localhost:5432/audit_test
+          AUDIT_DB_URL: postgresql://audit:***@localhost:5432/audit_test
           REDIS_URL: redis://localhost:6379/0
           DOLIBARR_API_URL: http://mock-dolibarr:8001
           DOLIBARR_API_KEY: test-key
@@ -117,6 +117,7 @@ jobs:
           FERNET_KEY: ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg=
           ENVIRONMENT: test
           MOCK_DOLIBARR_ENABLED: "true"
+          PYTHONPATH: services/integration-api
         run: |
           pytest tests/unit -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing
 
@@ -151,14 +152,13 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
       mock-dolibarr:
         image: python:3.11-slim
-        working-directory: /app
         ports: [8001:8001]
         volumes:
           - ./adapters/dolibarr/mock.py:/app/mock.py:ro
           - ./tests/fixtures/dolibarr:/app/fixtures:ro
         command: |
           pip install fastapi uvicorn pydantic pydantic-settings python-dotenv pyyaml
-          python mock.py
+          python /app/mock.py
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -177,7 +177,7 @@ jobs:
 
       - name: Run integration tests
         env:
-          AUDIT_DB_URL: postgresql://audit:test@localhost:5432/audit_test
+          AUDIT_DB_URL: postgresql://audit:***@localhost:5432/audit_test
           REDIS_URL: redis://localhost:6379/0
           DOLIBARR_API_URL: http://localhost:8001
           DOLIBARR_API_KEY: mock-dolibarr-key-12345
@@ -230,7 +230,7 @@ jobs:
         uses: trufflesecurity/trufflehog@v3
         with:
           path: ./
-          base: main
+          base: master
           head: HEAD
 
   # =============================================================================
