@@ -4,11 +4,11 @@ import os
 from datetime import date, datetime
 from typing import Dict, List, Optional, Any
 import structlog
-import httpx
 
 from app.services.intake_session import intake_session_store
 from app.services.media_storage import save_uploaded_file
 from app.core.privacy_router import privacy_router
+from app.core.internal_api_client import InternalAPIClient, InternalAPIError, create_internal_api_client
 
 logger = structlog.get_logger()
 
@@ -37,9 +37,10 @@ class DogIntakeAgent:
         self.config = config
         self.agent_id = "dog_intake"
         self.agent_name = "Dog Intake Agent"
-        # Base URL for internal API (same service)
+        # Internal API client with authentication
+        self.api_client: Optional[InternalAPIClient] = None
         self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000")
-        self.client = httpx.AsyncClient(base_url=self.api_base, timeout=30.0)
+        self.api_key = config.get("AGENT_API_KEY_DOG_INTAKE", "")
         self.capabilities = [
             "create_dog",
             "update_dog",
@@ -59,9 +60,17 @@ class DogIntakeAgent:
 
     async def start(self):
         logger.info("starting_dog_intake_agent")
+        # Initialize internal API client with service-to-service auth
+        self.api_client = await create_internal_api_client(
+            agent_name="dog_intake",
+            base_url=self.api_base,
+            api_key=self.api_key or None,
+        )
+        await self.api_client.start()
 
     async def stop(self):
-        await self.client.aclose()
+        if self.api_client:
+            await self.api_client.close()
 
     async def process_message(self, message: Dict) -> Dict:
         """
@@ -114,9 +123,9 @@ class DogIntakeAgent:
             required = ["name", "sex", "birth_date", "color", "microchip"]
             if all(field in dog_data for field in required) and "breed_name" in dog_data:
                 # Look up breed by name
-                breed_resp = await self.client.get("/dogs/breeds/")
-                if breed_resp.status_code == 200:
-                    breeds = breed_resp.json().get("data", [])
+                breed_resp = await self.api_client.get("/dogs/breeds/")
+                if breed_resp.get("data"):
+                    breeds = breed_resp.get("data", [])
                     for breed in breeds:
                         if breed["name"].lower() == dog_data["breed_name"].lower():
                             dog_data["breed_id"] = breed["id"]
@@ -141,9 +150,8 @@ class DogIntakeAgent:
                                 uploaded_by=mf["uploaded_by"],
                             )
                             meta["dog_id"] = dog_id
-                            media_resp = await self.client.post(f"/dogs/{dog_id}/media", json=meta)
-                            media_resp.raise_for_status()
-                            media_success.append(media_resp.json())
+                            media_resp = await self.api_client.post(f"/dogs/{dog_id}/media", json=meta)
+                            media_success.append(media_resp)
                         except Exception as e:
                             logger.error("failed_to_assoc_media", error=str(e))
                     
@@ -285,12 +293,11 @@ class DogIntakeAgent:
         }
 
         try:
-            resp = await self.client.post("/dogs/", json=payload)
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.post("/dogs/", json=payload)
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -324,12 +331,11 @@ class DogIntakeAgent:
             return {"success": False, "error": "No fields to update"}
 
         try:
-            resp = await self.client.put(f"/dogs/{dog_id}", json=payload)
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.put(f"/dogs/{dog_id}", json=payload)
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -366,9 +372,11 @@ class DogIntakeAgent:
         # First, we need to know the dog's internal_id to store files correctly.
         # Get dog info from API
         try:
-            dog_resp = await self.client.get(f"/dogs/{dog_id}")
-            dog_resp.raise_for_status()
-            dog_info = dog_resp.json()
+            dog_resp = await self.api_client.get(f"/dogs/{dog_id}")
+            dog_info = dog_resp
+        except InternalAPIError as e:
+            logger.error("failed_to_fetch_dog", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"Could not retrieve dog info: {e.message}"}
         except Exception as e:
             logger.error("failed_to_fetch_dog", error=str(e))
             return {"success": False, "error": "Could not retrieve dog info"}
@@ -395,12 +403,11 @@ class DogIntakeAgent:
 
         # Now call API to create DogMedia record
         try:
-            media_resp = await self.client.post(f"/dogs/{dog_id}/media", json=media_metadata)
-            media_resp.raise_for_status()
-            media_record = media_resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_media_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error creating media: {e.response.status_code}"}
+            media_resp = await self.api_client.post(f"/dogs/{dog_id}/media", json=media_metadata)
+            media_record = media_resp
+        except InternalAPIError as e:
+            logger.error("api_media_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error creating media: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -429,12 +436,11 @@ class DogIntakeAgent:
             return {"success": False, "error": "No parent fields provided"}
 
         try:
-            resp = await self.client.put(f"/dogs/{dog_id}", json=payload)
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.put(f"/dogs/{dog_id}", json=payload)
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -460,12 +466,11 @@ class DogIntakeAgent:
         payload = {"litter_id": litter_id}
 
         try:
-            resp = await self.client.put(f"/dogs/{dog_id}", json=payload)
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.put(f"/dogs/{dog_id}", json=payload)
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -499,12 +504,11 @@ class DogIntakeAgent:
             return {"success": False, "error": "No health fields provided"}
 
         try:
-            resp = await self.client.post(f"/dogs/{dog_id}/health", json=payload)
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.post(f"/dogs/{dog_id}/health", json=payload)
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -530,12 +534,11 @@ class DogIntakeAgent:
         payload = {"status": new_status}
 
         try:
-            resp = await self.client.put(f"/dogs/{dog_id}", json=payload)
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.put(f"/dogs/{dog_id}", json=payload)
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -555,12 +558,11 @@ class DogIntakeAgent:
             return {"success": False, "error": "Dog ID required"}
 
         try:
-            resp = await self.client.get(f"/dogs/{dog_id}")
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.get(f"/dogs/{dog_id}")
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}
@@ -588,12 +590,11 @@ class DogIntakeAgent:
             params["offset"] = offset
 
         try:
-            resp = await self.client.get("/dogs/", params=params)
-            resp.raise_for_status()
-            result = resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error("api_error", status=e.response.status_code, text=e.response.text)
-            return {"success": False, "error": f"API error: {e.response.status_code}"}
+            resp = await self.api_client.get("/dogs/", params=params)
+            result = resp
+        except InternalAPIError as e:
+            logger.error("api_error", status=e.status_code, error=e.message)
+            return {"success": False, "error": f"API error: {e.status_code}"}
         except Exception as e:
             logger.error("unexpected_error", error=str(e))
             return {"success": False, "error": str(e)}

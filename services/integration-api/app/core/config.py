@@ -32,6 +32,9 @@ class Settings(BaseSettings):
         "http://localhost:8002",
         "https://hermes.transvega-animal.es",
     ]
+    
+    # Internal API URL for service-to-service communication
+    INTERNAL_API_URL: str = "http://localhost:8000"
 
     # Rate limiting
     RATE_LIMIT_REQUESTS: int = 100
@@ -79,6 +82,7 @@ class Settings(BaseSettings):
     AGENT_API_KEY_TAX: str = "tvsk_dev_tax_abcdef123456"
     AGENT_API_KEY_MARKETING: str = "tvsk_dev_marketing_abcdef123456"
     AGENT_API_KEY_TECHNICAL: str = "tvsk_dev_technical_abcdef123456"
+    AGENT_API_KEY_DOG_INTAKE: str = "tvsk_dev_dog_intake_abcdef123456"
 
     # Aprobaciones
     APPROVALS_SERVICE_URL: str = "http://approvals:8000"
@@ -139,6 +143,7 @@ class Settings(BaseSettings):
             "tax": self.AGENT_API_KEY_TAX,
             "marketing": self.AGENT_API_KEY_MARKETING,
             "technical": self.AGENT_API_KEY_TECHNICAL,
+            "dog_intake": self.AGENT_API_KEY_DOG_INTAKE,
         }
 
     @property
