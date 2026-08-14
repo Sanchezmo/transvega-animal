@@ -1,6 +1,7 @@
 """Invoice Processing Agent
 Handles extraction, validation, and registration of supplier invoices.
 """
+import asyncio
 import structlog
 import os
 import hashlib
@@ -325,43 +326,81 @@ Return ONLY the JSON, no extra text.
         Returns a dict with success, extracted data, validation errors, and next steps.
         """
         self.logger.info("processing_invoice", filename=filename, size=len(file_content))
+
+        # Step 0: Check file size limit BEFORE storing
+        file_size_mb = len(file_content) / (1024 * 1024)
+        if file_size_mb > self.ocr_max_file_mb:
+            self.logger.warning(
+                "file_exceeds_max_size_rejected", 
+                filename=filename, 
+                size_mb=file_size_mb, 
+                max_mb=self.ocr_max_file_mb
+            )
+            return {
+                "success": False, 
+                "error": f"File size ({file_size_mb:.1f} MB) exceeds maximum allowed ({self.ocr_max_file_mb} MB)",
+                "file_size_mb": file_size_mb,
+                "max_file_mb": self.ocr_max_file_mb,
+            }
+
         # Step 0: Determine privacy scope (should be LOCAL_ONLY for invoices)
-        # We'll check content type and maybe filename.
-        # For simplicity, we treat all uploads as LOCAL_ONLY.
         privacy_scope = "LOCAL_ONLY"
-        # Step 1: Store file temporarily
-        # We'll need a supplier folder; we don't know supplier yet, use pending.
-        temp_folder = f"pending_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+
+        # Step 1: Store file temporarily using tempfile for automatic cleanup
+        import tempfile
+        temp_file_path = None
         try:
-            file_path = await self._store_file(file_content, filename, temp_folder)
-        except Exception as e:
-            return {"success": False, "error": f"File storage failed: {e}"}
+            with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as tmp:
+                tmp.write(file_content)
+                temp_file_path = tmp.name
 
-        # Step 2: Extract text
-        raw_text = ""
-        mime_type, _ = mimetypes.guess_type(filename)
-        if mime_type == "application/pdf" or filename.lower().endswith('.pdf'):
-            # First try to extract text layer
-            raw_text = await self._extract_text_from_pdf(file_path)
-            if not raw_text or len(raw_text.strip()) < 50:
-                # No text layer or very little text - likely scanned PDF
-                # Render pages to images and OCR each
-                self.logger.info("pdf_no_text_layer_rendering_for_ocr", file_path=file_path)
-                page_images = await self._render_pdf_pages_to_images(file_path)
-                if page_images:
-                    ocr_texts = []
-                    for i, img_bytes in enumerate(page_images):
-                        self.logger.debug("ocr_page", page=i+1, total=len(page_images))
-                        page_text = await self._ocr_via_ollama(image_bytes=img_bytes)
-                        if page_text:
-                            ocr_texts.append(f"--- Page {i+1} ---\n{page_text}")
-                    raw_text = "\n\n".join(ocr_texts)
-        else:
-            # Assume image
-            raw_text = await self._ocr_via_ollama(file_path)
+            # Step 2: Extract text with timeout
+            raw_text = ""
+            mime_type, _ = mimetypes.guess_type(filename)
+            if mime_type == "application/pdf" or filename.lower().endswith('.pdf'):
+                # First try to extract text layer
+                raw_text = await self._extract_text_from_pdf(temp_file_path)
+                if not raw_text or len(raw_text.strip()) < 50:
+                    # No text layer or very little text - likely scanned PDF
+                    # Render pages to images and OCR each
+                    self.logger.info("pdf_no_text_layer_rendering_for_ocr", file_path=temp_file_path)
+                    page_images = await self._render_pdf_pages_to_images(temp_file_path)
+                    if page_images:
+                        ocr_texts = []
+                        for i, img_bytes in enumerate(page_images):
+                            self.logger.debug("ocr_page", page=i+1, total=len(page_images))
+                            # Apply timeout to OCR
+                            try:
+                                page_text = await asyncio.wait_for(
+                                    self._ocr_via_ollama(image_bytes=img_bytes),
+                                    timeout=self.ocr_timeout
+                                )
+                                if page_text:
+                                    ocr_texts.append(f"--- Page {i+1} ---\n{page_text}")
+                            except asyncio.TimeoutError:
+                                self.logger.warning("ocr_page_timeout", page=i+1, timeout=self.ocr_timeout)
+                                continue
+                        raw_text = "\n\n".join(ocr_texts)
+            else:
+                # Assume image - apply timeout
+                try:
+                    raw_text = await asyncio.wait_for(
+                        self._ocr_via_ollama(temp_file_path),
+                        timeout=self.ocr_timeout
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.warning("ocr_timeout", filename=filename, timeout=self.ocr_timeout)
+                    raw_text = ""
 
-        if not raw_text:
-            return {"success": False, "error": "Failed to extract text from file", "file_path": file_path}
+            if not raw_text:
+                return {"success": False, "error": "Failed to extract text from file", "file_path": temp_file_path}
+        finally:
+            # Always cleanup temp file
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as e:
+                    self.logger.warning("temp_file_cleanup_failed", path=temp_file_path, error=str(e))
 
         # Step 3: Extract structured data via Ollama
         try:
