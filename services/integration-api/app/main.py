@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
 
     # Start Supervisor agent (used by telegram webhook)
     from app.routes.telegram import supervisor_agent
+
     try:
         await supervisor_agent.start()
         logger.info("supervisor_agent_started")

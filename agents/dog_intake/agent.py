@@ -426,7 +426,7 @@ class DogIntakeAgent:
         }
 
         try:
-            resp = await self.api_client.post("/dogs/", json=payload)
+            resp = await self.api_client.post("/dogs", json=payload)
             result = resp
         except InternalAPIError as e:
             logger.error("api_error", status=e.status_code, error=e.message)
@@ -726,7 +726,7 @@ class DogIntakeAgent:
             params["offset"] = offset
 
         try:
-            resp = await self.api_client.get("/dogs/", params=params)
+            resp = await self.api_client.get("/dogs", params=params)
             result = resp
         except InternalAPIError as e:
             logger.error("api_error", status=e.status_code, error=e.message)
@@ -914,9 +914,8 @@ class DogIntakeAgent:
                     uploaded_by=mf["uploaded_by"],
                 )
                 meta["dog_id"] = dog_id
-                media_resp = await self.client.post(f"/dogs/{dog_id}/media", json=meta)
-                media_resp.raise_for_status()
-                media_success.append(media_resp.json())
+                media_resp = await self.api_client.post(f"/dogs/{dog_id}/media", json=meta)
+                media_success.append(media_resp)
             except Exception as e:
                 logger.error("failed_to_assoc_media", error=str(e))
                 # continue with others

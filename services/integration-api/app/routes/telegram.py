@@ -23,6 +23,7 @@ agent_config = {
     "NVIDIA_API_KEY": getattr(settings, "NVIDIA_API_KEY", ""),
     "NVIDIA_BASE_URL": getattr(settings, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
     "AGENT_API_KEY_SUPERVISOR": getattr(settings, "AGENT_API_KEY_SUPERVISOR", ""),
+    "AGENT_API_KEY_DOG_INTAKE": getattr(settings, "AGENT_API_KEY_DOG_INTAKE", ""),
 }
 supervisor_agent = create_supervisor_agent(config=agent_config)
 
