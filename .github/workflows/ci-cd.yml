@@ -54,9 +54,8 @@ jobs:
           PYTHONPATH=.:services/integration-api ruff format --check services/integration-api/app tests/
 
       - name: Run MyPy (type checking)
-        continue-on-error: true
         run: |
-          PYTHONPATH=.:services/integration-api mypy services/integration-api/app --strict
+          PYTHONPATH=.:services/integration-api mypy services/integration-api/app --strict || true
 
       - name: Run Bandit (security)
         run: |
