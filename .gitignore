@@ -75,4 +75,4 @@ models/
 # Temporales
 tmp/
 temp/
-*.tmp
+.env.staging

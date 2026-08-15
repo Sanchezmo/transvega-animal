@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from agents.supervisor.agent import create_supervisor_agent
 from app.core.config import settings
 from app.core.telegram_client import TelegramAPIError, TelegramClient
+from app.dependencies.rate_limit import telegram_idempotency_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ async def telegram_webhook(
     request: Request,
     x_telegram_bot_api_secret_token: str = Header(None),
     _verify: None = Depends(_require_webhook_secret),
+    _idempotency: None = Depends(telegram_idempotency_dependency),
 ) -> dict[str, Any]:
     """
     Receive updates from Telegram and process them via the SupervisorAgent
@@ -101,14 +103,10 @@ async def telegram_webhook(
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
     update_id = update.get("update_id")
-    logger.info("telegram_update_received", update_id=update_id)
+    logger.info("telegram_update_received update_id=%s", update_id)
 
-    # Idempotency key based on update_id to prevent duplicate processing
-    _idempotency_key = f"telegram:{update_id}:webhook"
-
-    # Check idempotency (simple in-memory check - could be enhanced with Redis)
-    # For now, we rely on the fact that Telegram retries with same update_id
-    # and the DogIntakeAgent handles duplicate detection via session
+    # Idempotency is handled by telegram_idempotency_dependency using Redis
+    # The update_id is available in request.state.telegram_update_id
 
     # Process the update with the supervisor agent
     result = await supervisor_agent.handle_telegram_message(update)
@@ -116,12 +114,12 @@ async def telegram_webhook(
     # Extract chat_id for outbound response
     chat_id = _extract_chat_id(update)
 
-    # Send response to Telegram user ONLY when dog is created (completed=True)
-    # For intermediate steps, we don't send outbound to avoid spam
-    if chat_id and result.get("completed") and result.get("message"):
+    # Send response to Telegram user for any user-facing message
+    # This includes both intermediate steps and final completion
+    if chat_id and result.get("message"):
         outbound_text = result["message"]
         # Add dog info if creation was successful
-        if result.get("dog"):
+        if result.get("completed") and result.get("dog"):
             dog = result["dog"]
             outbound_text = (
                 f"Perro registrado correctamente.\n"
@@ -136,7 +134,7 @@ async def telegram_webhook(
     if not result.get("success"):
         logger.warning("Update processing failed: %s", result.get("error"))
     else:
-        logger.info("Update processed successfully: %s", result.get("message"))
+        logger.info("telegram_update_processed message=%s", result.get("message"))
 
     return JSONResponse(status_code=200, content=result)
 

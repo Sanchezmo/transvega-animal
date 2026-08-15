@@ -225,7 +225,7 @@ class ExpedienteAnimalBase(BaseModel):
     birth_date: datetime.date
     color: str = Field(..., max_length=50)
     weight_kg: float = Field(..., gt=0, le=100)
-    microchip: str = Field(..., pattern=r"^\d{15}$")
+    microchip: str | None = Field(None, pattern=r"^\d{15}$")
     breeder_id: int | None = None
     breeder_registration: str | None = Field(None, max_length=50)
     zoological_nucleus: str | None = Field(None, max_length=50)
@@ -268,6 +268,7 @@ class ExpedienteAnimalUpdate(BaseModel):
     breed: str | None = Field(None, min_length=1, max_length=100)
     color: str | None = Field(None, max_length=50)
     weight_kg: float | None = Field(None, gt=0, le=100)
+    microchip: str | None = Field(None, pattern=r"^\d{15}$")
     vet_status: str | None = Field(None, max_length=50)
     vaccines: list[VaccineRecord] | None = None
     deworming: list[DewormingRecord] | None = None
@@ -909,6 +910,7 @@ class DogUpdate(BaseModel):
     sex: str | None = Field(None, pattern=r"^[MH]$")
     birth_date: datetime.date | None = None
     color: str | None = Field(None, max_length=50)
+    microchip: str | None = Field(None, pattern=r"^\d{15}$")
     vet_status: str | None = Field(None, max_length=50)
     sire_name: str | None = Field(None, max_length=200)
     dam_name: str | None = Field(None, max_length=200)

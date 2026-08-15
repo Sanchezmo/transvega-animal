@@ -99,6 +99,8 @@ class Settings(BaseSettings):
     # Telegram
     TELEGRAM_WEBHOOK_SECRET: str | None = None
     TELEGRAM_WEBHOOK_SECRET_REQUIRED: bool = True
+    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS: int = 24
 
     # Google Workspace
     GOOGLE_CLIENT_ID: str | None = None

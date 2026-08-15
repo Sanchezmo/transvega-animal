@@ -82,6 +82,14 @@ class MockRedis:
         self._ttl[key] = seconds
         return True
 
+    async def set(self, key: str, value: str, nx: bool = False, ex: int | None = None) -> bool:
+        if nx and key in self._data:
+            return False
+        self._data[key] = value
+        if ex is not None:
+            self._ttl[key] = ex
+        return True
+
     async def close(self):
         pass
 
@@ -312,15 +320,17 @@ class TestTelegramOutbound:
                                 )
                                 assert resp.status_code == 200
 
-                            # Verify send_message was called ONCE (only for completed dog)
+                            # Verify send_message was called for each step (9 steps = 9 calls)
                             send_calls = [c for c in mock_telegram.calls if c["method"] == "send_message"]
-                            assert len(send_calls) == 1, f"Expected 1 send_message call, got {len(send_calls)}"
+                            assert len(send_calls) == 9, (
+                                f"Expected 9 send_message calls (one per step), got {len(send_calls)}"
+                            )
 
-                            # Verify confirmation message contains key info
-                            sent_text = send_calls[0]["text"]
-                            assert "Perro registrado correctamente" in sent_text
-                            assert "DOG-" in sent_text
-                            assert "Thor" in sent_text
+                            # Verify final confirmation message contains key info
+                            final_text = send_calls[-1]["text"]
+                            assert "Perro registrado correctamente" in final_text
+                            assert "DOG-" in final_text
+                            assert "Thor" in final_text
 
         await mock_supervisor.stop()
 
@@ -515,11 +525,13 @@ class TestTelegramOutbound:
                                 )
                                 assert resp.status_code == 200
 
-                            # Verify send_message was called and no clarification for microchip
+                            # Verify send_message was called for each step (9 steps = 9 calls)
                             send_calls = [c for c in mock_telegram.calls if c["method"] == "send_message"]
-                            assert len(send_calls) == 1
+                            assert len(send_calls) == 9, (
+                                f"Expected 9 send_message calls (one per step), got {len(send_calls)}"
+                            )
 
-                            sent_text = send_calls[0]["text"]
+                            sent_text = send_calls[-1]["text"]
                             assert "Perro registrado correctamente" in sent_text
                             assert "Luna" in sent_text
                             # No error about missing microchip
@@ -716,9 +728,11 @@ class TestTelegramOutbound:
                                 )
                                 assert resp.status_code == 200
 
-                            # Verify send_message was called
+                            # Verify send_message was called for each step (9 steps = 9 calls)
                             send_calls = [c for c in mock_telegram.calls if c["method"] == "send_message"]
-                            assert len(send_calls) == 1
+                            assert len(send_calls) == 9, (
+                                f"Expected 9 send_message calls (one per step), got {len(send_calls)}"
+                            )
 
         await mock_supervisor.stop()
 
@@ -838,9 +852,15 @@ class TestTelegramOutbound:
                             assert data["completed"] is False
                             assert "dog" not in data
 
-                            # Should NOT have sent a confirmation (dog not completed)
+                            # Should have sent messages for the first two steps (start + name)
                             send_calls = [c for c in mock_telegram.calls if c["method"] == "send_message"]
-                            assert len(send_calls) == 0, "No outbound message should be sent when dog not completed"
+                            assert len(send_calls) == 2, (
+                                f"Expected 2 send_message calls (for /start and name), got {len(send_calls)}"
+                            )
+
+                            # Verify the messages are the intermediate steps
+                            assert "nombre" in send_calls[0]["text"].lower()
+                            assert "raza" in send_calls[1]["text"].lower()
 
         await mock_supervisor.stop()
 
