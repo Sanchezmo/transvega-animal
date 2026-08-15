@@ -47,6 +47,9 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 
+# Ignore import-untyped for internal modules that don't have py.typed markers
+ignore_missing_imports = true
+
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "venv", "__pycache__"]
 skip = ["B104"]
