@@ -1,11 +1,13 @@
 """Content Marketing Agent
 Genera propuestas de contenido basándose en animales disponibles y datos existentes.
 """
-import structlog
-from typing import Dict, List, Any, Optional
-from datetime import datetime
 
-from app.core.internal_api_client import InternalAPIClient, create_internal_api_client, InternalAPIError
+from datetime import datetime
+from typing import Any
+
+import structlog
+
+from app.core.internal_api_client import InternalAPIClient, InternalAPIError, create_internal_api_client
 
 logger = structlog.get_logger()
 
@@ -24,14 +26,14 @@ class ContentMarketingAgent:
     El agente puede usar modelos externos para contenido informativo genérico si no contiene información confidencial.
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: dict):
         self.config = config
         self.agent_id = "content_marketing"
         self.agent_name = "Content Marketing Agent"
         # Base URL for internal API (same service, includes /api/v1)
         self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
         self.api_key = config.get("AGENT_API_KEY_MARKETING", "")
-        self.api_client: Optional[InternalAPIClient] = None
+        self.api_client: InternalAPIClient | None = None
         self.capabilities = [
             "generate_individual_content",
             "generate_breed_content",
@@ -60,13 +62,13 @@ class ContentMarketingAgent:
             await self.api_client.close()
             self.api_client = None
 
-    async def generate_individual_content(self, dog_id: int) -> Dict[str, Any]:
+    async def generate_individual_content(self, dog_id: int) -> dict[str, Any]:
         """Generar contenido centrado en un perro específico."""
         logger.info("generating_individual_content", dog_id=dog_id)
-        
+
         if self.api_client is None:
             return {"success": False, "error": "ContentMarketingAgent not started. Call start() first."}
-        
+
         # Fetch dog data
         dog = await self._get_dog(dog_id)
         if not dog:
@@ -103,7 +105,7 @@ class ContentMarketingAgent:
             "created_at": datetime.utcnow().isoformat() + "Z",
         }
 
-    async def generate_breed_content(self, breed_id: int) -> Dict[str, Any]:
+    async def generate_breed_content(self, breed_id: int) -> dict[str, Any]:
         """Generar contenido que agrupe varios perros de la misma raza."""
         logger.info("generating_breed_content", breed_id=breed_id)
         breed_name = await self._get_breed_name(breed_id) or f"raza {breed_id}"
@@ -136,7 +138,7 @@ class ContentMarketingAgent:
             "created_at": datetime.utcnow().isoformat() + "Z",
         }
 
-    async def generate_litter_content(self, litter_id: int) -> Dict[str, Any]:
+    async def generate_litter_content(self, litter_id: int) -> dict[str, Any]:
         """Generar contenido sobre hermanos de la misma camada."""
         logger.info("generating_litter_content", litter_id=litter_id)
         # Fetch litter info
@@ -148,7 +150,9 @@ class ContentMarketingAgent:
         if not dogs:
             return {"success": False, "error": f"No dogs found for litter {litter_id}"}
         # Simple info
-        breed_name = await self._get_breed_name(litter.get("breed_id")) if litter.get("breed_id") else "raza desconocida"
+        breed_name = (
+            await self._get_breed_name(litter.get("breed_id")) if litter.get("breed_id") else "raza desconocida"
+        )
         title = f"Camada {litter.get('code', litter_id)} - Hermanos de {breed_name}"
         copy = (
             f"Presentamos la camada {litter.get('code', litter_id)} de raza {breed_name}. "
@@ -174,7 +178,7 @@ class ContentMarketingAgent:
             "created_at": datetime.utcnow().isoformat() + "Z",
         }
 
-    async def generate_generic_content(self, topic: str) -> Dict[str, Any]:
+    async def generate_generic_content(self, topic: str) -> dict[str, Any]:
         """Generar contenido informativo genérico (cuidados, transporte, bienestar, etc.)."""
         # Este tipo de contenido puede usar modelos externos si no contiene información confidencial.
         logger.info("generating_generic_content", topic=topic)
@@ -196,7 +200,7 @@ class ContentMarketingAgent:
         }
 
     # Helper methods to call internal API
-    async def _get_dog(self, dog_id: int) -> Optional[Dict]:
+    async def _get_dog(self, dog_id: int) -> dict | None:
         try:
             return await self.api_client.get(f"/dogs/{dog_id}")
         except InternalAPIError as e:
@@ -205,7 +209,7 @@ class ContentMarketingAgent:
             logger.error("failed_to_get_dog", dog_id=dog_id, error=str(e))
         return None
 
-    async def _get_media_for_dog(self, dog_id: int) -> List[Dict]:
+    async def _get_media_for_dog(self, dog_id: int) -> list[dict]:
         try:
             resp = await self.api_client.get(f"/dogs/{dog_id}/media")
             data = resp
@@ -220,7 +224,7 @@ class ContentMarketingAgent:
             logger.error("failed_to_get_media", dog_id=dog_id, error=str(e))
         return []
 
-    async def _get_breed_name(self, breed_id: int) -> Optional[str]:
+    async def _get_breed_name(self, breed_id: int) -> str | None:
         try:
             breed = await self.api_client.get(f"/breeds/{breed_id}")
             return breed.get("name")
@@ -230,7 +234,7 @@ class ContentMarketingAgent:
             logger.error("failed_to_get_breed", breed_id=breed_id, error=str(e))
         return None
 
-    async def _get_dogs_by_breed(self, breed_id: int, limit: int = 5) -> List[Dict]:
+    async def _get_dogs_by_breed(self, breed_id: int, limit: int = 5) -> list[dict]:
         try:
             resp = await self.api_client.get("/dogs/", params={"breed_id": breed_id, "limit": limit})
             data = resp
@@ -244,7 +248,7 @@ class ContentMarketingAgent:
             logger.error("failed_to_get_dogs_by_breed", breed_id=breed_id, error=str(e))
         return []
 
-    async def _get_litter(self, litter_id: int) -> Optional[Dict]:
+    async def _get_litter(self, litter_id: int) -> dict | None:
         try:
             return await self.api_client.get(f"/litters/{litter_id}")
         except InternalAPIError as e:
@@ -253,7 +257,7 @@ class ContentMarketingAgent:
             logger.error("failed_to_get_litter", litter_id=litter_id, error=str(e))
         return None
 
-    async def _get_dogs_by_litter(self, litter_id: int, limit: int = 10) -> List[Dict]:
+    async def _get_dogs_by_litter(self, litter_id: int, limit: int = 10) -> list[dict]:
         try:
             resp = await self.api_client.get("/dogs/", params={"litter_id": litter_id, "limit": limit})
             data = resp
@@ -269,5 +273,5 @@ class ContentMarketingAgent:
 
 
 # Función de ayuda para crear el agente desde configuración
-def create_content_marketing_agent(config: Dict) -> ContentMarketingAgent:
+def create_content_marketing_agent(config: dict) -> ContentMarketingAgent:
     return ContentMarketingAgent(config)

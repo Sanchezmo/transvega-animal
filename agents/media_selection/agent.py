@@ -1,11 +1,13 @@
 """Media Selection Agent
 Analiza fotografías y vídeos para proporcionar métricas y recomendaciones de uso.
 """
-import os
+
 import hashlib
-from typing import Dict, List, Any, Optional
+import os
+from typing import Any
+
 import structlog
-from PIL import Image, ImageStat, ImageFile
+from PIL import Image, ImageFile, ImageStat
 
 # Allow loading of truncated images
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -27,7 +29,7 @@ class MediaSelectionAgent:
     si no, se usan heurísticas básicas y se devuelve un estado de proveedor no disponible.
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: dict):
         self.config = config
         self.agent_id = "media_selection"
         self.agent_name = "Media Selection Agent"
@@ -42,13 +44,16 @@ class MediaSelectionAgent:
             "provider_optional",  # El agente funciona incluso si el proveedor no está disponible
         ]
         # Umbrales para considerar media como descartable
-        self.thresholds = config.get("MEDIA_SELECTION_THRESHOLDS", {
-            "sharpness": 0.3,
-            "exposure": 0.3,
-            "dog_visibility": 0.3,
-        })
+        self.thresholds = config.get(
+            "MEDIA_SELECTION_THRESHOLDS",
+            {
+                "sharpness": 0.3,
+                "exposure": 0.3,
+                "dog_visibility": 0.3,
+            },
+        )
 
-    def _get_local_provider(self, config: Dict):
+    def _get_local_provider(self, config: dict):
         """Obtener el proveedor local de análisis de medios."""
         provider_type = config.get("MEDIA_ANALYSIS_PROVIDER", "stub")
         if provider_type == "stub":
@@ -58,7 +63,7 @@ class MediaSelectionAgent:
         logger.warning("Unknown media analysis provider, using stub", provider=provider_type)
         return StubAnalysisProvider()
 
-    async def analyze_image(self, image_path: str) -> Dict[str, Any]:
+    async def analyze_image(self, image_path: str) -> dict[str, Any]:
         """Analizar una imagen y devolver métricas."""
         if not os.path.exists(image_path):
             return {"success": False, "error": f"Image not found: {image_path}"}
@@ -71,7 +76,7 @@ class MediaSelectionAgent:
             logger.error("image_analysis_failed", image_path=image_path, error=str(e))
             return {"success": False, "error": str(e)}
 
-    async def select_media(self, dog_internal_id: str, media_items: List[Dict]) -> Dict[str, Any]:
+    async def select_media(self, dog_internal_id: str, media_items: list[dict]) -> dict[str, Any]:
         """
         Dada una lista de media (cada ítem con al menos 'file_path', 'purpose', etc.),
         devolver selecciones y puntuaciones.
@@ -107,13 +112,15 @@ class MediaSelectionAgent:
                 scores = {"sharpness": 0.0, "exposure": 0.0, "framing": 0.0, "dog_visibility": 0.0}
             else:
                 scores = analysis["analysis"]
-            analyzed.append({
-                "file_path": file_path,
-                "filename": os.path.basename(file_path),
-                "scores": scores,
-                "purpose": item.get("purpose"),
-                "media_type": "photo",
-            })
+            analyzed.append(
+                {
+                    "file_path": file_path,
+                    "filename": os.path.basename(file_path),
+                    "scores": scores,
+                    "purpose": item.get("purpose"),
+                    "media_type": "photo",
+                }
+            )
 
         if not analyzed:
             return {"success": False, "error": "No photos to analyze"}
@@ -121,7 +128,12 @@ class MediaSelectionAgent:
         # Simple selection logic: higher sharpness + dog_visibility better
         def score_item(it):
             s = it["scores"]
-            return s.get("sharpness", 0) * 0.4 + s.get("dog_visibility", 0) * 0.4 + s.get("exposure", 0) * 0.1 + s.get("framing", 0) * 0.1
+            return (
+                s.get("sharpness", 0) * 0.4
+                + s.get("dog_visibility", 0) * 0.4
+                + s.get("exposure", 0) * 0.1
+                + s.get("framing", 0) * 0.1
+            )
 
         sorted_items = sorted(analyzed, key=score_item, reverse=True)
 
@@ -139,9 +151,11 @@ class MediaSelectionAgent:
         disposable = []
         for it in analyzed:
             s = it["scores"]
-            if (s.get("sharpness", 0) < self.thresholds.get("sharpness", 0) or
-                s.get("exposure", 0) < self.thresholds.get("exposure", 0) or
-                s.get("dog_visibility", 0) < self.thresholds.get("dog_visibility", 0)):
+            if (
+                s.get("sharpness", 0) < self.thresholds.get("sharpness", 0)
+                or s.get("exposure", 0) < self.thresholds.get("exposure", 0)
+                or s.get("dog_visibility", 0) < self.thresholds.get("dog_visibility", 0)
+            ):
                 disposable.append(it["filename"])
 
         return {
@@ -151,10 +165,10 @@ class MediaSelectionAgent:
             "social": social,
             "scores": scores_dict,
             "disposable": disposable,
-            "message": "Media selection completed"
+            "message": "Media selection completed",
         }
 
-    async def detect_duplicates(self, media_items: List[Dict]) -> Dict[str, Any]:
+    async def detect_duplicates(self, media_items: list[dict]) -> dict[str, Any]:
         """Detectar posibles duplicados basado en hash de archivo."""
         hashes = {}
         duplicates = []
@@ -163,25 +177,17 @@ class MediaSelectionAgent:
             if not file_path or not os.path.exists(file_path):
                 continue
             try:
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     file_hash = hashlib.sha256(f.read()).hexdigest()
             except Exception as e:
                 logger.error("hash_failed", file_path=file_path, error=str(e))
                 continue
             if file_hash in hashes:
-                duplicates.append({
-                    "file1": hashes[file_hash],
-                    "file2": file_path,
-                    "hash": file_hash
-                })
+                duplicates.append({"file1": hashes[file_hash], "file2": file_path, "hash": file_hash})
             else:
                 hashes[file_hash] = file_path
 
-        return {
-            "success": True,
-            "duplicates": duplicates,
-            "count": len(duplicates)
-        }
+        return {"success": True, "duplicates": duplicates, "count": len(duplicates)}
 
 
 class StubAnalysisProvider:
@@ -189,7 +195,8 @@ class StubAnalysisProvider:
     Proveedor stub que devuelve métricas falsas basadas en propiedades simples de la imagen.
     En un futuro se reemplazará por un proveedor que llame a un modelo local (DGX Spark).
     """
-    async def analyze_image(self, image_path: str) -> Dict[str, float]:
+
+    async def analyze_image(self, image_path: str) -> dict[str, float]:
         """Devuelve métricas simuladas."""
         try:
             with Image.open(image_path) as img:
@@ -205,7 +212,7 @@ class StubAnalysisProvider:
                 dog_visibility = 0.7
                 # Add some deterministic variation based on filename to make differences
                 filename_hash = hashlib.sha256(os.path.basename(image_path).encode()).hexdigest()
-                seed = int(filename_hash[:8], 16) / 0xffffffff
+                seed = int(filename_hash[:8], 16) / 0xFFFFFFFF
                 sharpness = max(0.0, min(1.0, sharpness + (seed - 0.5) * 0.2))
                 exposure = max(0.0, min(1.0, exposure + (seed - 0.5) * 0.2))
                 return {
@@ -228,16 +235,21 @@ class StubAnalysisProvider:
 # Proveedor de generación local (placeholder para futuro)
 class LocalImageProvider:
     """Proveedor local de generación/analisis de imagen (para conectar a DGX Spark)."""
-    async def analyze_image(self, image_path: str) -> Dict[str, float]:
+
+    async def analyze_image(self, image_path: str) -> dict[str, float]:
         raise NotImplementedError("LocalImageProvider not implemented")
+
 
 class LocalVideoProvider:
     """Proveedor local de vídeo."""
-    async def analyze_video(self, video_path: str) -> Dict[str, float]:
+
+    async def analyze_video(self, video_path: str) -> dict[str, float]:
         raise NotImplementedError("LocalVideoProvider not implemented")
+
 
 class LocalTTSProvider:
     """Proveedor local de texto a voz."""
+
     async def synthesize_speech(self, text: str, output_path: str) -> bool:
         raise NotImplementedError("LocalTTSProvider not implemented")
 

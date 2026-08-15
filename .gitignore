@@ -26,6 +26,10 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Test/coverage artifacts
+coverage.xml
+bandit-report.json
+
 # Node / Frontend
 node_modules/
 dist/

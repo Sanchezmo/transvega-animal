@@ -223,11 +223,14 @@ jobs:
         run: docker stop mock-dolibarr && docker rm mock-dolibarr
 
   # =============================================================================
-  # SECURITY SCANS
+  # SOURCE SECURITY SCAN (no Docker images)
   # =============================================================================
-  security-scan:
-    name: Security Scans
+  source-security-scan:
+    name: Source Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -242,23 +245,9 @@ jobs:
           severity: 'HIGH,CRITICAL'
 
       - name: Upload Trivy FS results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-fs.sarif'
-
-      - name: Run Trivy vulnerability scanner (Docker images)
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'image'
-          image-ref: 'ghcr.io/${{ github.repository }}/api:latest'
-          format: 'sarif'
-          output: 'trivy-image.sarif'
-          severity: 'HIGH,CRITICAL'
-
-      - name: Upload Trivy image results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-image.sarif'
 
       - name: Check for secrets with TruffleHog
         uses: trufflesecurity/trufflehog@v3.88.0
@@ -272,7 +261,7 @@ jobs:
   # =============================================================================
   docker-build:
     name: Build & Push Docker Images
-    needs: [lint-and-type-check, unit-tests, integration-tests, security-scan]
+    needs: [lint-and-type-check, unit-tests, integration-tests, source-security-scan]
     if: github.event_name == 'push' || github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
@@ -324,6 +313,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix={{branch}}-
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -339,11 +329,69 @@ jobs:
           sbom: true
 
   # =============================================================================
+  # IMAGE SECURITY SCAN (after Docker build, scan the SHA-tagged image)
+  # =============================================================================
+  image-security-scan:
+    name: Image Security Scan
+    needs: [docker-build]
+    if: github.event_name == 'push' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      matrix:
+        service: [api, worker, approvals, dashboard, mock-dolibarr]
+        include:
+          - service: api
+            image: api
+          - service: worker
+            image: worker
+          - service: approvals
+            image: approvals
+          - service: dashboard
+            image: dashboard
+          - service: mock-dolibarr
+            image: mock-dolibarr
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image for scanning
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:${{ github.sha }}
+
+      - name: Run Trivy vulnerability scanner (Docker image)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:${{ github.sha }}'
+          format: 'sarif'
+          output: 'trivy-${{ matrix.image }}.sarif'
+          severity: 'HIGH,CRITICAL'
+
+      - name: Upload Trivy image results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-${{ matrix.image }}.sarif'
+
+  # =============================================================================
   # DEPLOY STAGING
   # =============================================================================
   deploy-staging:
     name: Deploy to Staging
-    needs: docker-build
+    needs: [docker-build, image-security-scan]
     if: github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: staging
@@ -380,7 +428,7 @@ jobs:
   # =============================================================================
   deploy-production:
     name: Deploy to Production
-    needs: docker-build
+    needs: [docker-build, image-security-scan]
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     runs-on: ubuntu-latest
     environment: production

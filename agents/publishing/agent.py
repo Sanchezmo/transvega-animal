@@ -1,19 +1,21 @@
 """Publishing Agent
 Handles assisted and automatic publishing of listings to platforms like Milanuncios, Facebook, Instagram, TikTok.
 """
+
 import os
-import structlog
 import tempfile
-from typing import Dict, Any, Optional, List
-from datetime import datetime
+from typing import Any
+
+import structlog
 
 try:
-    from playwright.async_api import async_playwright, Page, Browser, Playwright
+    from playwright.async_api import Page, async_playwright
+
     PLAYWRIGHT_AVAILABLE = True
 except Exception:  # pragma: no cover
     PLAYWRIGHT_AVAILABLE = False
 
-from app.core.internal_api_client import InternalAPIClient, create_internal_api_client, InternalAPIError
+from app.core.internal_api_client import InternalAPIClient, InternalAPIError, create_internal_api_client
 
 logger = structlog.get_logger()
 
@@ -32,17 +34,17 @@ class PublishingAgent:
     Soporta múltiples plataformas: milanuncios (vía Playwright en explorador), facebook, instagram, tiktok.
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: dict):
         self.config = config
         self.agent_id = "publishing"
         self.agent_name = "Publishing Agent"
         self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
         self.api_key = config.get("AGENT_API_KEY_PUBLISHING", "")
-        self.api_client: Optional[InternalAPIClient] = None
-        
+        self.api_client: InternalAPIClient | None = None
+
         # Playwright config
         self.playwright_headless = config.get("PLAYWRIGHT_HEADLESS", "true").lower() == "true"
-        
+
         self.capabilities = [
             "assist_publish",
             "auto_publish",
@@ -73,7 +75,7 @@ class PublishingAgent:
             await self.api_client.close()
             self.api_client = None
 
-    async def _get_platform_config(self, platform: str) -> Dict:
+    async def _get_platform_config(self, platform: str) -> dict:
         """Obtener configuración específica de la plataforma."""
         platform_configs = self.config.get("PLATFORMS", {})
         return platform_configs.get(platform, {})
@@ -81,7 +83,7 @@ class PublishingAgent:
     # --------------------------------------------------------------------- #
     # Assisted publishing (instructions)
     # --------------------------------------------------------------------- #
-    async def assist_publish(self, listing_id: int, platform: str) -> Dict[str, Any]:
+    async def assist_publish(self, listing_id: int, platform: str) -> dict[str, Any]:
         """Proveer instrucciones para publicación asistida."""
         logger.info("assisting_publish", listing_id=listing_id, platform=platform)
         platform_cfg = await self._get_platform_config(platform)
@@ -95,7 +97,7 @@ class PublishingAgent:
                 "Complete el formulario con los datos proporcionados a continuación.",
                 "Suba las imágenes en el orden indicado (primero la portada).",
                 "Revise y publique el anuncio.",
-                "Nota: Se utilizará Playwright para automatizar estos pasos en el futuro."
+                "Nota: Se utilizará Playwright para automatizar estos pasos en el futuro.",
             ]
         elif platform in ["facebook", "instagram"]:
             instructions = [
@@ -103,14 +105,14 @@ class PublishingAgent:
                 "Cree una nueva publicación.",
                 "Añada el texto del anuncio y las imágenes.",
                 "Use los hashtags sugeridos si se proporcionan.",
-                "Publique en su página o perfil correspondiente."
+                "Publique en su página o perfil correspondiente.",
             ]
         elif platform == "tiktok":
             instructions = [
                 "Inicie sesión en TikTok.",
                 "Prepare un video corto (15-60 segundos) con las imágenes proporcionadas.",
                 "Añada una descripción atractiva y hashtags relevantes.",
-                "Publique el video."
+                "Publique el video.",
             ]
         else:
             instructions = [f"Instrucciones genéricas para {platform}."]
@@ -119,13 +121,13 @@ class PublishingAgent:
             "success": True,
             "message": f"Instrucciones para publicar en {platform} generadas.",
             "instructions": instructions,
-            "platform_specific_config": platform_cfg
+            "platform_specific_config": platform_cfg,
         }
 
     # --------------------------------------------------------------------- #
     # Automatic publishing (Milanuncios via Playwright)
     # --------------------------------------------------------------------- #
-    async def auto_publish(self, listing_id: int, platform: str) -> Dict[str, Any]:
+    async def auto_publish(self, listing_id: int, platform: str) -> dict[str, Any]:
         """Publicar automáticamente en la plataforma."""
         logger.info("auto_publishing", listing_id=listing_id, platform=platform)
         if platform == "milanuncios":
@@ -134,7 +136,10 @@ class PublishingAgent:
                     "success": False,
                     "error": "playwright_not_installed",
                     "platform": platform,
-                    "detail": "Playwright is not installed. Install with `pip install playwright` and run `playwright install`."
+                    "detail": (
+                        "Playwright is not installed. Install with `pip install playwright` "
+                        "and run `playwright install`."
+                    ),
                 }
             return await self._milanuncios_auto_publish(listing_id)
         elif platform in ["facebook", "instagram"]:
@@ -142,23 +147,19 @@ class PublishingAgent:
                 "success": False,
                 "error": "publishing_provider_not_implemented",
                 "platform": platform,
-                "detail": "Graph API integration not yet implemented"
+                "detail": "Graph API integration not yet implemented",
             }
         elif platform == "tiktok":
             return {
                 "success": False,
                 "error": "publishing_provider_not_implemented",
                 "platform": platform,
-                "detail": "TikTok API integration not yet implemented"
+                "detail": "TikTok API integration not yet implemented",
             }
         else:
-            return {
-                "success": False,
-                "error": "unsupported_platform",
-                "platform": platform
-            }
+            return {"success": False, "error": "unsupported_platform", "platform": platform}
 
-    async def _milanuncios_auto_publish(self, listing_id: int) -> Dict[str, Any]:
+    async def _milanuncios_auto_publish(self, listing_id: int) -> dict[str, Any]:
         """Use Playwright to publish a listing on Milanuncios."""
         if self.api_client is None:
             return {"success": False, "error": "PublishingAgent not started. Call start() first."}
@@ -178,8 +179,8 @@ class PublishingAgent:
             description = publication.get("description", "")
             price = publication.get("price", 0)
             location = publication.get("location", "")
-            breed = publication.get("breed", "")
-            images: List[str] = publication.get("photos", []) or publication.get("images", [])
+            _ = publication.get("breed", "")
+            images: list[str] = publication.get("photos", []) or publication.get("images", [])
 
             # Get credentials from config
             milanuncios_cfg = await self._get_platform_config("milanuncios")
@@ -196,7 +197,7 @@ class PublishingAgent:
 
                 # Login
                 await page.goto("https://www.milanuncios.com/", timeout=30000)
-                
+
                 # Check for CAPTCHA
                 if await self._check_captcha(page):
                     await browser.close()
@@ -205,9 +206,9 @@ class PublishingAgent:
                         "error": "requires_human_action",
                         "platform": "milanuncios",
                         "detail": "CAPTCHA detected during login. Manual intervention required.",
-                        "requires_human_action": True
+                        "requires_human_action": True,
                     }
-                
+
                 await page.click("text=Entrar")  # adjust selector as needed
                 await page.fill("input[name='email']", username)
                 await page.fill("input[name='password']", password)
@@ -221,8 +222,10 @@ class PublishingAgent:
                         "success": False,
                         "error": "requires_human_action",
                         "platform": "milanuncios",
-                        "detail": "Login failed - session expired or invalid credentials. Manual intervention required.",
-                        "requires_human_action": True
+                        "detail": (
+                            "Login failed - session expired or invalid credentials. Manual intervention required."
+                        ),
+                        "requires_human_action": True,
                     }
 
                 # Navigate to publish
@@ -237,7 +240,7 @@ class PublishingAgent:
                         "error": "requires_human_action",
                         "platform": "milanuncios",
                         "detail": "CAPTCHA detected on publish page. Manual intervention required.",
-                        "requires_human_action": True
+                        "requires_human_action": True,
                     }
 
                 # Select category: Animales > Perros
@@ -267,6 +270,7 @@ class PublishingAgent:
                                     try:
                                         # For external URLs, we still need httpx
                                         import httpx
+
                                         async with httpx.AsyncClient(timeout=10.0) as img_client:
                                             img_resp = await img_client.get(img_url)
                                         if img_resp.status_code != 200:
@@ -300,7 +304,7 @@ class PublishingAgent:
                         "error": "requires_human_action",
                         "platform": "milanuncios",
                         "detail": "CAPTCHA detected after submission. Manual intervention required.",
-                        "requires_human_action": True
+                        "requires_human_action": True,
                     }
 
                 # Check for success
@@ -309,7 +313,7 @@ class PublishingAgent:
                     # Try to extract external_id and external_url
                     external_id = await self._extract_external_id(page)
                     external_url = await self._extract_external_url(page)
-                    
+
                     await browser.close()
                     return {
                         "success": True,
@@ -328,24 +332,19 @@ class PublishingAgent:
                             "error": "requires_human_action",
                             "platform": "milanuncios",
                             "detail": "Session expired during publication. Manual intervention required.",
-                            "requires_human_action": True
+                            "requires_human_action": True,
                         }
-                    
+
                     await browser.close()
                     return {
                         "success": False,
                         "error": "publication_failed",
                         "platform": "milanuncios",
-                        "detail": "No se encontró indicador de éxito tras publicar."
+                        "detail": "No se encontró indicador de éxito tras publicar.",
                     }
         except Exception as e:  # pragma: no cover
             logger.error("milanuncios_auto_publish_failed", error=str(e))
-            return {
-                "success": False,
-                "error": "exception_during_publish",
-                "platform": "milanuncios",
-                "detail": str(e)
-            }
+            return {"success": False, "error": "exception_during_publish", "platform": "milanuncios", "detail": str(e)}
 
     async def _check_captcha(self, page: "Page") -> bool:
         """Check if CAPTCHA is present on the page."""
@@ -367,7 +366,7 @@ class PublishingAgent:
                     logger.warning("captcha_detected", selector=selector)
                     return True
         except Exception:
-            pass
+            pass  # nosec B110 - Intentional: return False on any error
         return False
 
     async def _check_session_expired(self, page: "Page") -> bool:
@@ -387,24 +386,25 @@ class PublishingAgent:
                     logger.warning("session_expired_detected", selector=selector)
                     return True
         except Exception:
-            pass
+            pass  # nosec B110 - Intentional: return False on any error
         return False
 
-    async def _extract_external_id(self, page: "Page") -> Optional[str]:
+    async def _extract_external_id(self, page: "Page") -> str | None:
         """Extract external ID from the published ad page."""
         try:
             # Try to find the ad ID in URL or page content
             url = page.url
             # Milanuncios URLs typically contain the ad ID
             import re
-            match = re.search(r'/anuncio/(\d+)', url)
+
+            match = re.search(r"/anuncio/(\d+)", url)
             if match:
                 return match.group(1)
         except Exception:
-            pass
+            pass  # nosec B110 - Intentional: return None on any error
         return None
 
-    async def _extract_external_url(self, page: "Page") -> Optional[str]:
+    async def _extract_external_url(self, page: "Page") -> str | None:
         """Extract the external URL of the published ad."""
         try:
             return page.url
@@ -414,19 +414,15 @@ class PublishingAgent:
     # --------------------------------------------------------------------- #
     # Renewal, Update, Removal (placeholders for Milanuncios)
     # --------------------------------------------------------------------- #
-    async def renew_listing(self, listing_id: int, platform: str) -> Dict[str, Any]:
+    async def renew_listing(self, listing_id: int, platform: str) -> dict[str, Any]:
         """Renovar un anuncio existente."""
         logger.info("renewing_listing", listing_id=listing_id, platform=platform)
         if platform == "milanuncios":
             # For now, we implement renewal as re-publishing the same listing
             return await self.auto_publish(listing_id, platform)
-        return {
-            "success": False,
-            "error": "publishing_provider_not_implemented",
-            "platform": platform
-        }
+        return {"success": False, "error": "publishing_provider_not_implemented", "platform": platform}
 
-    async def update_listing(self, listing_id: int, platform: str, changes: Dict) -> Dict[str, Any]:
+    async def update_listing(self, listing_id: int, platform: str, changes: dict) -> dict[str, Any]:
         """Actualizar un anuncio existente."""
         logger.info("updating_listing", listing_id=listing_id, platform=platform, changes=changes)
         if platform == "milanuncios":
@@ -434,15 +430,11 @@ class PublishingAgent:
                 "success": False,
                 "error": "update_not_implemented",
                 "platform": "milanuncios",
-                "detail": "Update functionality not yet implemented for Milanuncios via Playwright."
+                "detail": "Update functionality not yet implemented for Milanuncios via Playwright.",
             }
-        return {
-            "success": False,
-            "error": "publishing_provider_not_implemented",
-            "platform": platform
-        }
+        return {"success": False, "error": "publishing_provider_not_implemented", "platform": platform}
 
-    async def remove_listing(self, listing_id: int, platform: str) -> Dict[str, Any]:
+    async def remove_listing(self, listing_id: int, platform: str) -> dict[str, Any]:
         """Retirar un anuncio."""
         logger.info("removing_listing", listing_id=listing_id, platform=platform)
         if platform == "milanuncios":
@@ -450,15 +442,11 @@ class PublishingAgent:
                 "success": False,
                 "error": "remove_not_implemented",
                 "platform": "milanuncios",
-                "detail": "Remove functionality not yet implemented for Milanuncios via Playwright."
+                "detail": "Remove functionality not yet implemented for Milanuncios via Playwright.",
             }
-        return {
-            "success": False,
-            "error": "publishing_provider_not_implemented",
-            "platform": platform
-        }
+        return {"success": False, "error": "publishing_provider_not_implemented", "platform": platform}
 
 
 # Función de ayuda para crear el agente desde configuración
-def create_publishing_agent(config: Dict) -> PublishingAgent:
+def create_publishing_agent(config: dict) -> PublishingAgent:
     return PublishingAgent(config)

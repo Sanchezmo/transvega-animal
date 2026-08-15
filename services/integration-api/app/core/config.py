@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # API
-    API_HOST: str = "0.0.0.0"
+    API_HOST: str = "0.0.0.0"  # nosec B104 - Intentional for Docker/FastAPI binding
     API_PORT: int = 8000
     API_WORKERS: int = 1
     API_CORS_ORIGINS: list[str] = [
@@ -164,13 +164,15 @@ class Settings(BaseSettings):
 
 
 # URLs computadas como funciones externas (evitan recursión en __repr__ de Pydantic)
-# Sin type hints para evitar recursión
-def get_audit_db_url(settings):
+def get_audit_db_url(settings: Settings) -> str:
     return f"postgresql://{settings.AUDIT_DB_USER}:{settings.AUDIT_DB_PASSWORD}@{settings.AUDIT_DB_HOST}:{settings.AUDIT_DB_PORT}/{settings.AUDIT_DB_NAME}"
 
 
-def get_redis_url(settings):
-    return f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
+def get_redis_url(settings: Settings) -> str:
+    # Handle empty password to avoid redis://:@host:port format
+    if settings.REDIS_PASSWORD:
+        return f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
+    return f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
 
 
 @lru_cache

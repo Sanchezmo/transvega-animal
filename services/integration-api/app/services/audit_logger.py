@@ -198,12 +198,10 @@ class AuditLogger:
 
         where_clause = " AND ".join(conditions)
 
-        query = f"""
-            SELECT * FROM audit_log
-            WHERE {where_clause}
-            ORDER BY created_at DESC
-            LIMIT ${param_num} OFFSET ${param_num + 1}
-        """
+        query = (
+            f"SELECT * FROM audit_log WHERE {where_clause} "
+            f"ORDER BY created_at DESC LIMIT ${param_num} OFFSET ${param_num + 1}"
+        )  # nosec B608 - Uses parameterized placeholders with asyncpg
         params.extend([limit, offset])
 
         async with self.db_pool.acquire() as conn:

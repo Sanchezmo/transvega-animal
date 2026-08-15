@@ -1,14 +1,10 @@
 """Agente de Intake de Perros - Recepción y registro de animales mediante Telegram y otras fuentes."""
-import asyncio
-import os
-from datetime import date, datetime
-from typing import Dict, List, Optional, Any
+
 import structlog
 
-from app.services.intake_session import intake_session_store
-from app.services.media_storage import save_uploaded_file, MediaAsset
-from app.core.privacy_router import privacy_router
 from app.core.internal_api_client import InternalAPIClient, InternalAPIError, create_internal_api_client
+from app.services.intake_session import intake_session_store
+from app.services.media_storage import save_uploaded_file
 
 logger = structlog.get_logger()
 
@@ -33,12 +29,12 @@ class DogIntakeAgent:
     Cada perro tiene un identificador interno único (ej: DOG-2026-000001).
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: dict):
         self.config = config
         self.agent_id = "dog_intake"
         self.agent_name = "Dog Intake Agent"
         # Internal API client with authentication
-        self.api_client: Optional[InternalAPIClient] = None
+        self.api_client: InternalAPIClient | None = None
         self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
         self.api_key = config.get("AGENT_API_KEY_DOG_INTAKE", "")
         self.capabilities = [
@@ -85,11 +81,9 @@ class DogIntakeAgent:
     def _ensure_client(self) -> None:
         """Ensure API client is initialized; raise clear error if not."""
         if self.api_client is None:
-            raise RuntimeError(
-                "DogIntakeAgent not initialized. Call await start() before using the agent."
-            )
+            raise RuntimeError("DogIntakeAgent not initialized. Call await start() before using the agent.")
 
-    async def process_message(self, message: Dict) -> Dict:
+    async def process_message(self, message: dict) -> dict:
         """
         Process a Telegram message for the intake flow.
         This is the main entry point called by SupervisorAgent.
@@ -268,9 +262,7 @@ class DogIntakeAgent:
                             # Convert MediaAsset to dict for API
                             meta = asset.to_dict()
                             meta["dog_id"] = dog_id
-                            media_resp = await self.api_client.post(
-                                f"/dogs/{dog_id}/media", json=meta
-                            )
+                            media_resp = await self.api_client.post(f"/dogs/{dog_id}/media", json=meta)
                             media_success.append(media_resp)
                         except Exception as e:
                             logger.error("failed_to_assoc_media", error=str(e))
@@ -294,9 +286,7 @@ class DogIntakeAgent:
                     "step": session.step,
                     "session_id": session.session_id,
                     "privacy_scope": session.privacy_scope,
-                    "collected_data": {
-                        k: v for k, v in session.data.items() if k in STEP_INFO.values()
-                    },
+                    "collected_data": {k: v for k, v in session.data.items() if k in STEP_INFO.values()},
                 }
             else:
                 return {
@@ -317,12 +307,14 @@ class DogIntakeAgent:
             purpose = "original"
 
             if file_content and isinstance(file_content, bytes):
-                session.media_files.append({
-                    "content": file_content,
-                    "filename": filename,
-                    "purpose": purpose,
-                    "uploaded_by": user_id,
-                })
+                session.media_files.append(
+                    {
+                        "content": file_content,
+                        "filename": filename,
+                        "purpose": purpose,
+                        "uploaded_by": user_id,
+                    }
+                )
                 session.touch()
                 session.update_privacy_scope()
                 return {
@@ -347,17 +339,22 @@ class DogIntakeAgent:
             purpose = "original"
 
             if file_content and isinstance(file_content, bytes):
-                session.media_files.append({
-                    "content": file_content,
-                    "filename": filename,
-                    "purpose": purpose,
-                    "uploaded_by": user_id,
-                })
+                session.media_files.append(
+                    {
+                        "content": file_content,
+                        "filename": filename,
+                        "purpose": purpose,
+                        "uploaded_by": user_id,
+                    }
+                )
                 session.touch()
                 session.update_privacy_scope()
                 return {
                     "success": True,
-                    "message": f"Video recibido y almacenado en sesión ({len(session.media_files)} total). Propósito: {purpose}",
+                    "message": (
+                        f"Video recibido y almacenado en sesión "
+                        f"({len(session.media_files)} total). Propósito: {purpose}"
+                    ),
                     "session_id": session.session_id,
                     "privacy_scope": session.privacy_scope,
                     "step": session.step,
@@ -371,9 +368,8 @@ class DogIntakeAgent:
             "step": session.step,
         }
 
-    async def process_task(self, task: Dict) -> Dict:
+    async def process_task(self, task: dict) -> dict:
         self._ensure_client()
-        task_type = task.get("task_type")
 
         handlers = {
             "create_dog": self._create_dog,
@@ -401,7 +397,7 @@ class DogIntakeAgent:
     # DOG CRUD OPERATIONS (now calling internal API)
     # =========================================================================
 
-    async def _create_dog(self, data: Dict) -> Dict:
+    async def _create_dog(self, data: dict) -> dict:
         """Crear nuevo perro via API."""
         self._ensure_client()
         # Validate required fields
@@ -441,13 +437,9 @@ class DogIntakeAgent:
 
         logger.info("dog_created_via_api", dog_id=result.get("id"), internal_id=result.get("internal_id"))
 
-        return {
-            "success": True,
-            "dog": result,
-            "message": f"Perro creado con ID interno {result.get('internal_id')}"
-        }
+        return {"success": True, "dog": result, "message": f"Perro creado con ID interno {result.get('internal_id')}"}
 
-    async def _update_dog(self, data: Dict) -> Dict:
+    async def _update_dog(self, data: dict) -> dict:
         """Actualizar perro existente via API."""
         self._ensure_client()
         dog_id = data.get("dog_id")
@@ -457,9 +449,22 @@ class DogIntakeAgent:
         # Build payload with only provided fields
         payload = {}
         updatable_fields = [
-            "name", "breed_id", "litter_id", "sex", "birth_date", "color",
-            "microchip", "sire_name", "dam_name", "pedigree", "vet_status",
-            "purchase_price", "sale_price", "associated_costs", "expediente_id", "status"
+            "name",
+            "breed_id",
+            "litter_id",
+            "sex",
+            "birth_date",
+            "color",
+            "microchip",
+            "sire_name",
+            "dam_name",
+            "pedigree",
+            "vet_status",
+            "purchase_price",
+            "sale_price",
+            "associated_costs",
+            "expediente_id",
+            "status",
         ]
         for field in updatable_fields:
             if field in data:
@@ -480,13 +485,9 @@ class DogIntakeAgent:
 
         logger.info("dog_updated_via_api", dog_id=dog_id)
 
-        return {
-            "success": True,
-            "dog": result,
-            "message": "Perro actualizado"
-        }
+        return {"success": True, "dog": result, "message": "Perro actualizado"}
 
-    async def _add_media(self, data: Dict) -> Dict:
+    async def _add_media(self, data: dict) -> dict:
         """Asociar media (foto/video) a un perro via API."""
         self._ensure_client()
         dog_id = data.get("dog_id")
@@ -555,13 +556,9 @@ class DogIntakeAgent:
 
         logger.info("media_added_via_api", dog_id=dog_id, media_id=media_record.get("id"))
 
-        return {
-            "success": True,
-            "media": media_record,
-            "message": f"Media asociado al perro {internal_id}"
-        }
+        return {"success": True, "media": media_record, "message": f"Media asociado al perro {internal_id}"}
 
-    async def _set_parents(self, data: Dict) -> Dict:
+    async def _set_parents(self, data: dict) -> dict:
         """Asociar padre y/o madre a un perro via API."""
         self._ensure_client()
         dog_id = data.get("dog_id")
@@ -589,13 +586,9 @@ class DogIntakeAgent:
 
         logger.info("parents_set_via_api", dog_id=dog_id)
 
-        return {
-            "success": True,
-            "dog": result,
-            "message": "Padres actualizados"
-        }
+        return {"success": True, "dog": result, "message": "Padres actualizados"}
 
-    async def _set_litter(self, data: Dict) -> Dict:
+    async def _set_litter(self, data: dict) -> dict:
         """Asociar perro a una camada via API."""
         self._ensure_client()
         dog_id = data.get("dog_id")
@@ -620,13 +613,9 @@ class DogIntakeAgent:
 
         logger.info("litter_set_via_api", dog_id=dog_id, litter_id=litter_id)
 
-        return {
-            "success": True,
-            "dog": result,
-            "message": "Perro asociado a camada"
-        }
+        return {"success": True, "dog": result, "message": "Perro asociado a camada"}
 
-    async def _update_health(self, data: Dict) -> Dict:
+    async def _update_health(self, data: dict) -> dict:
         """Actualizar o agregar registro de salud via API."""
         self._ensure_client()
         dog_id = data.get("dog_id")
@@ -636,9 +625,17 @@ class DogIntakeAgent:
         # Build health record payload
         payload = {}
         health_fields = [
-            "vet_check_date", "weight_kg", "temperature_celsius", "heart_rate_bpm",
-            "respiratory_rate", "stool_condition", "urine_condition", "appetite",
-            "energy_level", "notes", "next_check_date"
+            "vet_check_date",
+            "weight_kg",
+            "temperature_celsius",
+            "heart_rate_bpm",
+            "respiratory_rate",
+            "stool_condition",
+            "urine_condition",
+            "appetite",
+            "energy_level",
+            "notes",
+            "next_check_date",
         ]
         for field in health_fields:
             if field in data:
@@ -659,13 +656,9 @@ class DogIntakeAgent:
 
         logger.info("health_record_added_via_api", dog_id=dog_id)
 
-        return {
-            "success": True,
-            "health_record": result,
-            "message": "Registro de salud añadido"
-        }
+        return {"success": True, "health_record": result, "message": "Registro de salud añadido"}
 
-    async def _change_status(self, data: Dict) -> Dict:
+    async def _change_status(self, data: dict) -> dict:
         """Cambiar el estado de disponibilidad del perro via API."""
         self._ensure_client()
         dog_id = data.get("dog_id")
@@ -690,13 +683,9 @@ class DogIntakeAgent:
 
         logger.info("dog_status_changed_via_api", dog_id=dog_id, new_status=new_status)
 
-        return {
-            "success": True,
-            "dog": result,
-            "message": f"Estado cambiado a {new_status}"
-        }
+        return {"success": True, "dog": result, "message": f"Estado cambiado a {new_status}"}
 
-    async def _get_dog(self, data: Dict) -> Dict:
+    async def _get_dog(self, data: dict) -> dict:
         """Obtener un perro por ID via API."""
         self._ensure_client()
         dog_id = data.get("dog_id")
@@ -718,7 +707,7 @@ class DogIntakeAgent:
             "dog": result,
         }
 
-    async def _list_dogs(self, data: Dict) -> Dict:
+    async def _list_dogs(self, data: dict) -> dict:
         """Listar perros con filtros opcionales via API."""
         self._ensure_client()
         # Build query params
@@ -758,7 +747,7 @@ class DogIntakeAgent:
     # INTAKE SESSION HANDLERS (to be used by webhook)
     # =========================================================================
 
-    async def handle_telegram_update(self, update: Dict) -> Dict:
+    async def handle_telegram_update(self, update: dict) -> dict:
         """Process a Telegram update (message or callback) and manage intake session."""
         # Extract basic info
         message = update.get("message") or update.get("edited_message")
@@ -806,21 +795,17 @@ class DogIntakeAgent:
                 purpose = "original"
                 # Use session data to guess if user said it's parent, etc.
                 # For simplicity, we store as original and later user can reassign via another command.
-                media_data = {
-                    "file_content": file_content,
-                    "filename": filename,
-                    "purpose": purpose,
-                    "uploaded_by": user_id,
-                }
                 # Delegate to _add_media but we need dog_id first.
                 # If we don't have a dog yet, we store media in session and associate later.
                 # For now, we just acknowledge receipt and store in session.
-                session.media_files.append({
-                    "content": file_content,
-                    "filename": filename,
-                    "purpose": purpose,
-                    "uploaded_by": user_id,
-                })
+                session.media_files.append(
+                    {
+                        "content": file_content,
+                        "filename": filename,
+                        "purpose": purpose,
+                        "uploaded_by": user_id,
+                    }
+                )
                 session.touch()
                 session.update_privacy_scope()
                 return {
@@ -838,12 +823,14 @@ class DogIntakeAgent:
             filename = message.get("filename", f"video_{int(session.updated_at)}.mp4")
             if file_content and isinstance(file_content, bytes):
                 purpose = "original"
-                session.media_files.append({
-                    "content": file_content,
-                    "filename": filename,
-                    "purpose": purpose,
-                    "uploaded_by": user_id,
-                })
+                session.media_files.append(
+                    {
+                        "content": file_content,
+                        "filename": filename,
+                        "purpose": purpose,
+                        "uploaded_by": user_id,
+                    }
+                )
                 session.touch()
                 session.update_privacy_scope()
                 return {
@@ -858,7 +845,7 @@ class DogIntakeAgent:
         # If we reach here, unhandled content type
         return {"success": False, "error": "Tipo de contenido no soportado"}
 
-    async def finalize_intake(self, user_id: int, chat_id: int) -> Dict:
+    async def finalize_intake(self, user_id: int, chat_id: int) -> dict:
         """When user signals completion, create dog with accumulated data."""
         session = intake_session_store.get(user_id, chat_id)
         if not session:
@@ -869,9 +856,9 @@ class DogIntakeAgent:
         # We'll just take the raw_text and attempt to parse naive key: value.
         raw = session.data.get("raw_text", "")
         parsed = {}
-        for line in raw.split('\n'):
-            if ':' in line:
-                k, v = line.split(':', 1)
+        for line in raw.split("\n"):
+            if ":" in line:
+                k, v = line.split(":", 1)
                 parsed[k.strip().lower()] = v.strip()
 
         # Map common keys to our fields (very basic)
@@ -943,5 +930,5 @@ class DogIntakeAgent:
             "success": True,
             "dog": create_result["dog"],
             "media_associated": len(media_success),
-            "message": f"Perro {internal_id} creado. {len(media_success)} archivos de media asociados."
+            "message": f"Perro {internal_id} creado. {len(media_success)} archivos de media asociados.",
         }

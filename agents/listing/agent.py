@@ -1,11 +1,13 @@
 """Listing Agent
 Genera un anuncio estructurado a partir de la ficha del perro.
 """
-import structlog
-from typing import Dict, List, Any, Optional
-from datetime import datetime
 
-from app.core.internal_api_client import InternalAPIClient, create_internal_api_client, InternalAPIError
+from datetime import datetime
+from typing import Any
+
+import structlog
+
+from app.core.internal_api_client import InternalAPIClient, InternalAPIError, create_internal_api_client
 
 logger = structlog.get_logger()
 
@@ -21,14 +23,14 @@ class ListingAgent:
     - El anuncio debe incluir título, descripción, precio, ubicación, raza, imágenes, etc.
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: dict):
         self.config = config
         self.agent_id = "listing"
         self.agent_name = "Listing Agent"
         # Base URL for internal API (same service, includes /api/v1)
         self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
         self.api_key = config.get("AGENT_API_KEY_LISTING", "")
-        self.api_client: Optional[InternalAPIClient] = None
+        self.api_client: InternalAPIClient | None = None
         self.capabilities = [
             "generate_listing_draft",
         ]
@@ -54,13 +56,13 @@ class ListingAgent:
             await self.api_client.close()
             self.api_client = None
 
-    async def generate_listing_draft(self, dog_id: int) -> Dict[str, Any]:
+    async def generate_listing_draft(self, dog_id: int) -> dict[str, Any]:
         """Generar un borrador de anuncio para un perro."""
         logger.info("generating_listing_draft", dog_id=dog_id)
-        
+
         if self.api_client is None:
             return {"success": False, "error": "ListingAgent not started. Call start() first."}
-        
+
         # Fetch dog data
         try:
             dog = await self.api_client.get(f"/dogs/{dog_id}")
@@ -106,7 +108,7 @@ class ListingAgent:
             return {"success": False, "error": "No images available for listing"}
 
         # Build listing draft
-        breed_name = await self._get_breed_name(dog.get('breed_id'))
+        breed_name = await self._get_breed_name(dog.get("breed_id"))
         title = f"{dog.get('name', 'Sin nombre')} - {breed_name}"
         description = (
             f"Precioso cachorro de raza {breed_name}. "
@@ -135,11 +137,11 @@ class ListingAgent:
                 "images": images,
                 "status": "draft",
                 "created_at": datetime.utcnow().isoformat() + "Z",
-            }
+            },
         }
         return draft
 
-    async def _get_breed_name(self, breed_id: Optional[int]) -> Optional[str]:
+    async def _get_breed_name(self, breed_id: int | None) -> str | None:
         if not breed_id:
             return None
         if self.api_client is None:
@@ -148,12 +150,12 @@ class ListingAgent:
             breed = await self.api_client.get(f"/breeds/{breed_id}")
             return breed.get("name")
         except InternalAPIError:
-            pass
+            pass  # nosec B110 - Intentional: return None on any error
         except Exception:
-            pass
+            pass  # nosec B110 - Intentional: return None on any error
         return None
 
 
 # Función de ayuda para crear el agente desde configuración
-def create_listing_agent(config: Dict) -> ListingAgent:
+def create_listing_agent(config: dict) -> ListingAgent:
     return ListingAgent(config)

@@ -1,30 +1,34 @@
 """Invoice Processing Agent
 Handles extraction, validation, and registration of supplier invoices.
 """
+
 import asyncio
-import structlog
-import os
 import hashlib
-import io
-import shutil
-from typing import Dict, Any, Optional, List
-from datetime import datetime
 import mimetypes
+import os
+import shutil
+from typing import Any
+
+import structlog
 
 # We'll import the ModelRouter and privacy router later
-from app.core.model_router import ModelRouter, create_model_router
+from app.core.model_router import create_model_router
+
 # Assuming privacy router exists; if not, we'll define a simple stub
 try:
-    from app.core.privacy_router import privacy_router, PrivacyScope
+    from app.core.privacy_router import PrivacyScope, privacy_router
 except ImportError:
     # Fallback stub
     from enum import Enum
+
     class PrivacyScope(Enum):
         LOCAL_ONLY = "LOCAL_ONLY"
         CLOUD_ALLOWED = "CLOUD_ALLOWED"
+
     async def privacy_router(content: str, filename: str = "") -> PrivacyScope:
         # Simple stub: treat everything as LOCAL_ONLY for safety
         return PrivacyScope.LOCAL_ONLY
+
     privacy_router = privacy_router  # type: ignore
 
 logger = structlog.get_logger()
@@ -32,49 +36,52 @@ logger = structlog.get_logger()
 # Pydantic model for invoice (simple)
 try:
     from pydantic import BaseModel, Field, validator
-    from typing import Literal
 except ImportError:
     # If pydantic not installed, we'll skip validation for now; but we assume it's present.
     pass
+
 
 class InvoiceLine(BaseModel):
     description: str
     quantity: float = 1.0
     unit_price: float
     total: float
-    vat_rate: Optional[float] = None
+    vat_rate: float | None = None
 
-    @validator('total')
+    @validator("total")
     def total_matches(cls, v, values):
-        qty = values.get('quantity')
-        price = values.get('unit_price')
+        qty = values.get("quantity")
+        price = values.get("unit_price")
         if qty is not None and price is not None:
             expected = qty * price
             if abs(v - expected) > 0.01:
-                raise ValueError(f'Total {v} does not match quantity * unit_price ({expected})')
+                raise ValueError(f"Total {v} does not match quantity * unit_price ({expected})")
         return v
+
 
 class SupplierInfo(BaseModel):
     name: str
     tax_id: str  # CIF/NIF
 
+
 class InvoiceData(BaseModel):
     supplier: SupplierInfo
     invoice: dict = Field(..., description="Invoice metadata")
-    lines: List[InvoiceLine]
-    taxes: List[Dict[str, Any]] = Field(default_factory=list)
+    lines: list[InvoiceLine]
+    taxes: list[dict[str, Any]] = Field(default_factory=list)
     subtotal: float
     tax_total: float
     total: float
     currency: str = "EUR"
 
-    @validator('total')
+    @validator("total")
     def total_matches_sum(cls, v, values):
-        subtotal = values.get('subtotal', 0.0)
-        tax_total = values.get('tax_total', 0.0)
+        subtotal = values.get("subtotal", 0.0)
+        tax_total = values.get("tax_total", 0.0)
         if abs(v - (subtotal + tax_total)) > 0.01:
-            raise ValueError(f'Total {v} does not match subtotal + tax_total ({subtotal + tax_total})')
+            raise ValueError(f"Total {v} does not match subtotal + tax_total ({subtotal + tax_total})")
         return v
+
 
 class InvoiceProcessingAgent:
     """
@@ -89,7 +96,7 @@ class InvoiceProcessingAgent:
     8. On approval, create invoice in Dolibarr
     """
 
-    def __init__(self, config: Dict):
+    def __init__(self, config: dict):
         self.config = config
         self.agent_id = "invoice_processing"
         self.agent_name = "Invoice Processing Agent"
@@ -100,7 +107,6 @@ class InvoiceProcessingAgent:
         ollama_vision_model = config.get("OLLAMA_VISION_MODEL", "llava:7b")
         nvidia_api_key = config.get("NVIDIA_API_KEY", "")
         nvidia_base_url = config.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-        from app.core.model_router import create_model_router
         self.router = create_model_router(
             ollama_endpoint=ollama_endpoint,
             ollama_model=ollama_model,
@@ -114,7 +120,7 @@ class InvoiceProcessingAgent:
         self.pending_dir = os.path.join(self.invoice_storage_root, "pending")
         self.processed_dir = os.path.join(self.invoice_storage_root, "processed")
         self.rejected_dir = os.path.join(self.invoice_storage_root, "rejected")
-        
+
         # Create all directories
         for d in [self.invoice_storage_root, self.pending_dir, self.processed_dir, self.rejected_dir]:
             os.makedirs(d, exist_ok=True)
@@ -194,6 +200,7 @@ class InvoiceProcessingAgent:
         """Try to extract text layer; if fails, return empty string."""
         try:
             import fitz  # pymupdf
+
             doc = fitz.open(file_path)
             text = ""
             for page in doc:
@@ -204,29 +211,30 @@ class InvoiceProcessingAgent:
             self.logger.warning("pdf_text_extraction_failed", error=str(e))
             return ""
 
-    async def _render_pdf_pages_to_images(self, file_path: str) -> List[bytes]:
+    async def _render_pdf_pages_to_images(self, file_path: str) -> list[bytes]:
         """
         Render PDF pages to PNG images for OCR.
         Returns list of image bytes (one per page).
         Respects OCR limits: max pages, DPI, file size.
         """
         import fitz  # pymupdf
+
         images = []
-        
+
         try:
             doc = fitz.open(file_path)
-            
+
             # Check page limit
             page_count = min(len(doc), self.ocr_max_pages)
             if len(doc) > self.ocr_max_pages:
                 self.logger.warning("pdf_exceeds_max_pages", total_pages=len(doc), max_pages=self.ocr_max_pages)
-            
+
             # Check file size
             file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if file_size_mb > self.ocr_max_file_mb:
                 self.logger.warning("pdf_exceeds_max_size", size_mb=file_size_mb, max_mb=self.ocr_max_file_mb)
                 # We'll still process but log warning
-            
+
             for page_num in range(page_count):
                 page = doc[page_num]
                 # Render at configured DPI
@@ -234,13 +242,19 @@ class InvoiceProcessingAgent:
                 pix = page.get_pixmap(matrix=mat, alpha=False)
                 img_bytes = pix.tobytes("png")
                 images.append(img_bytes)
-                
+
                 # Log image dimensions for debugging
-                self.logger.debug("pdf_page_rendered", page=page_num + 1, width=pix.width, height=pix.height, size_kb=len(img_bytes)/1024)
-            
+                self.logger.debug(
+                    "pdf_page_rendered",
+                    page=page_num + 1,
+                    width=pix.width,
+                    height=pix.height,
+                    size_kb=len(img_bytes) / 1024,
+                )
+
             doc.close()
             return images
-            
+
         except Exception as e:
             self.logger.error("pdf_render_failed", error=str(e))
             return []
@@ -254,6 +268,7 @@ class InvoiceProcessingAgent:
             # If image_bytes provided directly, write to temp file
             if image_bytes is not None:
                 import tempfile
+
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                     tmp.write(image_bytes)
                     tmp_path = tmp.name
@@ -262,26 +277,26 @@ class InvoiceProcessingAgent:
                 image_path = image_path_or_bytes
             else:
                 return ""
-            
+
             result = await self.router.vision(
                 privacy_scope="LOCAL_ONLY",
                 image_path=image_path,
-                prompt="Extract all text from this image. Return only the raw text, no extra commentary."
+                prompt="Extract all text from this image. Return only the raw text, no extra commentary.",
             )
-            
+
             # Clean up temp file if we created one
             if image_bytes is not None and image_path:
                 try:
                     os.unlink(image_path)
-                except:
+                except OSError:
                     pass
-            
+
             return result.get("text", "").strip()
         except Exception as e:
             self.logger.error("ollama_ocr_failed", error=str(e))
             return ""
 
-    async def _extract_structured_data(self, raw_text: str) -> Dict[str, Any]:
+    async def _extract_structured_data(self, raw_text: str) -> dict[str, Any]:
         """Send raw text to Ollama (local) to produce structured JSON per InvoiceData schema."""
         prompt = f"""
 Extract the supplier invoice information from the following text and return a JSON object matching this schema:
@@ -309,22 +324,23 @@ Return ONLY the JSON, no extra text.
             json_str = result.get("text", "").strip()
             # Try to find JSON substring
             import json
+
             # Find first { and last }
-            start = json_str.find('{')
-            end = json_str.rfind('}')
+            start = json_str.find("{")
+            end = json_str.rfind("}")
             if start != -1 and end != -1 and end > start:
-                json_str = json_str[start:end+1]
+                json_str = json_str[start : end + 1]
             data = json.loads(json_str)
             return data
         except Exception as e:
             self.logger.error("structured_extraction_failed", error=str(e), raw_text=raw_text[:200])
             raise
 
-    async def _validate_with_pydantic(self, data: Dict[str, Any]) -> InvoiceData:
+    async def _validate_with_pydantic(self, data: dict[str, Any]) -> InvoiceData:
         """Validate extracted data against InvoiceData model."""
         return InvoiceData(**data)
 
-    async def _deterministic_checks(self, invoice: InvoiceData) -> List[str]:
+    async def _deterministic_checks(self, invoice: InvoiceData) -> list[str]:
         """Perform deterministic validations; return list of error messages."""
         errors = []
         # Check line totals sum to subtotal
@@ -332,7 +348,7 @@ Return ONLY the JSON, no extra text.
         if abs(line_sum - invoice.subtotal) > 0.01:
             errors.append(f"Line totals sum {line_sum} does not match subtotal {invoice.subtotal}")
         # Check subtotal + taxes = total
-        tax_sum = sum(t.get('amount', 0.0) for t in invoice.taxes)
+        tax_sum = sum(t.get("amount", 0.0) for t in invoice.taxes)
         if abs((invoice.subtotal + tax_sum) - invoice.total) > 0.01:
             errors.append(f"Subtotal + taxes ({invoice.subtotal + tax_sum}) does not match total {invoice.total}")
         # Check currency
@@ -346,10 +362,11 @@ Return ONLY the JSON, no extra text.
             errors.append("Invoice date missing")
         return errors
 
-    async def _lookup_supplier(self, tax_id: str) -> Optional[Dict[str, Any]]:
+    async def _lookup_supplier(self, tax_id: str) -> dict[str, Any] | None:
         """Call InvoiceIntegrationService to find supplier by tax_id."""
         try:
             from app.services.invoice_integration_service import InvoiceIntegrationService
+
             service = InvoiceIntegrationService()
             async with service as s:
                 result = await s.get_supplier_by_tax_id(tax_id)
@@ -362,6 +379,7 @@ Return ONLY the JSON, no extra text.
         """Check if invoice already exists in Dolibarr."""
         try:
             from app.services.invoice_integration_service import InvoiceIntegrationService
+
             service = InvoiceIntegrationService()
             async with service as s:
                 return await s.invoice_exists(supplier_tax_id, invoice_number)
@@ -370,11 +388,11 @@ Return ONLY the JSON, no extra text.
             # Fail closed: assume duplicate to avoid creating duplicate
             return True
 
-    async def process_invoice(self, file_content: bytes, filename: str, uploaded_by: int = 0) -> Dict[str, Any]:
+    async def process_invoice(self, file_content: bytes, filename: str, uploaded_by: int = 0) -> dict[str, Any]:
         """
         Main entry point: process an invoice file.
         Returns a dict with success, extracted data, validation errors, and next steps.
-        
+
         Flow:
         1. Store original file to pending storage (persists after approval)
         2. Create temp copy for OCR/extraction
@@ -393,13 +411,10 @@ Return ONLY the JSON, no extra text.
         file_size_mb = len(file_content) / (1024 * 1024)
         if file_size_mb > self.ocr_max_file_mb:
             self.logger.warning(
-                "file_exceeds_max_size_rejected", 
-                filename=filename, 
-                size_mb=file_size_mb, 
-                max_mb=self.ocr_max_file_mb
+                "file_exceeds_max_size_rejected", filename=filename, size_mb=file_size_mb, max_mb=self.ocr_max_file_mb
             )
             return {
-                "success": False, 
+                "success": False,
                 "error": f"File size ({file_size_mb:.1f} MB) exceeds maximum allowed ({self.ocr_max_file_mb} MB)",
                 "file_size_mb": file_size_mb,
                 "max_file_mb": self.ocr_max_file_mb,
@@ -412,14 +427,15 @@ Return ONLY the JSON, no extra text.
         supplier_tax_id = None
         invoice_number = None
         pending_file_path = None
-        
+
         # We need to extract supplier_tax_id from the invoice, but we don't have it yet.
         # So we'll store to a temporary pending location first, then move to supplier-specific folder after validation.
         # For now, store to a generic pending folder.
         import tempfile
+
         temp_file_path = None
         raw_text = ""
-        
+
         try:
             # Create a temp file for OCR processing
             with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as tmp:
@@ -428,7 +444,7 @@ Return ONLY the JSON, no extra text.
 
             # Step 2: Extract text with timeout
             mime_type, _ = mimetypes.guess_type(filename)
-            if mime_type == "application/pdf" or filename.lower().endswith('.pdf'):
+            if mime_type == "application/pdf" or filename.lower().endswith(".pdf"):
                 # First try to extract text layer
                 raw_text = await self._extract_text_from_pdf(temp_file_path)
                 if not raw_text or len(raw_text.strip()) < 50:
@@ -439,27 +455,23 @@ Return ONLY the JSON, no extra text.
                     if page_images:
                         ocr_texts = []
                         for i, img_bytes in enumerate(page_images):
-                            self.logger.debug("ocr_page", page=i+1, total=len(page_images))
+                            self.logger.debug("ocr_page", page=i + 1, total=len(page_images))
                             # Apply timeout to OCR
                             try:
                                 page_text = await asyncio.wait_for(
-                                    self._ocr_via_ollama(image_bytes=img_bytes),
-                                    timeout=self.ocr_timeout
+                                    self._ocr_via_ollama(image_bytes=img_bytes), timeout=self.ocr_timeout
                                 )
                                 if page_text:
-                                    ocr_texts.append(f"--- Page {i+1} ---\n{page_text}")
-                            except asyncio.TimeoutError:
-                                self.logger.warning("ocr_page_timeout", page=i+1, timeout=self.ocr_timeout)
+                                    ocr_texts.append(f"--- Page {i + 1} ---\n{page_text}")
+                            except TimeoutError:
+                                self.logger.warning("ocr_page_timeout", page=i + 1, timeout=self.ocr_timeout)
                                 continue
                         raw_text = "\n\n".join(ocr_texts)
             else:
                 # Assume image - apply timeout
                 try:
-                    raw_text = await asyncio.wait_for(
-                        self._ocr_via_ollama(temp_file_path),
-                        timeout=self.ocr_timeout
-                    )
-                except asyncio.TimeoutError:
+                    raw_text = await asyncio.wait_for(self._ocr_via_ollama(temp_file_path), timeout=self.ocr_timeout)
+                except TimeoutError:
                     self.logger.warning("ocr_timeout", filename=filename, timeout=self.ocr_timeout)
                     raw_text = ""
 
@@ -481,19 +493,35 @@ Return ONLY the JSON, no extra text.
             # Step 5: Deterministic checks
             check_errors = await self._deterministic_checks(invoice)
             if check_errors:
-                return {"success": False, "error": "Deterministic checks failed", "details": check_errors, "invoice": invoice.dict()}
+                return {
+                    "success": False,
+                    "error": "Deterministic checks failed",
+                    "details": check_errors,
+                    "invoice": invoice.dict(),
+                }
 
             # Step 6: Lookup supplier in Dolibarr
             supplier_tax_id = invoice.supplier.tax_id
             supplier_info = await self._lookup_supplier(supplier_tax_id)
             if not supplier_info:
-                return {"success": False, "error": "Supplier not found in Dolibarr", "tax_id": supplier_tax_id, "invoice": invoice.dict()}
+                return {
+                    "success": False,
+                    "error": "Supplier not found in Dolibarr",
+                    "tax_id": supplier_tax_id,
+                    "invoice": invoice.dict(),
+                }
 
             # Step 7: Check duplicate
             invoice_number = invoice.invoice.get("number", "")
             is_dup = await self._check_duplicate(supplier_tax_id, invoice_number)
             if is_dup:
-                return {"success": False, "error": "Duplicate invoice found", "supplier": supplier_info, "invoice_number": invoice_number, "invoice": invoice.dict()}
+                return {
+                    "success": False,
+                    "error": "Duplicate invoice found",
+                    "supplier": supplier_info,
+                    "invoice_number": invoice_number,
+                    "invoice": invoice.dict(),
+                }
 
             # Step 8: Store original file to pending storage using supplier-specific folder
             # Now we have supplier_tax_id, store the original file to pending
@@ -503,7 +531,9 @@ Return ONLY the JSON, no extra text.
                 filename=filename,
                 supplier_folder=supplier_folder,
             )
-            self.logger.info("invoice_stored_to_pending", pending_path=pending_file_path, supplier_tax_id=supplier_tax_id)
+            self.logger.info(
+                "invoice_stored_to_pending", pending_path=pending_file_path, supplier_tax_id=supplier_tax_id
+            )
 
         finally:
             # Step 9: Always cleanup temp file (after we've stored to pending)
@@ -536,12 +566,15 @@ Return ONLY the JSON, no extra text.
                 "total": invoice.total,
                 "currency": invoice.currency,
                 "line_count": len(invoice.lines),
-            }
+            },
         }
 
-    async def approve_invoice(self, pending_file_path: str, final_path: str, invoice_data: Dict[str, Any], uploaded_by: int = 0) -> Dict[str, Any]:
+    async def approve_invoice(
+        self, pending_file_path: str, final_path: str, invoice_data: dict[str, Any], uploaded_by: int = 0
+    ) -> dict[str, Any]:
         """
-        Call after human approval: create invoice in Dolibarr via integration service, then move file from pending to processed.
+        Call after human approval: create invoice in Dolibarr via integration
+        service, then move file from pending to processed.
         Order: Dolibarr FIRST, then file move.
         """
         # Verify pending file exists
@@ -552,6 +585,7 @@ Return ONLY the JSON, no extra text.
         # Step 1: FIRST create invoice in Dolibarr
         try:
             from app.services.invoice_integration_service import InvoiceIntegrationService
+
             service = InvoiceIntegrationService()
             async with service as s:
                 result = await s.create_supplier_invoice(
@@ -561,7 +595,7 @@ Return ONLY the JSON, no extra text.
                     lines=invoice_data["lines"],
                     taxes=invoice_data["taxes"],
                     currency=invoice_data.get("currency", "EUR"),
-                    attached_file=pending_file_path  # Use pending file for attachment
+                    attached_file=pending_file_path,  # Use pending file for attachment
                 )
             dolibarr_invoice_id = result.get("id")
             self.logger.info("dolibarr_invoice_created", invoice_id=dolibarr_invoice_id)
@@ -578,11 +612,15 @@ Return ONLY the JSON, no extra text.
         except Exception as e:
             self.logger.error("file_move_failed", error=str(e))
             # File move failed but Dolibarr succeeded - log error but return success for Dolibarr
-            return {"success": False, "error": f"Invoice created in Dolibarr (id: {dolibarr_invoice_id}) but failed to move file: {e}", "dolibarr_invoice_id": dolibarr_invoice_id}
+            return {
+                "success": False,
+                "error": f"Invoice created in Dolibarr (id: {dolibarr_invoice_id}) but failed to move file: {e}",
+                "dolibarr_invoice_id": dolibarr_invoice_id,
+            }
 
         return {"success": True, "message": "Invoice created in Dolibarr", "dolibarr_invoice_id": dolibarr_invoice_id}
 
-    async def reject_invoice(self, pending_file_path: str, reason: str) -> Dict[str, Any]:
+    async def reject_invoice(self, pending_file_path: str, reason: str) -> dict[str, Any]:
         """
         Call after human rejection: move file from pending to rejected.
         """
@@ -597,15 +635,21 @@ Return ONLY the JSON, no extra text.
             tax_id = rel_path.split(os.sep)[0]
             filename = os.path.basename(pending_file_path)
             rejected_path = self._get_rejected_path(tax_id, filename)
-            
+
             os.makedirs(os.path.dirname(rejected_path), exist_ok=True)
             shutil.move(pending_file_path, rejected_path)
-            self.logger.info("invoice_moved_pending_to_rejected", pending=pending_file_path, rejected=rejected_path, reason=reason)
-            return {"success": True, "message": f"Invoice rejected and archived: {reason}", "rejected_path": rejected_path}
+            self.logger.info(
+                "invoice_moved_pending_to_rejected", pending=pending_file_path, rejected=rejected_path, reason=reason
+            )
+            return {
+                "success": True,
+                "message": f"Invoice rejected and archived: {reason}",
+                "rejected_path": rejected_path,
+            }
         except Exception as e:
             self.logger.error("file_reject_failed", error=str(e))
             return {"success": False, "error": f"Failed to archive rejected invoice: {e}"}
 
 
-def create_invoice_processing_agent(config: Dict) -> InvoiceProcessingAgent:
+def create_invoice_processing_agent(config: dict) -> InvoiceProcessingAgent:
     return InvoiceProcessingAgent(config)

@@ -100,19 +100,19 @@ test: test-unit test-integration test-security ## Ejecutar todos los tests
 
 test-unit: ## Tests unitarios
 	@echo "$(GREEN)Ejecutando tests unitarios...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest app/tests/unit -v --tb=short
+	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/unit -v --tb=short
 
 test-integration: ## Tests de integración
 	@echo "$(GREEN)Ejecutando tests de integración...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest app/tests/integration -v --tb=short
+	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/integration -v --tb=short
 
 test-security: ## Tests de seguridad
 	@echo "$(GREEN)Ejecutando tests de seguridad...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest app/tests/security_tests.py -v --tb=short
+	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/security_tests.py -v --tb=short
 
 test-e2e: ## Tests end-to-end
 	@echo "$(GREEN)Ejecutando tests E2E...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest app/tests/e2e_tests.py -v --tb=short
+	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/e2e_tests.py -v --tb=short
 
 test-cov: ## Tests con cobertura
 	@docker compose -f $(COMPOSE_FILE) exec -T api pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
@@ -123,19 +123,19 @@ test-cov: ## Tests con cobertura
 
 lint: ## Linting con ruff
 	@echo "$(GREEN)Ejecutando linting...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api ruff check app tests
+	@docker compose -f $(COMPOSE_FILE) exec -T api ruff check .
 
 format: ## Formateo con ruff
 	@echo "$(GREEN)Formateando código...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api ruff format app tests
+	@docker compose -f $(COMPOSE_FILE) exec -T api ruff format .
 
 type-check: ## Verificación de tipos con mypy
 	@echo "$(GREEN)Verificando tipos...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api mypy app
+	@docker compose -f $(COMPOSE_FILE) exec -T api mypy .
 
 security-scan: ## Escaneo de seguridad con bandit
 	@echo "$(GREEN)Escaneando seguridad...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api bandit -r app -f json -o bandit-report.json || true
+	@docker compose -f $(COMPOSE_FILE) exec -T api bandit -r . -f json -o bandit-report.json || true
 
 pre-commit: lint format type-check ## Ejecutar todos los checks pre-commit
 
