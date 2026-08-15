@@ -63,10 +63,24 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("database_initialized")
 
+    # Start Supervisor agent (used by telegram webhook)
+    from app.routes.telegram import supervisor_agent
+    try:
+        await supervisor_agent.start()
+        logger.info("supervisor_agent_started")
+    except Exception as e:
+        logger.warning("supervisor_agent_start_failed", error=str(e))
+
     yield
 
     # Shutdown
     logger.info("shutting_down_application")
+    # Stop Supervisor agent
+    try:
+        await supervisor_agent.stop()
+        logger.info("supervisor_agent_stopped")
+    except Exception as e:
+        logger.warning("supervisor_agent_stop_failed", error=str(e))
     await close_db()
     logger.info("database_connections_closed")
 

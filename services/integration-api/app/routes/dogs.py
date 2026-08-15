@@ -202,7 +202,7 @@ async def update_dog(
 @router.delete("/{dog_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dog(
     dog_id: int,
-    agent: dict = Depends(get_current_agent),
+    agent: dict = Depends(require_write),
     _rate_limit: None = Depends(rate_limit_dependency),
     dog_service=Depends(get_dog_service),
 ):

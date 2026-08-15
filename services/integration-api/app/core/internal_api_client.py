@@ -106,18 +106,28 @@ class InternalAPIClient:
         """Generate a unique correlation ID for request tracing."""
         return str(uuid.uuid4())
 
+    @staticmethod
+    def _is_idempotent_method(method: str) -> bool:
+        """Check if HTTP method is idempotent (safe to retry)."""
+        return method.upper() in {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
+
     def _should_retry(self, method: str, response: httpx.Response) -> bool:
         """Determine if a request should be retried based on method and response status.
 
         Only retry idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS) to avoid
         duplicate resource creation on POST/PATCH retries.
         """
-        idempotent_methods = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
-        return method.upper() in idempotent_methods and response.status_code in self.retry_on_status
+        return self._is_idempotent_method(method) and response.status_code in self.retry_on_status
 
     async def _request_with_retry(self, method: str, path: str, correlation_id: str, **kwargs: Any) -> httpx.Response:
-        """Execute HTTP request with retry logic."""
+        """Execute HTTP request with retry logic.
+        
+        Only retries idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS).
+        For POST/PATCH, does NOT retry on timeout or transport errors to avoid
+        duplicate resource creation.
+        """
         last_exception: Exception | None = None
+        is_idempotent = self._is_idempotent_method(method)
 
         for attempt in range(self.max_retries + 1):
             headers = kwargs.pop("headers", {})
@@ -137,8 +147,8 @@ class InternalAPIClient:
                     attempt=attempt + 1,
                 )
 
-                # Check if we should retry
-                if self._should_retry(method, response) and attempt < self.max_retries:
+                # Check if we should retry (only for idempotent methods)
+                if is_idempotent and self._should_retry(method, response) and attempt < self.max_retries:
                     logger.warning(
                         "internal_api_retry",
                         agent=self.agent_name,
@@ -164,9 +174,10 @@ class InternalAPIClient:
                     attempt=attempt + 1,
                     error=str(e),
                 )
-                if attempt >= self.max_retries:
+                # Only retry timeout for idempotent methods
+                if not is_idempotent or attempt >= self.max_retries:
                     raise InternalAPIError(
-                        f"Request timeout after {self.max_retries + 1} attempts",
+                        f"Request timeout after {attempt + 1} attempt(s)",
                         status_code=504,
                     )
 
@@ -181,9 +192,10 @@ class InternalAPIClient:
                     attempt=attempt + 1,
                     error=str(e),
                 )
-                if attempt >= self.max_retries:
+                # Only retry transport errors for idempotent methods
+                if not is_idempotent or attempt >= self.max_retries:
                     raise InternalAPIError(
-                        f"Request failed after {self.max_retries + 1} attempts: {e}",
+                        f"Request failed after {attempt + 1} attempt(s): {e}",
                         status_code=502,
                     )
 

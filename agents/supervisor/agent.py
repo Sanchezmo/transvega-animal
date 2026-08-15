@@ -61,13 +61,10 @@ class SupervisorAgent:
         self.api_client = httpx.AsyncClient(base_url=self.api_base, timeout=60.0)
         self.api_key = config.get("AGENT_API_KEY_SUPERVISOR", "")
 
-        # Sub-agents
-        self.dog_intake_agent = DogIntakeAgent(
-            {
-                "INTERNAL_API_URL": self.api_base,
-                "AGENT_API_KEY_DOG_INTAKE": config.get("AGENT_API_KEY_DOG_INTAKE", ""),
-            }
-        )
+        # Sub-agents - pass full config to DogIntakeAgent
+        dog_intake_config = dict(config)
+        dog_intake_config["INTERNAL_API_URL"] = self.api_base
+        self.dog_intake_agent = DogIntakeAgent(dog_intake_config)
         self.media_pipeline_agent = create_media_pipeline_agent(config)
         self.content_agent = create_content_marketing_agent(config)
         self.publishing_agent = create_publishing_agent(config)
