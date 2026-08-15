@@ -408,9 +408,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     needs: [docker-build, image-security-scan]
-    if: >
-      github.ref == 'refs/heads/develop' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_production == 'false')
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     environment: staging
     steps:
