@@ -128,9 +128,11 @@ class DogService:
             if not litter:
                 raise NotFoundException("Camada", str(dog_data.litter_id))
 
-        existing = await self.db.execute(select(Dog).where(Dog.microchip == dog_data.microchip))
-        if existing.scalar_one_or_none():
-            raise ValidationException(f"Microchip {dog_data.microchip} ya registrado")
+        # Only check for duplicate microchip if provided
+        if dog_data.microchip:
+            existing = await self.db.execute(select(Dog).where(Dog.microchip == dog_data.microchip))
+            if existing.scalar_one_or_none():
+                raise ValidationException(f"Microchip {dog_data.microchip} ya registrado")
 
         year = datetime.now().year
         count_result = await self.db.execute(select(func.count(Dog.id)).where(Dog.internal_id.like(f"DOG-{year}-%")))

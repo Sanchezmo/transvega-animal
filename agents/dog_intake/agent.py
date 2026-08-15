@@ -121,7 +121,10 @@ class DogIntakeAgent:
             "awaiting_sex": ("sex", "¿Sexo? (M/H o Macho/Hembra)"),
             "awaiting_birth_date": ("birth_date", "¿Fecha de nacimiento? (YYYY-MM-DD)"),
             "awaiting_color": ("color", "¿Color? (ej: Dorado, Negro, Blanco)"),
-            "awaiting_microchip": ("microchip", "¿Número de microchip? (15 dígitos)"),
+            "awaiting_microchip": (
+                "microchip",
+                "¿Número de microchip? (15 dígitos, opcional - envía 'saltar' para omitir)",
+            ),
             "awaiting_purchase_price": ("purchase_price", "¿Precio de compra? (opcional, envía 0 para omitir)"),
             "awaiting_sale_price": ("sale_price", "¿Precio de venta? (opcional, envía 0 para omitir)"),
         }
@@ -200,6 +203,14 @@ class DogIntakeAgent:
                             "session_id": session.session_id,
                             "privacy_scope": session.privacy_scope,
                         }
+                # Handle optional microchip - allow skipping
+                elif field_name == "microchip":
+                    normalized = text.strip().lower()
+                    if normalized in ["saltar", "skip", "omitir", "none", "null", ""]:
+                        # Mark as explicitly skipped, don't store microchip
+                        session.data["microchip_skipped"] = True
+                    else:
+                        session.data[field_name] = text.strip()
                 else:
                     session.data[field_name] = text.strip()
 
@@ -219,7 +230,8 @@ class DogIntakeAgent:
             session.update_privacy_scope()
 
             # Check if we have all required fields to create dog
-            required = ["name", "sex", "birth_date", "color", "microchip"]
+            # microchip is now optional
+            required = ["name", "sex", "birth_date", "color"]
             if all(field in session.data for field in required) and "breed_name" in session.data:
                 # Look up breed by name
                 breed_resp = await self.api_client.get("/dogs/breeds")
@@ -238,10 +250,12 @@ class DogIntakeAgent:
                     "sex": session.data["sex"],
                     "birth_date": session.data["birth_date"],
                     "color": session.data["color"],
-                    "microchip": session.data["microchip"],
                     "purchase_price": float(session.data.get("purchase_price", 0) or 0),
                     "sale_price": float(session.data.get("sale_price", 0) or 0),
                 }
+                # Only include microchip if provided and not skipped
+                if "microchip" in session.data and not session.data.get("microchip_skipped"):
+                    dog_data["microchip"] = session.data["microchip"]
                 create_result = await self._create_dog(dog_data)
                 if create_result.get("success"):
                     dog_id = create_result["dog"]["id"]
@@ -400,8 +414,8 @@ class DogIntakeAgent:
     async def _create_dog(self, data: dict) -> dict:
         """Crear nuevo perro via API."""
         self._ensure_client()
-        # Validate required fields
-        required = ["name", "breed_id", "sex", "birth_date", "color", "microchip"]
+        # Validate required fields (microchip is now optional)
+        required = ["name", "breed_id", "sex", "birth_date", "color"]
         for field in required:
             if field not in data:
                 return {"success": False, "error": f"Missing required field: {field}"}
@@ -414,7 +428,6 @@ class DogIntakeAgent:
             "sex": data["sex"],
             "birth_date": data["birth_date"],
             "color": data["color"],
-            "microchip": data["microchip"],
             "sire_name": data.get("sire_name"),
             "dam_name": data.get("dam_name"),
             "pedigree": data.get("pedigree"),
@@ -424,6 +437,9 @@ class DogIntakeAgent:
             "associated_costs": data.get("associated_costs", 0.0),
             "expediente_id": data.get("expediente_id"),
         }
+        # Only include microchip if provided
+        if "microchip" in data:
+            payload["microchip"] = data["microchip"]
 
         try:
             resp = await self.api_client.post("/dogs", json=payload)
@@ -881,8 +897,8 @@ class DogIntakeAgent:
                 # keep as is; may be ignored
                 pass
 
-        # Validate required fields
-        required = ["name", "sex", "birth_date", "color", "microchip"]
+        # Validate required fields (microchip is optional)
+        required = ["name", "sex", "birth_date", "color"]
         for field in required:
             if field not in dog_data:
                 intake_session_store.delete(user_id, chat_id)

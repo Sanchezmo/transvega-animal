@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from agents.supervisor.agent import create_supervisor_agent
 from app.core.config import settings
+from app.core.telegram_client import TelegramAPIError, TelegramClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,9 @@ agent_config = {
     "AGENT_API_KEY_DOG_INTAKE": getattr(settings, "AGENT_API_KEY_DOG_INTAKE", ""),
 }
 supervisor_agent = create_supervisor_agent(config=agent_config)
+
+# Initialize Telegram client for outbound messages
+telegram_client = TelegramClient()
 
 
 def _verify_webhook_secret(provided: str | None) -> bool:
@@ -48,6 +52,38 @@ async def _require_webhook_secret(
         raise HTTPException(status_code=403, detail="Invalid secret token")
 
 
+def _extract_chat_id(update: dict) -> int | None:
+    """Extract chat_id from Telegram update."""
+    message = update.get("message") or update.get("edited_message")
+    if not message:
+        return None
+    chat = message.get("chat")
+    if not chat:
+        return None
+    return chat.get("id")
+
+
+async def _send_telegram_response(chat_id: int, text: str) -> bool:
+    """Send response message via Telegram Bot API.
+
+    Returns True if sent successfully, False otherwise.
+    Does not raise exceptions - logs failures instead.
+    """
+    try:
+        await telegram_client.start()
+        await telegram_client.send_message(chat_id=chat_id, text=text)
+        logger.info("telegram_outbound_sent chat_id=%s text_length=%d", chat_id, len(text))
+        return True
+    except TelegramAPIError as e:
+        logger.error("telegram_outbound_failed chat_id=%s error=%s", chat_id, str(e))
+        return False
+    except Exception as e:
+        logger.error("telegram_outbound_failed chat_id=%s error=%s", chat_id, str(e))
+        return False
+    finally:
+        await telegram_client.close()
+
+
 @router.post("/webhook")
 async def telegram_webhook(
     request: Request,
@@ -64,10 +100,37 @@ async def telegram_webhook(
         logger.error("Failed to parse JSON: %s", e)
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    logger.info("Received update: %s", update.get("update_id"))
+    update_id = update.get("update_id")
+    logger.info("telegram_update_received", update_id=update_id)
+
+    # Idempotency key based on update_id to prevent duplicate processing
+    _idempotency_key = f"telegram:{update_id}:webhook"
+
+    # Check idempotency (simple in-memory check - could be enhanced with Redis)
+    # For now, we rely on the fact that Telegram retries with same update_id
+    # and the DogIntakeAgent handles duplicate detection via session
 
     # Process the update with the supervisor agent
     result = await supervisor_agent.handle_telegram_message(update)
+
+    # Extract chat_id for outbound response
+    chat_id = _extract_chat_id(update)
+
+    # Send response to Telegram user ONLY when dog is created (completed=True)
+    # For intermediate steps, we don't send outbound to avoid spam
+    if chat_id and result.get("completed") and result.get("message"):
+        outbound_text = result["message"]
+        # Add dog info if creation was successful
+        if result.get("dog"):
+            dog = result["dog"]
+            outbound_text = (
+                f"Perro registrado correctamente.\n"
+                f"ID: {dog.get('internal_id', 'N/A')}\n"
+                f"Nombre: {dog.get('name', 'N/A')}\n"
+                f"Raza: {dog.get('breed_id', 'N/A')}"
+            )
+            # Note: breed name would require additional API call
+        await _send_telegram_response(chat_id, outbound_text)
 
     # Always return 200 OK to Telegram to avoid retries
     if not result.get("success"):

@@ -886,7 +886,7 @@ class DogBase(BaseModel):
     sex: str = Field(..., pattern=r"^[MH]$")
     birth_date: datetime.date
     color: str = Field(..., max_length=50)
-    microchip: str = Field(..., pattern=r"^\d{15}$")
+    microchip: str | None = Field(None, pattern=r"^\d{15}$")
     sire_name: str | None = Field(None, max_length=200)  # father name
     dam_name: str | None = Field(None, max_length=200)  # mother name
     pedigree: str | None = Field(None, max_length=100)

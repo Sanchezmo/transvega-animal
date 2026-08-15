@@ -151,7 +151,7 @@ class Dog(Base):
     sex = Column(String(1), nullable=False)  # M or H
     birth_date = Column(DateTime, nullable=False)
     color = Column(String(50), nullable=False)
-    microchip = Column(String(15), nullable=False, unique=True, index=True)  # ISO 11784/11785
+    microchip = Column(String(15), nullable=True, unique=True, index=True)  # ISO 11784/11785
     sire_name = Column(String(200), nullable=True)
     dam_name = Column(String(200), nullable=True)
     pedigree = Column(String(100), nullable=True)
