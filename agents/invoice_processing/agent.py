@@ -21,15 +21,16 @@ except ImportError:
     # Fallback stub
     from enum import Enum
 
-    class PrivacyScope(Enum):
+    class _PrivacyScope(Enum):
         LOCAL_ONLY = "LOCAL_ONLY"
         CLOUD_ALLOWED = "CLOUD_ALLOWED"
+
+    PrivacyScope = _PrivacyScope
 
     async def privacy_router(content: str, filename: str = "") -> PrivacyScope:
         # Simple stub: treat everything as LOCAL_ONLY for safety
         return PrivacyScope.LOCAL_ONLY
 
-    privacy_router = privacy_router  # type: ignore
 
 logger = structlog.get_logger()
 
@@ -49,7 +50,8 @@ class InvoiceLine(BaseModel):
     vat_rate: float | None = None
 
     @validator("total")
-    def total_matches(cls, v, values):
+    @classmethod
+    def total_matches(cls, v: float, values: dict[str, Any]) -> float:
         qty = values.get("quantity")
         price = values.get("unit_price")
         if qty is not None and price is not None:
@@ -66,7 +68,7 @@ class SupplierInfo(BaseModel):
 
 class InvoiceData(BaseModel):
     supplier: SupplierInfo
-    invoice: dict = Field(..., description="Invoice metadata")
+    invoice: dict[str, Any] = Field(..., description="Invoice metadata")
     lines: list[InvoiceLine]
     taxes: list[dict[str, Any]] = Field(default_factory=list)
     subtotal: float
@@ -75,7 +77,8 @@ class InvoiceData(BaseModel):
     currency: str = "EUR"
 
     @validator("total")
-    def total_matches_sum(cls, v, values):
+    @classmethod
+    def total_matches_sum(cls, v: float, values: dict[str, Any]) -> float:
         subtotal = values.get("subtotal", 0.0)
         tax_total = values.get("tax_total", 0.0)
         if abs(v - (subtotal + tax_total)) > 0.01:
@@ -96,7 +99,7 @@ class InvoiceProcessingAgent:
     8. On approval, create invoice in Dolibarr
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
         self.agent_id = "invoice_processing"
         self.agent_name = "Invoice Processing Agent"
@@ -138,15 +141,16 @@ class InvoiceProcessingAgent:
             "privacy_scope_aware",
             "no_cloud_fallback_for_private",
         ]
+        self.logger = logger.bind(agent="invoice_processing")
 
-    async def start(self):
+    async def start(self) -> None:
         """Initialize the agent."""
-        logger.info("invoice_processing_agent_started")
+        self.logger.info("invoice_processing_agent_started")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Close the router connections."""
         await self.router.aclose()
-        logger.info("invoice_processing_agent_stopped")
+        self.logger.info("invoice_processing_agent_stopped")
 
     def _get_supplier_folder(self, tax_id: str) -> str:
         """Get sanitized supplier folder name from tax_id."""
@@ -259,7 +263,7 @@ class InvoiceProcessingAgent:
             self.logger.error("pdf_render_failed", error=str(e))
             return []
 
-    async def _ocr_via_ollama(self, image_path_or_bytes: str = None, image_bytes: bytes = None) -> str:
+    async def _ocr_via_ollama(self, image_path_or_bytes: str | None = None, image_bytes: bytes | None = None) -> str:
         """
         Use Ollama vision model to extract text from image.
         Accepts either image_path (str) or image_bytes (bytes).
@@ -291,7 +295,7 @@ class InvoiceProcessingAgent:
                 except OSError:
                     pass
 
-            return result.get("text", "").strip()
+            return str(result.get("text", "")).strip()
         except Exception as e:
             self.logger.error("ollama_ocr_failed", error=str(e))
             return ""
@@ -331,9 +335,9 @@ Return ONLY the JSON, no extra text.
             if start != -1 and end != -1 and end > start:
                 json_str = json_str[start : end + 1]
             data = json.loads(json_str)
-            return data
+            return dict(data)
         except Exception as e:
-            self.logger.error("structured_extraction_failed", error=str(e), raw_text=raw_text[:200])
+            self.logger.error("structured_extraction_failed", error=str(e))
             raise
 
     async def _validate_with_pydantic(self, data: dict[str, Any]) -> InvoiceData:
@@ -370,7 +374,7 @@ Return ONLY the JSON, no extra text.
             service = InvoiceIntegrationService()
             async with service as s:
                 result = await s.get_supplier_by_tax_id(tax_id)
-            return result
+            return result if result is not None else None
         except Exception as e:
             self.logger.warning("dolibarr_supplier_lookup_failed", error=str(e))
             return None
@@ -382,7 +386,8 @@ Return ONLY the JSON, no extra text.
 
             service = InvoiceIntegrationService()
             async with service as s:
-                return await s.invoice_exists(supplier_tax_id, invoice_number)
+                result: bool = await s.invoice_exists(supplier_tax_id, invoice_number)
+                return result
         except Exception as e:
             self.logger.warning("duplicate_check_failed", error=str(e))
             # Fail closed: assume duplicate to avoid creating duplicate
@@ -481,23 +486,23 @@ Return ONLY the JSON, no extra text.
             # Step 3: Extract structured data via Ollama
             try:
                 extracted = await self._extract_structured_data(raw_text)
-            except Exception as e:
-                return {"success": False, "error": f"Structured extraction failed: {e}", "raw_text": raw_text[:500]}
+            except Exception:
+                return {"success": False, "error": "structured_extraction_failed", "requires_review": True}
 
             # Step 4: Validate with Pydantic
             try:
                 invoice = await self._validate_with_pydantic(extracted)
-            except Exception as e:
-                return {"success": False, "error": f"Pydantic validation failed: {e}", "extracted": extracted}
+            except Exception:
+                return {"success": False, "error": "pydantic_validation_failed", "requires_review": True}
 
             # Step 5: Deterministic checks
             check_errors = await self._deterministic_checks(invoice)
             if check_errors:
                 return {
                     "success": False,
-                    "error": "Deterministic checks failed",
+                    "error": "deterministic_checks_failed",
                     "details": check_errors,
-                    "invoice": invoice.dict(),
+                    "requires_review": True,
                 }
 
             # Step 6: Lookup supplier in Dolibarr
@@ -506,9 +511,9 @@ Return ONLY the JSON, no extra text.
             if not supplier_info:
                 return {
                     "success": False,
-                    "error": "Supplier not found in Dolibarr",
+                    "error": "supplier_not_found",
                     "tax_id": supplier_tax_id,
-                    "invoice": invoice.dict(),
+                    "requires_review": True,
                 }
 
             # Step 7: Check duplicate
@@ -517,10 +522,9 @@ Return ONLY the JSON, no extra text.
             if is_dup:
                 return {
                     "success": False,
-                    "error": "Duplicate invoice found",
-                    "supplier": supplier_info,
+                    "error": "duplicate_invoice_found",
                     "invoice_number": invoice_number,
-                    "invoice": invoice.dict(),
+                    "requires_review": True,
                 }
 
             # Step 8: Store original file to pending storage using supplier-specific folder
@@ -580,7 +584,7 @@ Return ONLY the JSON, no extra text.
         # Verify pending file exists
         if not os.path.exists(pending_file_path):
             self.logger.error("pending_file_not_found", path=pending_file_path)
-            return {"success": False, "error": f"Pending file not found: {pending_file_path}"}
+            return {"success": False, "error": "pending_file_not_found", "requires_review": True}
 
         # Step 1: FIRST create invoice in Dolibarr
         try:
@@ -602,7 +606,7 @@ Return ONLY the JSON, no extra text.
         except Exception as e:
             self.logger.error("dolibarr_invoice_create_failed", error=str(e))
             # Keep file in pending - don't move it
-            return {"success": False, "error": f"Failed to create invoice in Dolibarr: {e}"}
+            return {"success": False, "error": "dolibarr_invoice_create_failed", "requires_review": True}
 
         # Step 2: Only after Dolibarr succeeds, move file from pending to processed
         try:
@@ -614,8 +618,9 @@ Return ONLY the JSON, no extra text.
             # File move failed but Dolibarr succeeded - log error but return success for Dolibarr
             return {
                 "success": False,
-                "error": f"Invoice created in Dolibarr (id: {dolibarr_invoice_id}) but failed to move file: {e}",
+                "error": "file_move_failed_after_dolibarr_success",
                 "dolibarr_invoice_id": dolibarr_invoice_id,
+                "requires_review": True,
             }
 
         return {"success": True, "message": "Invoice created in Dolibarr", "dolibarr_invoice_id": dolibarr_invoice_id}
@@ -626,7 +631,7 @@ Return ONLY the JSON, no extra text.
         """
         if not os.path.exists(pending_file_path):
             self.logger.error("pending_file_not_found", path=pending_file_path)
-            return {"success": False, "error": f"Pending file not found: {pending_file_path}"}
+            return {"success": False, "error": "pending_file_not_found", "requires_review": True}
 
         try:
             # Extract tax_id from path to determine rejected location
@@ -643,13 +648,13 @@ Return ONLY the JSON, no extra text.
             )
             return {
                 "success": True,
-                "message": f"Invoice rejected and archived: {reason}",
+                "message": "Invoice rejected and archived",
                 "rejected_path": rejected_path,
             }
         except Exception as e:
             self.logger.error("file_reject_failed", error=str(e))
-            return {"success": False, "error": f"Failed to archive rejected invoice: {e}"}
+            return {"success": False, "error": "file_reject_failed", "requires_review": True}
 
 
-def create_invoice_processing_agent(config: dict) -> InvoiceProcessingAgent:
+def create_invoice_processing_agent(config: dict[str, Any]) -> InvoiceProcessingAgent:
     return InvoiceProcessingAgent(config)

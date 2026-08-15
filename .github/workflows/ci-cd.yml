@@ -57,10 +57,7 @@ jobs:
 
       - name: Run MyPy (type checking)
         run: |
-          # Run mypy in a subshell to prevent job failure from pre-existing type errors
-          # These are pre-existing issues that require incremental fixes
-          (PYTHONPATH=.:services/integration-api mypy services/integration-api/app --strict) || true
-          echo "MyPy check completed (non-blocking for pre-existing errors)"
+          PYTHONPATH=.:services/integration-api mypy services/integration-api/app --strict
 
       - name: Run Bandit (security)
         run: |
