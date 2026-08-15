@@ -12,14 +12,16 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to deploy'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-          - staging
-          - production
+      run_docker_validation:
+        description: 'Build, push and security scan Docker images'
+        required: false
+        type: boolean
+        default: false
+      deploy_production:
+        description: 'Deploy to production (requires explicit confirmation)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -261,7 +263,10 @@ jobs:
   docker-build:
     name: Build & Push Docker Images
     needs: [lint-and-type-check, unit-tests, integration-tests, source-security-scan]
-    if: github.event_name == 'push' || github.event_name == 'release'
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_docker_validation == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -313,6 +318,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix={{branch}}-
+            type=sha
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -333,7 +339,10 @@ jobs:
   image-security-scan:
     name: Image Security Scan
     needs: [docker-build]
-    if: github.event_name == 'push' || github.event_name == 'release'
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_docker_validation == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -391,7 +400,9 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     needs: [docker-build, image-security-scan]
-    if: github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    if: >
+      github.ref == 'refs/heads/develop' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_production == 'false')
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -428,7 +439,9 @@ jobs:
   deploy-production:
     name: Deploy to Production
     needs: [docker-build, image-security-scan]
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    if: >
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_production == 'true')
     runs-on: ubuntu-latest
     environment: production
     steps:
