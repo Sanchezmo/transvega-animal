@@ -4,6 +4,7 @@ import hashlib
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from app.core.config import settings
 from app.core.exceptions import ValidationException
@@ -39,7 +40,7 @@ class MediaAsset:
     duration_seconds: int | None = None
     status: str = "ready"
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -261,7 +262,7 @@ def get_media_asset(dog_internal_id: str, asset_id: str, variant: str) -> MediaA
 
 def list_dog_assets(dog_internal_id: str) -> list[MediaAsset]:
     """List all media assets for a dog."""
-    assets = []
+    assets: list[MediaAsset] = []
     base = get_media_root() / dog_internal_id
     if not base.exists():
         return assets
@@ -324,11 +325,11 @@ def list_dog_assets(dog_internal_id: str) -> list[MediaAsset]:
     return assets
 
 
-def get_assets_for_publishing(dog_internal_id: str, platform: str) -> dict:
+def get_assets_for_publishing(dog_internal_id: str, platform: str) -> dict[str, Any]:
     """Get assets ready for publishing to a specific platform."""
     base = get_media_root() / dog_internal_id
 
-    assets = {
+    assets: dict[str, Any] = {
         "cover": None,
         "photos": [],
         "social": {},

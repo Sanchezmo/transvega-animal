@@ -25,7 +25,7 @@ class TransvegaException(Exception):
 class ValidationException(TransvegaException):
     """Error de validación de datos de entrada."""
 
-    def __init__(self, message: str, details: dict | None = None):
+    def __init__(self, message: str, details: dict[str, Any] | None = None):
         super().__init__(
             message=message,
             error_code="VALIDATION_ERROR",
@@ -37,7 +37,7 @@ class ValidationException(TransvegaException):
 class AuthenticationException(TransvegaException):
     """Error de autenticación."""
 
-    def __init__(self, message: str = "Credenciales inválidas", details: dict | None = None):
+    def __init__(self, message: str = "Credenciales inválidas", details: dict[str, Any] | None = None):
         super().__init__(
             message=message,
             error_code="AUTHENTICATION_ERROR",
@@ -49,7 +49,7 @@ class AuthenticationException(TransvegaException):
 class AuthorizationException(TransvegaException):
     """Error de autorización - permisos insuficientes."""
 
-    def __init__(self, message: str = "Permisos insuficientes", details: dict | None = None):
+    def __init__(self, message: str = "Permisos insuficientes", details: dict[str, Any] | None = None):
         super().__init__(
             message=message,
             error_code="AUTHORIZATION_ERROR",
@@ -61,7 +61,7 @@ class AuthorizationException(TransvegaException):
 class NotFoundException(TransvegaException):
     """Recurso no encontrado."""
 
-    def __init__(self, resource: str, identifier: str, details: dict | None = None):
+    def __init__(self, resource: str, identifier: str, details: dict[str, Any] | None = None):
         super().__init__(
             message=f"{resource} no encontrado: {identifier}",
             error_code="NOT_FOUND",
@@ -73,7 +73,7 @@ class NotFoundException(TransvegaException):
 class IdempotencyException(TransvegaException):
     """Error de idempotencia - operación duplicada."""
 
-    def __init__(self, key: str, existing_id: str, details: dict | None = None):
+    def __init__(self, key: str, existing_id: str, details: dict[str, Any] | None = None):
         super().__init__(
             message=f"Operación duplicada detectada para clave: {key}",
             error_code="IDEMPOTENCY_CONFLICT",
@@ -94,7 +94,7 @@ class DolibarrException(TransvegaException):
         message: str,
         endpoint: str = "",
         status_code: int = 502,
-        details: dict | None = None,
+        details: dict[str, Any] | None = None,
     ):
         super().__init__(
             message=f"Error Dolibarr: {message}",
@@ -107,7 +107,7 @@ class DolibarrException(TransvegaException):
 class ApprovalRequiredException(TransvegaException):
     """Acción requiere aprobación humana."""
 
-    def __init__(self, action: str, approval_id: str, details: dict | None = None):
+    def __init__(self, action: str, approval_id: str, details: dict[str, Any] | None = None):
         super().__init__(
             message=f"Acción '{action}' requiere aprobación humana (ID: {approval_id})",
             error_code="APPROVAL_REQUIRED",
@@ -135,7 +135,7 @@ class RateLimitException(TransvegaException):
 class BusinessRuleException(TransvegaException):
     """Violación de regla de negocio."""
 
-    def __init__(self, rule: str, message: str, details: dict | None = None):
+    def __init__(self, rule: str, message: str, details: dict[str, Any] | None = None):
         super().__init__(
             message=f"Regla de negocio violada [{rule}]: {message}",
             error_code="BUSINESS_RULE_VIOLATION",

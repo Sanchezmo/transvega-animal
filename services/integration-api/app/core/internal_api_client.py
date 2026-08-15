@@ -4,6 +4,7 @@ Provides authentication, retries, timeouts, correlation IDs, and error handling.
 """
 
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -16,7 +17,12 @@ logger = structlog.get_logger()
 class InternalAPIError(Exception):
     """Base exception for internal API errors."""
 
-    def __init__(self, message: str, status_code: int | None = None, response: dict | None = None):
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        response: dict[str, Any] | None = None,
+    ):
         self.message = message
         self.status_code = status_code
         self.response = response
@@ -43,7 +49,7 @@ class InternalAPIClient:
         agent_name: str,
         timeout: float = 30.0,
         max_retries: int = 3,
-        retry_on_status: tuple = (429, 500, 502, 503, 504),
+        retry_on_status: tuple[int, ...] = (429, 500, 502, 503, 504),
     ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -53,14 +59,19 @@ class InternalAPIClient:
         self.retry_on_status = retry_on_status
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "InternalAPIClient":
         await self.start()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
+    ) -> None:
         await self.close()
 
-    async def start(self):
+    async def start(self) -> None:
         """Initialize the HTTP client."""
         if self._client is None:
             self._client = httpx.AsyncClient(
@@ -78,7 +89,7 @@ class InternalAPIClient:
                 base_url=self.base_url,
             )
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         if self._client:
             await self._client.aclose()
@@ -104,9 +115,9 @@ class InternalAPIClient:
         idempotent_methods = {"GET", "PUT", "DELETE", "HEAD", "OPTIONS"}
         return method.upper() in idempotent_methods and response.status_code in self.retry_on_status
 
-    async def _request_with_retry(self, method: str, path: str, correlation_id: str, **kwargs) -> httpx.Response:
+    async def _request_with_retry(self, method: str, path: str, correlation_id: str, **kwargs: Any) -> httpx.Response:
         """Execute HTTP request with retry logic."""
-        last_exception = None
+        last_exception: Exception | None = None
 
         for attempt in range(self.max_retries + 1):
             headers = kwargs.pop("headers", {})
@@ -181,25 +192,33 @@ class InternalAPIClient:
             raise InternalAPIError(f"Request failed: {last_exception}", status_code=502)
         raise InternalAPIError("Request failed unexpectedly", status_code=500)
 
-    async def get(self, path: str, params: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
+    async def get(
+        self, path: str, params: dict[str, Any] | None = None, correlation_id: str | None = None
+    ) -> dict[str, Any]:
         """GET request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("GET", path, cid, params=params)
         return self._handle_response(response, cid)
 
-    async def post(self, path: str, json: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
+    async def post(
+        self, path: str, json: dict[str, Any] | None = None, correlation_id: str | None = None
+    ) -> dict[str, Any]:
         """POST request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("POST", path, cid, json=json)
         return self._handle_response(response, cid)
 
-    async def put(self, path: str, json: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
+    async def put(
+        self, path: str, json: dict[str, Any] | None = None, correlation_id: str | None = None
+    ) -> dict[str, Any]:
         """PUT request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("PUT", path, cid, json=json)
         return self._handle_response(response, cid)
 
-    async def patch(self, path: str, json: dict | None = None, correlation_id: str | None = None) -> dict[str, Any]:
+    async def patch(
+        self, path: str, json: dict[str, Any] | None = None, correlation_id: str | None = None
+    ) -> dict[str, Any]:
         """PATCH request."""
         cid = correlation_id or self._generate_correlation_id()
         response = await self._request_with_retry("PATCH", path, cid, json=json)
@@ -248,7 +267,7 @@ class InternalAPIClient:
             return {}
 
         try:
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
         except Exception:
             return {"raw_response": response.text}
 
@@ -276,6 +295,8 @@ async def create_internal_api_client(
 
     # Use provided values or get from settings
     final_base_url = base_url or getattr(settings, "INTERNAL_API_URL", "http://localhost:8000/api/v1")
+    if final_base_url is None:
+        final_base_url = "http://localhost:8000/api/v1"
     final_api_key = api_key or settings.AGENT_API_KEYS.get(agent_name)
 
     if not final_api_key:
@@ -290,7 +311,7 @@ async def create_internal_api_client(
 
 # Context manager for easy use
 @asynccontextmanager
-async def internal_api_client(agent_name: str, **kwargs):
+async def internal_api_client(agent_name: str, **kwargs: Any) -> AsyncGenerator[InternalAPIClient, None]:
     """Async context manager for InternalAPIClient."""
     client = await create_internal_api_client(agent_name, **kwargs)
     await client.start()

@@ -67,7 +67,7 @@ class PrivacyRouter:
     The decision is based on field names and patterns, not on LLM judgment.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     @staticmethod

@@ -2,6 +2,7 @@
 
 import time
 import uuid
+from typing import Any
 
 from app.core.privacy_router import privacy_router
 
@@ -15,18 +16,18 @@ class IntakeSession:
         self.chat_id = chat_id
         self.created_at = time.time()
         self.updated_at = self.created_at
-        self.data: dict = {}  # accumulated structured dog data
+        self.data: dict[str, Any] = {}  # accumulated structured dog data
         self.step: str = "awaiting_name"  # current intake step
-        self.media_files: list = []  # list of dicts with file info
+        self.media_files: list[dict[str, Any]] = []  # list of dicts with file info
         self.privacy_scope = "ONLINE_ALLOWED"  # starts as allowed, may become LOCAL_ONLY
 
     def is_expired(self, ttl_seconds: int = 3600) -> bool:
         return (time.time() - self.updated_at) > ttl_seconds
 
-    def touch(self):
+    def touch(self) -> None:
         self.updated_at = time.time()
 
-    def update_privacy_scope(self):
+    def update_privacy_scope(self) -> None:
         """Re-evaluate privacy based on accumulated data."""
         # Check collected data for sensitive info
         combined = {**self.data}
@@ -51,7 +52,7 @@ class IntakeSession:
 class IntakeSessionStore:
     """In-memory store with basic TTL cleanup."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._sessions: dict[str, IntakeSession] = {}
 
     def get_or_create(self, user_id: int, chat_id: int) -> IntakeSession:
@@ -78,11 +79,11 @@ class IntakeSessionStore:
             del self._sessions[key]
         return None
 
-    def delete(self, user_id: int, chat_id: int):
+    def delete(self, user_id: int, chat_id: int) -> None:
         key = f"{user_id}:{chat_id}"
         self._sessions.pop(key, None)
 
-    def cleanup_expired(self):
+    def cleanup_expired(self) -> None:
         to_del = []
         for key, sess in self._sessions.items():
             if sess.is_expired():

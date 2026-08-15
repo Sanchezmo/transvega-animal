@@ -5,6 +5,7 @@ Servicio de logging de auditoría inmutable.
 import hashlib
 import json
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 import structlog
@@ -15,7 +16,7 @@ logger = structlog.get_logger()
 class AuditLogger:
     """Registra eventos de auditoría de forma inmutable."""
 
-    def __init__(self, db_pool):
+    def __init__(self, db_pool: Any) -> None:
         self.db_pool = db_pool
 
     async def log(
@@ -24,21 +25,21 @@ class AuditLogger:
         request_id: UUID,
         agent_id: str,
         agent_name: str,
-        agent_roles: list,
+        agent_roles: list[str],
         method: str,
         path: str,
-        query_params: dict,
-        request_body: dict | None,
+        query_params: dict[str, Any],
+        request_body: dict[str, Any] | None,
         resource_type: str | None,
         resource_id: str | None,
         action: str,
-        previous_state: dict | None,
-        new_state: dict | None,
+        previous_state: dict[str, Any] | None,
+        new_state: dict[str, Any] | None,
         status_code: int,
         success: bool,
         error_code: str | None = None,
         error_message: str | None = None,
-        error_details: dict | None = None,
+        error_details: dict[str, Any] | None = None,
         duration_ms: float,
         idempotency_key: str | None = None,
         idempotent: bool = False,
@@ -120,9 +121,9 @@ class AuditLogger:
                 path=path,
             )
 
-    def _calculate_diff(self, old: dict, new: dict) -> dict:
+    def _calculate_diff(self, old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
         """Calcular diferencia entre dos estados."""
-        diff = {
+        diff: dict[str, Any] = {
             "added": {},
             "removed": {},
             "changed": {},
@@ -155,10 +156,10 @@ class AuditLogger:
         end_date: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list:
+    ) -> list[dict[str, Any]]:
         """Consultar logs de auditoría con filtros."""
-        conditions = ["1=1"]
-        params = []
+        conditions: list[str] = ["1=1"]
+        params: list[Any] = []
         param_num = 1
 
         if agent_id:
@@ -212,7 +213,7 @@ class AuditLogger:
         self,
         start_date: datetime,
         end_date: datetime,
-    ) -> dict:
+    ) -> list[dict[str, Any]]:
         """Obtener resumen de actividad."""
         query = """
             SELECT

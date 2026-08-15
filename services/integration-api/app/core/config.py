@@ -178,7 +178,7 @@ def get_redis_url(settings: Settings) -> str:
 @lru_cache
 def get_settings() -> Settings:
     """Obtener configuración cacheada."""
-    return Settings()
+    return Settings()  # type: ignore[call-arg]
 
 
 # Exportar instancia para compatibilidad

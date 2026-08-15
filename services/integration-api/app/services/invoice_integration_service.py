@@ -16,7 +16,7 @@ logger = structlog.get_logger()
 class InvoiceIntegrationService:
     """Service for invoice-related Dolibarr operations."""
 
-    def __init__(self, dolibarr_client: DolibarrClient = None):
+    def __init__(self, dolibarr_client: DolibarrClient | None = None) -> None:
         if dolibarr_client:
             self.client = dolibarr_client
         else:
@@ -26,11 +26,16 @@ class InvoiceIntegrationService:
                 api_key=settings.DOLIBARR_API_KEY,
             )
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "InvoiceIntegrationService":
         await self.client.__aenter__()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object | None,
+    ) -> None:
         await self.client.__aexit__(exc_type, exc_val, exc_tb)
 
     async def get_supplier_by_tax_id(self, tax_id: str) -> dict[str, Any] | None:
@@ -42,10 +47,10 @@ class InvoiceIntegrationService:
             suppliers = await self.client.list_suppliers(limit=500)
             for supplier in suppliers:
                 if supplier.get("vat_number", "").upper() == tax_id.upper().replace("-", ""):
-                    return supplier
+                    return supplier  # type: ignore[no-any-return]
                 # Also check other possible fields
                 if supplier.get("vatnumber", "").upper() == tax_id.upper().replace("-", ""):
-                    return supplier
+                    return supplier  # type: ignore[no-any-return]
             return None
         except Exception as e:
             logger.error("get_supplier_by_tax_id_failed", tax_id=tax_id, error=str(e))
@@ -58,7 +63,7 @@ class InvoiceIntegrationService:
             name_lower = name.lower()
             for supplier in suppliers:
                 if name_lower in supplier.get("name", "").lower():
-                    return supplier
+                    return supplier  # type: ignore[no-any-return]
             return None
         except Exception as e:
             logger.error("get_supplier_by_name_failed", name=name, error=str(e))
@@ -101,8 +106,8 @@ class InvoiceIntegrationService:
         supplier_tax_id: str,
         invoice_number: str,
         invoice_date: str,
-        lines: list[dict],
-        taxes: list[dict],
+        lines: list[dict[str, Any]],
+        taxes: list[dict[str, Any]],
         currency: str = "EUR",
         attached_file: str | None = None,
     ) -> dict[str, Any]:
@@ -158,7 +163,7 @@ class InvoiceIntegrationService:
 
             # Return full invoice
             full_invoice = await self.client.get_supplier_invoice(invoice_id)
-            return full_invoice
+            return full_invoice  # type: ignore[no-any-return]
 
         except Exception as e:
             logger.error("create_supplier_invoice_failed", error=str(e))
@@ -166,11 +171,11 @@ class InvoiceIntegrationService:
 
     async def validate_supplier_invoice(self, invoice_id: int) -> dict[str, Any]:
         """Validate a supplier invoice (change status from draft to validated)."""
-        return await self.client.validate_supplier_invoice(invoice_id)
+        return await self.client.validate_supplier_invoice(invoice_id)  # type: ignore[no-any-return]
 
     async def get_supplier_invoice(self, invoice_id: int) -> dict[str, Any]:
         """Get supplier invoice by ID."""
-        return await self.client.get_supplier_invoice(invoice_id)
+        return await self.client.get_supplier_invoice(invoice_id)  # type: ignore[no-any-return]
 
 
 async def get_invoice_integration_service() -> InvoiceIntegrationService:
