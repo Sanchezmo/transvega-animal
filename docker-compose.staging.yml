@@ -65,6 +65,7 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.mock-dolibarr
+    image: ghcr.io/sanchezmo/transvega-animal/mock-dolibarr:${IMAGE_TAG:-latest}
     container_name: transvega-mock-dolibarr-staging
     environment:
       - ENVIRONMENT=staging
@@ -86,26 +87,97 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.api
+    image: ghcr.io/sanchezmo/transvega-animal/api:${IMAGE_TAG:-latest}
     container_name: transvega-api-staging
     environment:
       - ENVIRONMENT=staging
       - API_HOST=0.0.0.0
       - API_PORT=8000
-      - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - API_WORKERS=1
+      # PostgreSQL auditoría - variables individuales (Settings no usa AUDIT_DB_URL)
+      - AUDIT_DB_HOST=audit-db
+      - AUDIT_DB_PORT=5432
+      - AUDIT_DB_NAME=audit
+      - AUDIT_DB_USER=audit
+      - AUDIT_DB_PASSWORD=${AUDIT_DB_PASSWORD}
+      # Redis - variables individuales (Settings no usa REDIS_URL)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # Internal API URL for service-to-service communication
+      - INTERNAL_API_URL=http://api:8000/api/v1
+      # Dolibarr (mock en staging)
       - DOLIBARR_API_URL=http://mock-dolibarr:8001
       - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
+      - DOLIBARR_TIMEOUT=30
+      - MOCK_DOLIBARR_ENABLED=true
+      # JWT & Cifrado
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRATION_MINUTES=30
+      - JWT_REFRESH_EXPIRATION_DAYS=7
       - FERNET_KEY=${FERNET_KEY}
+      # API Keys por agente (requeridos para arrancar)
+      - AGENT_API_KEY_SUPERVISOR=${AGENT_API_KEY_SUPERVISOR}
+      - AGENT_API_KEY_PRODUCTS=${AGENT_API_KEY_PRODUCTS}
+      - AGENT_API_KEY_COMPLIANCE=${AGENT_API_KEY_COMPLIANCE}
+      - AGENT_API_KEY_PUBLISHING=${AGENT_API_KEY_PUBLISHING}
+      - AGENT_API_KEY_SALES=${AGENT_API_KEY_SALES}
+      - AGENT_API_KEY_INVOICING=${AGENT_API_KEY_INVOICING}
+      - AGENT_API_KEY_PURCHASES=${AGENT_API_KEY_PURCHASES}
+      - AGENT_API_KEY_BANKING=${AGENT_API_KEY_BANKING}
+      - AGENT_API_KEY_ACCOUNTING=${AGENT_API_KEY_ACCOUNTING}
+      - AGENT_API_KEY_TAX=${AGENT_API_KEY_TAX}
+      - AGENT_API_KEY_MARKETING=${AGENT_API_KEY_MARKETING}
+      - AGENT_API_KEY_TECHNICAL=${AGENT_API_KEY_TECHNICAL}
+      - AGENT_API_KEY_DOG_INTAKE=${AGENT_API_KEY_DOG_INTAKE}
+      - AGENT_API_KEY_EXPEDIENTES=${AGENT_API_KEY_EXPEDIENTES}
+      - AGENT_API_KEY_FACTURACION=${AGENT_API_KEY_FACTURACION}
+      # Aprobaciones
+      - APPROVALS_SERVICE_URL=http://approvals:8000
+      # Notificaciones
+      - NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL}
+      - NOTIFICATION_WEBHOOK_SECRET=${NOTIFICATION_WEBHOOK_SECRET}
+      # Telegram
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
+      - TELEGRAM_WEBHOOK_SECRET_REQUIRED=true
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS=24
+      # Ollama (Local LLM para facturas - LOCAL_ONLY)
+      - OLLAMA_ENDPOINT=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL}
+      # NVIDIA (solo para tareas permitidas, NO para facturas)
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - NVIDIA_BASE_URL=${NVIDIA_BASE_URL}
+      # Celery
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
-      - MOCK_DOLIBARR_ENABLED=true
+      - CELERY_TASK_SERIALIZER=json
+      - CELERY_RESULT_SERIALIZER=json
+      - CELERY_ACCEPT_CONTENT=["json"]
+      - CELERY_TIMEZONE=Europe/Madrid
+      - CELERY_TASK_TRACK_STARTED=true
+      - CELERY_TASK_TIME_LIMIT=3600
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=4
+      - CELERY_WORKER_CONCURRENCY=4
+      - CELERY_TASK_DEFAULT_QUEUE=default
+      # Rate limiting & Idempotencia
+      - RATE_LIMIT_REQUESTS=100
+      - RATE_LIMIT_WINDOW_SECONDS=60
+      - IDEMPOTENCY_TTL_HOURS=24
+      - TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS=24
+      # Cloudflare
       - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+      # Logs & Métricas
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - METRICS_ENABLED=true
+      - METRICS_PORT=9090
+      # Rate limiting interno
+      - API_CORS_ORIGINS=["https://hermes.transvega-animal.es","http://localhost:3000","http://localhost:8002"]
     ports:
       - "127.0.0.1:8010:8000"  # Puerto local para debugging
-    volumes:
-      - ./services/integration-api:/app:ro
-      - ./adapters:/app/adapters:ro
     depends_on:
       audit-db:
         condition: service_healthy
@@ -113,6 +185,8 @@ services:
         condition: service_healthy
       mock-dolibarr:
         condition: service_started
+      ollama:
+        condition: service_healthy
     networks:
       - transvega-backend
       - transvega-frontend
@@ -131,20 +205,65 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.worker
+    image: ghcr.io/sanchezmo/transvega-animal/worker:${IMAGE_TAG:-latest}
     container_name: transvega-worker-staging
     environment:
       - ENVIRONMENT=staging
-      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
-      - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
+      # PostgreSQL auditoría
+      - AUDIT_DB_HOST=audit-db
+      - AUDIT_DB_PORT=5432
+      - AUDIT_DB_NAME=audit
+      - AUDIT_DB_USER=audit
+      - AUDIT_DB_PASSWORD=${AUDIT_DB_PASSWORD}
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # Dolibarr (mock)
       - DOLIBARR_API_URL=http://mock-dolibarr:8001
       - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
+      # JWT
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-    volumes:
-      - ./services/integration-api:/app:ro
-      - ./adapters:/app/adapters:ro
-      - ./agents:/app/agents:ro
-      - ./services/task-queue:/app/tasks:ro
+      # Celery
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
+      - CELERY_TASK_SERIALIZER=json
+      - CELERY_RESULT_SERIALIZER=json
+      - CELERY_ACCEPT_CONTENT=["json"]
+      - CELERY_TIMEZONE=Europe/Madrid
+      - CELERY_TASK_TRACK_STARTED=true
+      - CELERY_TASK_TIME_LIMIT=3600
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=4
+      - CELERY_WORKER_CONCURRENCY=4
+      - CELERY_TASK_DEFAULT_QUEUE=default
+      # Internal API
+      - INTERNAL_API_URL=http://api:8000/api/v1
+      # API Keys
+      - AGENT_API_KEY_SUPERVISOR=${AGENT_API_KEY_SUPERVISOR}
+      - AGENT_API_KEY_PRODUCTS=${AGENT_API_KEY_PRODUCTS}
+      - AGENT_API_KEY_COMPLIANCE=${AGENT_API_KEY_COMPLIANCE}
+      - AGENT_API_KEY_PUBLISHING=${AGENT_API_KEY_PUBLISHING}
+      - AGENT_API_KEY_SALES=${AGENT_API_KEY_SALES}
+      - AGENT_API_KEY_INVOICING=${AGENT_API_KEY_INVOICING}
+      - AGENT_API_KEY_PURCHASES=${AGENT_API_KEY_PURCHASES}
+      - AGENT_API_KEY_BANKING=${AGENT_API_KEY_BANKING}
+      - AGENT_API_KEY_ACCOUNTING=${AGENT_API_KEY_ACCOUNTING}
+      - AGENT_API_KEY_TAX=${AGENT_API_KEY_TAX}
+      - AGENT_API_KEY_MARKETING=${AGENT_API_KEY_MARKETING}
+      - AGENT_API_KEY_TECHNICAL=${AGENT_API_KEY_TECHNICAL}
+      - AGENT_API_KEY_DOG_INTAKE=${AGENT_API_KEY_DOG_INTAKE}
+      - AGENT_API_KEY_EXPEDIENTES=${AGENT_API_KEY_EXPEDIENTES}
+      - AGENT_API_KEY_FACTURACION=${AGENT_API_KEY_FACTURACION}
+      # Ollama
+      - OLLAMA_ENDPOINT=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL}
+      # NVIDIA (solo para tareas permitidas)
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+      - NVIDIA_BASE_URL=${NVIDIA_BASE_URL}
+      # Telegram
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
     depends_on:
       redis:
         condition: service_healthy
@@ -152,6 +271,8 @@ services:
         condition: service_healthy
       api:
         condition: service_started
+      ollama:
+        condition: service_healthy
     networks:
       - transvega-backend
     restart: unless-stopped
@@ -169,19 +290,30 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.approvals
+    image: ghcr.io/sanchezmo/transvega-animal/approvals:${IMAGE_TAG:-latest}
     container_name: transvega-approvals-staging
     environment:
       - ENVIRONMENT=staging
       - APPROVALS_PORT=8002
-      - APPROVALS_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
-      - APPROVALS_REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
+      # PostgreSQL auditoría
+      - AUDIT_DB_HOST=audit-db
+      - AUDIT_DB_PORT=5432
+      - AUDIT_DB_NAME=audit
+      - AUDIT_DB_USER=audit
+      - AUDIT_DB_PASSWORD=${AUDIT_DB_PASSWORD}
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      # Notificaciones
       - NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL}
       - NOTIFICATION_WEBHOOK_SECRET=${NOTIFICATION_WEBHOOK_SECRET}
+      # Cloudflare
       - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+      # JWT
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
     ports:
       - "127.0.0.1:8012:8002"
-    volumes:
-      - ./services/approval-service:/app:ro
     depends_on:
       audit-db:
         condition: service_healthy
@@ -199,6 +331,7 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.dashboard
+    image: ghcr.io/sanchezmo/transvega-animal/dashboard:${IMAGE_TAG:-latest}
     container_name: transvega-dashboard-staging
     environment:
       - ENVIRONMENT=staging
@@ -208,8 +341,6 @@ services:
       - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
     ports:
       - "127.0.0.1:3010:3000"
-    volumes:
-      - ./services/dashboard:/app:ro
     depends_on:
       - api
       - approvals
@@ -242,7 +373,7 @@ services:
           memory: 128M
 
   # =============================================================================
-  # OLLAMA (Modelos IA locales - recursos reducidos en staging)
+  # OLLAMA (Modelos IA locales - LOCAL_ONLY para facturas)
   # =============================================================================
   ollama:
     image: ollama/ollama:latest
@@ -256,6 +387,12 @@ services:
     networks:
       - transvega-backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
