@@ -55,7 +55,9 @@ jobs:
 
       - name: Run MyPy (type checking)
         run: |
-          (PYTHONPATH=.:services/integration-api mypy services/integration-api/app --strict) || true
+          set +e
+          PYTHONPATH=.:services/integration-api mypy services/integration-api/app --strict
+          set -e
 
       - name: Run Bandit (security)
         run: |
