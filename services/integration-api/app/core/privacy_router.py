@@ -46,6 +46,13 @@ SENSITIVE_FIELDS: set[str] = {
     "original_photo",
     "original_video",
     "raw_media",
+    # Dog intake - animal identification data
+    "microchip",
+    "chip_number",
+    "pedigree_number",
+    "loi_number",
+    "litter_number",
+    "dog_intake",
 }
 
 SENSITIVE_PATTERNS: list[str] = [
@@ -56,6 +63,8 @@ SENSITIVE_PATTERNS: list[str] = [
     r"^.*_(medical|health)_.*",
     r"^.*_(internal|confidential|proprietary)$",
     r"^.*_(original|raw).*media$",
+    r"^.*_(microchip|chip|pedigree|loi|litter)_.*$",
+    r"^dog_intake.*$",
 ]
 
 
