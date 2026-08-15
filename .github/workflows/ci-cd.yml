@@ -62,6 +62,7 @@ jobs:
 
       - name: Run Bandit (security)
         run: |
+          pip install pbr
           bandit -r services/integration-api/app -f json -o bandit-report.json || true
           cat bandit-report.json
 
