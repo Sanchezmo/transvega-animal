@@ -244,12 +244,12 @@ jobs:
           sarif_file: 'trivy-fs.sarif'
 
       - name: Check for secrets with TruffleHog
+        if: github.event_name == 'pull_request'
         uses: trufflesecurity/trufflehog@v3.88.0
-        continue-on-error: true
         with:
           path: ./
-          base: master
-          head: HEAD
+          base: ${{ github.base_ref }}
+          head: ${{ github.head_ref }}
 
   # =============================================================================
   # DOCKER BUILD & PUSH
