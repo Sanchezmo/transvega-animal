@@ -59,6 +59,65 @@ services:
           memory: 256M
 
   # =============================================================================
+  # DOLIBARR ERP (Real Dolibarr for staging)
+  # =============================================================================
+  dolibarr-db:
+    image: mariadb:11
+    container_name: transvega-dolibarr-db-staging
+    environment:
+      MARIADB_DATABASE: dolibarr
+      MARIADB_USER: dolibarr
+      MARIADB_PASSWORD: ${DOLIBARR_DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DOLIBARR_DB_ROOT_PASSWORD}
+    volumes:
+      - dolibarr-db-data-staging:/var/lib/mysql
+    networks:
+      - transvega-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "dolibarr", "-p${DOLIBARR_DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  dolibarr:
+    image: dolibarr/dolibarr:20
+    container_name: transvega-dolibarr-staging
+    environment:
+      - DOLI_DB_HOST=dolibarr-db
+      - DOLI_DB_NAME=dolibarr
+      - DOLI_DB_USER=dolibarr
+      - DOLI_DB_PASSWORD=${DOLIBARR_DB_PASSWORD}
+      - WWW_HOME=/var/www/html
+      - PHP_INI_MEMORY_LIMIT=256M
+      - PHP_INI_MAX_EXECUTION_TIME=300
+      - PHP_INI_UPLOAD_MAX_FILESIZE=20M
+      - PHP_INI_POST_MAX_SIZE=20M
+    volumes:
+      - dolibarr-data-staging:/var/www/html
+      - dolibarr-documents-staging:/var/www/documents
+    ports:
+      - "127.0.0.1:8013:80"
+    depends_on:
+      dolibarr-db:
+        condition: service_healthy
+    networks:
+      - transvega-backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # =============================================================================
   # MOCK DOLIBARR (Staging usa mock para pruebas de integración)
   # =============================================================================
   mock-dolibarr:
@@ -425,3 +484,6 @@ volumes:
   loki-data-staging:
   alertmanager-data-staging:
   ollama-data-staging:
+  dolibarr-db-data-staging:
+  dolibarr-data-staging:
+  dolibarr-documents-staging:
