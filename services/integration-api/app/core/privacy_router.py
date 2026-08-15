@@ -100,7 +100,7 @@ class PrivacyRouter:
                 # Recurse into nested structures
                 if PrivacyRouter.contains_sensitive_data(value):
                     return True
-        elif isinstance(data, (list, tuple, set)):
+        elif isinstance(data, list | tuple | set):
             for item in data:
                 if PrivacyRouter.contains_sensitive_data(item):
                     return True
