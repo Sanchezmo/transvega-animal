@@ -378,7 +378,15 @@ jobs:
 
       - name: Pull image for scanning
         run: |
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:${{ github.sha }}
+          # Wait for image to be available in GHCR (propagation delay)
+          for i in {1..10}; do
+            if docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.image }}:${{ github.sha }}; then
+              echo "Image pulled successfully"
+              break
+            fi
+            echo "Attempt $i: Image not yet available, waiting 5s..."
+            sleep 5
+          done
 
       - name: Run Trivy vulnerability scanner (Docker image)
         uses: aquasecurity/trivy-action@v0.36.0
