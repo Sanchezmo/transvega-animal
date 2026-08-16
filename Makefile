@@ -1,7 +1,7 @@
 # Makefile - Transvega Animal
 # Comandos de desarrollo, testing, despliegue y mantenimiento
 
-.PHONY: help up down restart logs status shell-api shell-worker shell-db test test-unit test-integration test-security lint format seed backup restore clean
+.PHONY: help up down restart logs status shell-api shell-worker shell-db shell-redis shell-mock shell-approvals test test-unit test-integration test-security test-e2e test-cov lint format type-check security-scan pre-commit seed seed-clean reset-db backup backup-full restore verify-backup staging-up staging-down staging-restart staging-status staging-config staging-logs staging-logs-api staging-logs-cloudflare staging-logs-dolibarr staging-logs-redis staging-logs-db staging-health telegram-webhook-configure telegram-webhook-status staging-first-run deploy-staging deploy-prod rotate-secrets verify-secrets audit-permissions clean clean-all docs-serve docs-build metrics grafana alerts
 
 # Variables
 COMPOSE_FILE = docker-compose.dev.yml
@@ -18,7 +18,7 @@ NC = \033[0m
 help: ## Mostrar esta ayuda
 	@echo "$(GREEN)Transvega Animal - Comandos disponibles$(NC)"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-28s$(NC) %s\n", $$1, $$2}'
 
 # =============================================================================
 # DESARROLLO LOCAL
@@ -190,18 +190,82 @@ verify-backup: ## Verificar integridad de backups
 	@for f in backups/*.sql.gz; do echo "Verificando $$f..."; gunzip -t $$f && echo "OK" || echo "CORRUPTO"; done
 
 # =============================================================================
-# DESPLIEGUE STAGING / PROD
+# STAGING LOCAL
 # =============================================================================
 
-staging-up: ## Levantar entorno staging
-	@echo "$(GREEN)Levantando staging...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_STAGING) --env-file .env.staging up -d --build
+staging-check-env: ## Verificar que existe .env.staging
+	@if [ ! -f .env.staging ]; then \
+		echo "$(RED)ERROR: .env.staging not found.$(NC)"; \
+		echo "Copy .env.staging.example to .env.staging and configure secrets."; \
+		exit 1; \
+	fi
 
-staging-down: ## Parar entorno staging
-	@docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_STAGING) down
+staging-up: staging-check-env ## Levantar staging local (usa docker-compose.staging.yml + .env.staging)
+	@./scripts/staging-up.sh
 
-staging-logs: ## Logs staging
-	@docker compose -f $(COMPOSE_FILE) -f $(COMPOSE_STAGING) logs -f --tail=100
+staging-down: staging-check-env ## Parar staging local
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml down
+
+staging-restart: staging-check-env ## Reiniciar staging local
+	@$(MAKE) staging-down
+	@$(MAKE) staging-up
+
+staging-status: staging-check-env ## Ver estado de servicios staging
+	@./scripts/staging-status.sh
+
+staging-config: staging-check-env ## Validar configuración docker-compose staging
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml config
+
+staging-logs: staging-check-env ## Ver logs completos staging
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f --tail=100
+
+staging-logs-api: staging-check-env ## Ver logs API staging
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f api --tail=100
+
+staging-logs-cloudflare: staging-check-env ## Ver logs Cloudflare Tunnel staging
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f cloudflared --tail=100
+
+staging-logs-dolibarr: staging-check-env ## Ver logs Dolibarr staging
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f dolibarr --tail=100
+
+staging-logs-redis: staging-check-env ## Ver logs Redis staging
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f redis --tail=100
+
+staging-logs-db: staging-check-env ## Ver logs DB auditoría staging
+	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f audit-db --tail=100
+
+staging-health: staging-check-env ## Comprobar health/readiness endpoints staging
+	@echo "$(GREEN)Comprobando health endpoints en staging...$(NC)"
+	@API_PORT=$$(docker compose --env-file .env.staging -f docker-compose.staging.yml port api 8000 2>/dev/null | cut -d: -f2); \
+	if [ -z "$$API_PORT" ]; then \
+		echo "$(RED)ERROR: No se pudo obtener puerto de API$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "API puerto local: $$API_PORT"; \
+	if curl -fsS "http://localhost:$$API_PORT/health" >/dev/null; then \
+		echo "$(GREEN)✓ /health OK$(NC)"; \
+	else \
+		echo "$(RED)✗ /health FAIL$(NC)"; \
+		exit 1; \
+	fi; \
+	if curl -fsS "http://localhost:$$API_PORT/health/ready" >/dev/null; then \
+		echo "$(GREEN)✓ /health/ready OK$(NC)"; \
+	else \
+		echo "$(RED)✗ /health/ready FAIL$(NC)"; \
+		exit 1; \
+	fi
+
+telegram-webhook-configure: staging-check-env ## Configurar webhook Telegram para staging
+	@./scripts/configure-telegram-webhook.sh
+
+telegram-webhook-status: staging-check-env ## Ver estado webhook Telegram
+	@./scripts/check-telegram-webhook.sh
+
+staging-first-run: staging-config staging-up staging-status staging-health ## Primera validación completa de staging local
+
+# =============================================================================
+# DESPLIEGUE STAGING / PROD (VPS)
+# =============================================================================
 
 deploy-staging: ## Desplegar a staging (requiere VPS configurado)
 	@echo "$(GREEN)Desplegando a staging...$(NC)"
