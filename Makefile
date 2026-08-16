@@ -1,7 +1,7 @@
 # Makefile - Transvega Animal
 # Comandos de desarrollo, testing, despliegue y mantenimiento
 
-.PHONY: help up down restart logs status shell-api shell-worker shell-db shell-redis shell-mock shell-approvals test test-unit test-integration test-security test-e2e test-cov lint format type-check security-scan pre-commit seed seed-clean reset-db backup backup-full restore verify-backup staging-up staging-down staging-restart staging-status staging-config staging-logs staging-logs-api staging-logs-cloudflare staging-logs-dolibarr staging-logs-redis staging-logs-db staging-health telegram-webhook-configure telegram-webhook-status staging-first-run deploy-staging deploy-prod rotate-secrets verify-secrets audit-permissions clean clean-all docs-serve docs-build metrics grafana alerts
+.PHONY: help up down restart logs status shell-api shell-worker shell-db shell-redis shell-mock shell-approvals test test-unit test-integration test-security test-e2e test-cov lint format type-check security-scan pre-commit seed seed-clean reset-db backup backup-full restore verify-backup staging-up staging-down staging-restart staging-status staging-config staging-logs staging-logs-api staging-logs-cloudflare staging-logs-dolibarr staging-logs-redis staging-logs-db staging-health staging-ollama-models telegram-webhook-configure telegram-webhook-status staging-first-run deploy-staging deploy-prod rotate-secrets verify-secrets audit-permissions clean clean-all docs-serve docs-build metrics grafana alerts
 
 # Variables
 COMPOSE_FILE = docker-compose.dev.yml
@@ -254,6 +254,9 @@ staging-health: staging-check-env ## Comprobar health/readiness endpoints stagin
 		echo "$(RED)✗ /health/ready FAIL$(NC)"; \
 		exit 1; \
 	fi
+
+staging-ollama-models: staging-check-env ## Descargar modelos Ollama para staging (lee OLLAMA_MODEL y OLLAMA_VISION_MODEL de .env.staging)
+	@./scripts/staging-ollama-pull.sh
 
 telegram-webhook-configure: staging-check-env ## Configurar webhook Telegram para staging
 	@./scripts/configure-telegram-webhook.sh
