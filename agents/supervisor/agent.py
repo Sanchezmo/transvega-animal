@@ -20,6 +20,8 @@ from agents.invoice_processing.agent import create_invoice_processing_agent
 from agents.listing.agent import create_listing_agent
 from agents.media_pipeline.agent import create_media_pipeline_agent
 from agents.publishing.agent import create_publishing_agent
+from app.services.conversation_manager import TelegramConversationManager, get_conversation_manager
+from app.schemas.conversation import WorkflowStep, WorkflowType
 
 logger = structlog.get_logger()
 
@@ -101,8 +103,10 @@ class SupervisorAgent:
         self.publishing_agent = create_publishing_agent(config)
         self.listing_agent = create_listing_agent(config)
 
-        # Workflow state
-        self.active_workflows: dict[str, dict] = {}
+        # Conversation Manager (replaces in-memory active_workflows)
+        self.conversation_manager: TelegramConversationManager | None = None
+
+        # Pending approvals for non-conversation flows
         self.pending_approvals: dict[str, dict] = {}
 
         self.capabilities = [
@@ -126,6 +130,9 @@ class SupervisorAgent:
         """Start the supervisor and sub-agents."""
         logger.info("starting_supervisor", agent_id=self.agent_id)
         self.status = "running"
+
+        # Initialize Conversation Manager
+        self.conversation_manager = await get_conversation_manager()
 
         # Start sub-agents
         await self.dog_intake_agent.start()
@@ -152,6 +159,8 @@ class SupervisorAgent:
         await self.publishing_agent.stop()
         await self.dog_intake_agent.stop()
         await self.listing_agent.stop()
+        if self.conversation_manager:
+            await self.conversation_manager.close()
 
     # =========================================================================
     # WORKFLOW ENTRY POINTS
@@ -529,7 +538,8 @@ class SupervisorAgent:
         # Handle cancellation from DogIntakeAgent
         if result.get("completed") and not result.get("dog"):
             # Clear the workflow and detect new intent
-            del self.active_workflows[workflow_id]
+            if workflow_id in self.active_workflows:
+                del self.active_workflows[workflow_id]
             # Fall through to PRIORITY 3 detection
             # Check for invoice document/photo
             has_document = "document" in tg_message

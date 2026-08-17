@@ -63,6 +63,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("database_initialized")
 
+    # Initialize Redis client and store in app state
+    from app.core.database import get_redis_client
+    redis_client = await get_redis_client()
+    app.state.redis_client = redis_client
+    logger.info("redis_client_initialized")
+
     # Start Supervisor agent (used by telegram webhook)
     from app.routes.telegram import supervisor_agent
 
@@ -73,6 +79,18 @@ async def lifespan(app: FastAPI):
         logger.warning("supervisor_agent_start_failed", error=str(e))
 
     yield
+
+    # Shutdown
+    logger.info("shutting_down_application")
+    # Close Redis client
+    if hasattr(app.state, "redis_client"):
+        await app.state.redis_client.close()
+    # Stop Supervisor agent
+    try:
+        await supervisor_agent.stop()
+        logger.info("supervisor_agent_stopped")
+    except Exception as e:
+        pass
 
     # Shutdown
     logger.info("shutting_down_application")

@@ -10,7 +10,11 @@ from fastapi.responses import JSONResponse
 from agents.supervisor.agent import create_supervisor_agent
 from app.core.config import settings
 from app.core.telegram_client import TelegramAPIError, TelegramClient
-from app.dependencies.rate_limit import telegram_idempotency_dependency
+from app.dependencies.rate_limit import (
+    telegram_idempotency_dependency,
+    save_telegram_idempotency_result,
+)
+from app.core.database import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +140,22 @@ async def telegram_webhook(
         logger.warning("Update processing failed: %s", result.get("error"))
     else:
         logger.info("telegram_update_processed message=%s", result.get("message"))
+
+    # Save idempotency result (success/failure) for retry handling
+    try:
+        # Get Redis from app state (set during startup)
+        redis = request.app.state.redis_client
+        if redis:
+            await save_telegram_idempotency_result(
+                request=request,
+                redis=redis,
+                resource_id=update_id,
+                response_data=result,
+                status_code=200,
+                success=result.get("success", False),
+            )
+    except Exception as e:
+        logger.warning("Failed to save idempotency result: %s", e)
 
     return JSONResponse(status_code=200, content=result)
 

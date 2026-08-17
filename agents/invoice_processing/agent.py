@@ -117,6 +117,9 @@ class InvoiceProcessingAgent:
             nvidia_api_key=nvidia_api_key,
             nvidia_base_url=nvidia_base_url,
         )
+        self.ollama_model = ollama_model
+        self.ollama_vision_model = ollama_vision_model
+        self.ollama_endpoint = ollama_endpoint
 
         # Storage roots - separate directories for each stage
         self.invoice_storage_root = config.get("INVOICE_STORAGE_ROOT", "/data/invoices")
@@ -148,6 +151,31 @@ class InvoiceProcessingAgent:
             "no_cloud_fallback_for_private",
         ]
         self.logger = logger.bind(agent="invoice_processing")
+
+    async def _check_ollama_models_ready(self) -> bool:
+        """Check if required Ollama models are available."""
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{self.ollama_endpoint}/api/tags")
+                if resp.status_code != 200:
+                    return False
+                data = resp.json()
+                models = {m.get("name") for m in data.get("models", [])}
+                required = {self.ollama_model, self.ollama_vision_model}
+                return required.issubset(models)
+        except Exception as e:
+            self.logger.warning("ollama_model_check_failed", error=str(e))
+            return False
+
+    async def _wait_for_models_ready(self, max_wait: int = 300) -> bool:
+        """Wait for Ollama models to be ready, with timeout."""
+        import asyncio
+        for _ in range(max_wait):
+            if await self._check_ollama_models_ready():
+                return True
+            await asyncio.sleep(1)
+        return False
 
     async def start(self) -> None:
         """Initialize the agent."""
@@ -405,18 +433,32 @@ Return ONLY the JSON, no extra text.
         Returns a dict with success, extracted data, validation errors, and next steps.
 
         Flow:
-        1. Store original file to pending storage (persists after approval)
-        2. Create temp copy for OCR/extraction
-        3. Extract text (PDF text layer or OCR)
-        4. Extract structured data via Ollama
-        5. Validate with Pydantic
-        6. Deterministic checks
-        7. Lookup supplier in Dolibarr
-        8. Check duplicate
-        9. CLEANUP temp file
-        10. Return pending file path for approval
+        1. Check Ollama models are ready
+        2. Store original file to pending storage (persists after approval)
+        3. Create temp copy for OCR/extraction
+        4. Extract text (PDF text layer or OCR)
+        5. Extract structured data via Ollama
+        6. Validate with Pydantic
+        7. Deterministic checks
+        8. Lookup supplier in Dolibarr
+        9. Check duplicate
+        10. CLEANUP temp file
+        11. Return pending file path for approval
         """
         self.logger.info("processing_invoice", filename=filename, size=len(file_content))
+
+        # Check Ollama models are ready before processing
+        if not await self._check_ollama_models_ready():
+            self.logger.warning("ollama_models_not_ready_waiting", 
+                              required_models=[self.ollama_model, self.ollama_vision_model])
+            if not await self._wait_for_models_ready(max_wait=120):
+                return {
+                    "success": False,
+                    "error": "ollama_models_not_ready",
+                    "message": "Ollama models not available after waiting",
+                    "required_models": [self.ollama_model, self.ollama_vision_model],
+                    "requires_review": True,
+                }
 
         # Step 0: Check file size limit BEFORE storing
         file_size_mb = len(file_content) / (1024 * 1024)

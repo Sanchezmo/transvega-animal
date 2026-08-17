@@ -103,49 +103,52 @@ async def telegram_idempotency_dependency(
     Usa el update_id de Telegram como clave de idempotencia.
     Clave en Redis: telegram:update:<update_id>
     TTL configurable via TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS (default 24h).
+    
+    Behavior:
+    - On SUCCESS: Block future same update_id (return 409)
+    - On FAILURE: Allow retry (don't block)
     """
     # Extract update_id from request body
-    # We need to read the body first
     body = await request.body()
     try:
         import json as json_lib
-
         update = json_lib.loads(body)
     except Exception:
-        # If we can't parse, let the endpoint handle it
         return
 
     update_id = update.get("update_id")
     if not update_id:
         return
 
-    # Use update_id as idempotency key
     idempotency_key = f"telegram:update:{update_id}"
     cache_key = f"idempotency:{idempotency_key}"
-
-    # Check if already processed (atomic check-and-set using SETNX)
-    # Use SET with NX (only set if not exists) and EX (expiry)
     ttl_hours = getattr(settings, "TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS", 24)
     ttl_seconds = ttl_hours * 3600
 
-    # Atomic check-and-set: only set if not exists
-    acquired = await redis.set(cache_key, "processing", nx=True, ex=ttl_seconds)
+    # Check existing state
+    existing = await redis.get(cache_key)
+    if existing:
+        try:
+            data = json_lib.loads(existing)
+            status = data.get("status")
+            if status == "completed":
+                # Already successfully processed - block
+                raise IdempotencyException(
+                    key=idempotency_key,
+                    existing_id=update_id,
+                )
+            # If "processing" or "failed" - allow retry
+            pass
+        except Exception:
+            # If JSON parsing fails, allow retry
+            pass
+    else:
+        # First time - set to "processing"
+        await redis.setex(cache_key, ttl_seconds, json_lib.dumps({"status": "processing"}))
 
-    if not acquired:
-        # Already processed - raise idempotency exception
-        existing = await redis.get(cache_key)
-        if existing:
-            raise IdempotencyException(
-                key=idempotency_key,
-                existing_id=update_id,
-            )
-
-    # Store the update_id in request state for later use
     request.state.telegram_update_id = update_id
-    request.state.telegram_idempotency_key = idempotency_key
-    request.state.telegram_idempotency_cache_key = cache_key
-
-    # Re-inject body for downstream handlers
+    request.state.telegram_idempotency_key = f"telegram:update:{update_id}"
+    request.state.telegram_idempotency_cache_key = f"idempotency:telegram:update:{update_id}"
     request._body = body
 
 
@@ -155,17 +158,19 @@ async def save_telegram_idempotency_result(
     resource_id: str,
     response_data: dict,
     status_code: int = 200,
+    success: bool = True,
 ):
     """Guardar resultado de operación idempotente de Telegram."""
     if hasattr(request.state, "telegram_idempotency_cache_key") and request.state.telegram_idempotency_cache_key:
         ttl_hours = getattr(settings, "TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS", 24)
         ttl_seconds = ttl_hours * 3600
+        import json as json_lib
         await redis.setex(
             request.state.telegram_idempotency_cache_key,
             ttl_seconds,
-            json.dumps(
+            json_lib.dumps(
                 {
-                    "status": "completed",
+                    "status": "completed" if success else "failed",
                     "resource_id": resource_id,
                     "response": response_data,
                     "status_code": status_code,

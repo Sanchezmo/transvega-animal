@@ -468,6 +468,8 @@ services:
       - "127.0.0.1:11435:11434"
     environment:
       - OLLAMA_MODELS=${OLLAMA_MODELS}
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_NUM_THREAD=10
     networks:
       - transvega-backend
     restart: unless-stopped
@@ -481,8 +483,10 @@ services:
       resources:
         limits:
           memory: 8G
+          cpus: '10'
         reservations:
           memory: 4G
+          cpus: '5'
 
 networks:
   transvega-frontend:
