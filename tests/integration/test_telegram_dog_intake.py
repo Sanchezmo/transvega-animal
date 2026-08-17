@@ -6,7 +6,6 @@ This test demonstrates the complete E2E flow without contacting real Telegram.
 
 import os
 import sys
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -140,8 +139,9 @@ async def mock_telegram_update():
 @pytest_asyncio.fixture
 async def mock_breed():
     """Create a test breed in the database using mocked API."""
-    from httpx import ASGITransport, AsyncClient
     import uuid
+
+    from httpx import ASGITransport, AsyncClient
 
     from app.main import app
 

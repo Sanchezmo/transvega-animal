@@ -202,6 +202,7 @@ EUR
     # Mock Ollama models readiness check to always return True in tests
     async def mock_check_ollama_models_ready() -> bool:
         return True
+
     agent._check_ollama_models_ready = mock_check_ollama_models_ready
 
     yield agent
