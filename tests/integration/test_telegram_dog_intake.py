@@ -6,6 +6,7 @@ This test demonstrates the complete E2E flow without contacting real Telegram.
 
 import os
 import sys
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -140,12 +141,13 @@ async def mock_telegram_update():
 async def mock_breed():
     """Create a test breed in the database using mocked API."""
     from httpx import ASGITransport, AsyncClient
+    import uuid
 
     from app.main import app
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        # Create a breed first
+        # Create a breed first with unique name
         fake = FakeAgent("test_agent", "dog_intake", ["dog_intake", "write"])
         from app.dependencies.auth import get_current_agent
 
@@ -154,10 +156,11 @@ async def mock_breed():
         token = "fake-token"
         headers = {
             "Authorization": f"Bearer {token}",
-            "Idempotency-Key": "test-idem-key-breed",
+            "Idempotency-Key": f"test-idem-key-breed-{uuid.uuid4().hex[:8]}",
         }
+        breed_name = f"Golden Retriever Test {uuid.uuid4().hex[:8]}"
         breed_payload = {
-            "name": "Golden Retriever",
+            "name": breed_name,
             "species": "dog",
         }
         resp = await ac.post("/api/v1/dogs/breeds", json=breed_payload, headers=headers)

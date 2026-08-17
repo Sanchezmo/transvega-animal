@@ -199,6 +199,11 @@ EUR
     agent._render_pdf_pages_to_images = mock_render_pdf_pages_to_images
     agent._ocr_via_ollama = mock_ocr_via_ollama
 
+    # Mock Ollama models readiness check to always return True in tests
+    async def mock_check_ollama_models_ready() -> bool:
+        return True
+    agent._check_ollama_models_ready = mock_check_ollama_models_ready
+
     yield agent
     await agent.stop()
 
