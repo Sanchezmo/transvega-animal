@@ -152,8 +152,6 @@ async def mock_model_router():
 @pytest_asyncio.fixture
 async def invoice_agent(mock_dolibarr_service, mock_model_router):
     """Create invoice processing agent with mocked dependencies."""
-    from unittest.mock import patch
-
     from agents.invoice_processing.agent import create_invoice_processing_agent
 
     config = {
@@ -202,13 +200,14 @@ EUR
     agent._ocr_via_ollama = mock_ocr_via_ollama
 
     # Mock Ollama models readiness check to always return True in tests
-    patcher = patch.object(agent, "_check_ollama_models_ready", return_value=True)
-    patcher.start()
+    async def mock_check_ollama_models_ready() -> bool:
+        return True
+
+    agent._check_ollama_models_ready = mock_check_ollama_models_ready
 
     try:
         yield agent
     finally:
-        patcher.stop()
         await agent.stop()
 
 
