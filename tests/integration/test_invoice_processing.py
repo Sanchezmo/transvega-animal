@@ -99,7 +99,7 @@ async def mock_dolibarr_service():
 @pytest_asyncio.fixture
 async def mock_model_router():
     """Mock ModelRouter to simulate local Ollama responses."""
-    with patch("app.core.model_router.create_model_router") as mock:
+    with patch("agents.invoice_processing.agent.create_model_router") as mock:
         router = AsyncMock()
 
         # Mock vision (OCR) response
