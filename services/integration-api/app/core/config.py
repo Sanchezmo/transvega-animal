@@ -101,6 +101,7 @@ class Settings(BaseSettings):
     TELEGRAM_WEBHOOK_SECRET_REQUIRED: bool = True
     TELEGRAM_BOT_TOKEN: str | None = None
     TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS: int = 24
+    TELEGRAM_INVOICE_MAX_FILE_SIZE_MB: int = 10
 
     # Google Workspace
     GOOGLE_CLIENT_ID: str | None = None

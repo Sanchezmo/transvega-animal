@@ -114,6 +114,10 @@ test-e2e: ## Tests end-to-end
 	@echo "$(GREEN)Ejecutando tests E2E...$(NC)"
 	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/e2e_tests.py -v --tb=short
 
+test-invoice: ## Tests de facturas de proveedor (unit + integration)
+	@echo "$(GREEN)Ejecutando tests de facturas...$(NC)"
+	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/integration/test_invoice_processing.py -v --tb=short
+
 test-cov: ## Tests con cobertura
 	@docker compose -f $(COMPOSE_FILE) exec -T api pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
 

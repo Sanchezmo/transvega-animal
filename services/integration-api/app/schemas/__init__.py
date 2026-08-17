@@ -488,6 +488,55 @@ class SupplierOrderResponse(SupplierOrderBase):
 
 
 # =============================================================================
+# CATEGORÍAS DE GASTO (CATÁLOGO CONTROLADO)
+# =============================================================================
+
+
+class ExpenseCategoryBase(BaseModel):
+    """Catálogo controlado de categorías de gasto para facturas de proveedor."""
+
+    code: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-z_]+$")
+    label: str = Field(..., min_length=1, max_length=100)
+    active: bool = True
+    accounting_mapping: str | None = Field(None, max_length=50, description="Código de cuenta contable (opcional)")
+
+
+class ExpenseCategoryCreate(ExpenseCategoryBase):
+    pass
+
+
+class ExpenseCategoryUpdate(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=100)
+    active: bool | None = None
+    accounting_mapping: str | None = Field(None, max_length=50)
+
+
+class ExpenseCategoryResponse(ExpenseCategoryBase):
+    id: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+# Default expense categories (V1)
+DEFAULT_EXPENSE_CATEGORIES: list[dict[str, Any]] = [
+    {"code": "veterinary", "label": "Veterinario", "active": True, "accounting_mapping": "6280"},
+    {"code": "feed", "label": "Alimentación (Pienso)", "active": True, "accounting_mapping": "6281"},
+    {"code": "fuel", "label": "Combustible", "active": True, "accounting_mapping": "6240"},
+    {"code": "transport", "label": "Transporte", "active": True, "accounting_mapping": "6241"},
+    {"code": "advertising", "label": "Publicidad", "active": True, "accounting_mapping": "6270"},
+    {"code": "training", "label": "Formación", "active": True, "accounting_mapping": "6230"},
+    {"code": "office", "label": "Material de oficina", "active": True, "accounting_mapping": "6260"},
+    {"code": "professional_services", "label": "Servicios profesionales", "active": True, "accounting_mapping": "6231"},
+    {"code": "utilities", "label": "Suministros (Luz, Agua, Gas)", "active": True, "accounting_mapping": "6250"},
+    {"code": "pet_supplies", "label": "Artículos para mascotas", "active": True, "accounting_mapping": "6282"},
+    {"code": "insurance", "label": "Seguros", "active": True, "accounting_mapping": "6290"},
+    {"code": "rent", "label": "Alquileres", "active": True, "accounting_mapping": "6210"},
+    {"code": "taxes_fees", "label": "Tasas e impuestos", "active": True, "accounting_mapping": "6350"},
+    {"code": "other", "label": "Otros", "active": True, "accounting_mapping": "6299"},
+]
+
+
+# =============================================================================
 # PROPUESTAS PROVEEDOR
 # =============================================================================
 

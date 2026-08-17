@@ -13,6 +13,14 @@ from app.core.config import get_settings
 logger = structlog.get_logger()
 
 
+class DocumentAttachmentError(Exception):
+    """Exception raised when document attachment to Dolibarr invoice fails."""
+
+    def __init__(self, message: str, invoice_id: int | None = None):
+        super().__init__(message)
+        self.invoice_id = invoice_id
+
+
 class InvoiceIntegrationService:
     """Service for invoice-related Dolibarr operations."""
 
@@ -112,7 +120,8 @@ class InvoiceIntegrationService:
         attached_file: str | None = None,
     ) -> dict[str, Any]:
         """
-        Create a supplier invoice in Dolibarr.
+        Create a supplier invoice in Dolibarr with proper VAT per line.
+        Each line must have its own VAT rate (tva_tx) sent to Dolibarr.
         """
         try:
             # Find supplier
@@ -139,15 +148,25 @@ class InvoiceIntegrationService:
             if not invoice_id:
                 raise ValueError("Failed to create invoice - no ID returned")
 
-            # Add lines
+            # Add lines with proper VAT per line
             for line in lines:
+                vat_rate = line.get("vat_rate")
+                if vat_rate is None:
+                    # Try to get from taxes array
+                    vat_rate = 21.0  # Default Spanish VAT
+                    for tax in taxes:
+                        if tax.get("type", "").upper() in ("IVA", "VAT"):
+                            vat_rate = float(tax.get("rate", 21.0))
+                            break
+
+                # Dolibarr expects tva_tx as the VAT rate percentage
                 line_data = {
                     "product_id": line.get("product_id", 0),
                     "description": line.get("description", ""),
                     "qty": line.get("quantity", 1.0),
                     "subprice": line.get("unit_price", 0.0),
                     "total_ht": line.get("total", 0.0),
-                    "vat_src_code": line.get("vat_code", ""),
+                    "tva_tx": vat_rate,  # VAT rate per line (required by Dolibarr)
                 }
                 await self.client.add_supplier_invoice_line(invoice_id, line_data)
 
@@ -159,7 +178,9 @@ class InvoiceIntegrationService:
                     filename = attached_file.split("/")[-1]
                     await self.client.upload_document("supplierinvoices", invoice_id, file_data, filename)
                 except Exception as e:
-                    logger.warning("file_upload_failed", file=attached_file, error=str(e))
+                    logger.error("document_attachment_failed", invoice_id=invoice_id, file=attached_file, error=str(e))
+                    # Attachment failed but invoice exists - return special error with invoice_id for cleanup
+                    raise DocumentAttachmentError(f"Failed to attach document: {e}", invoice_id=invoice_id)
 
             # Return full invoice
             full_invoice = await self.client.get_supplier_invoice(invoice_id)
@@ -176,6 +197,46 @@ class InvoiceIntegrationService:
     async def get_supplier_invoice(self, invoice_id: int) -> dict[str, Any]:
         """Get supplier invoice by ID."""
         return await self.client.get_supplier_invoice(invoice_id)  # type: ignore[no-any-return]
+
+    async def create_supplier(
+        self,
+        name: str,
+        tax_id: str,
+        address: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Create a new supplier in Dolibarr.
+        Only creates with known/reliable data - no invented fields.
+        """
+        try:
+            supplier_data = {
+                "name": name,
+                "vat_number": tax_id,
+                "fournisseur": 1,
+                "client": 0,
+            }
+            if address:
+                supplier_data["address"] = address
+            if email:
+                supplier_data["email"] = email
+            if phone:
+                supplier_data["phone"] = phone
+
+            result = await self.client.create_supplier(supplier_data)
+            supplier_id = result.get("id") if isinstance(result, dict) else result
+
+            if not supplier_id:
+                raise ValueError("Failed to create supplier - no ID returned")
+
+            # Return full supplier
+            full_supplier = await self.client.get_supplier(supplier_id)
+            return full_supplier  # type: ignore[no-any-return]
+
+        except Exception as e:
+            logger.error("create_supplier_failed", name=name, tax_id=tax_id, error=str(e))
+            raise
 
 
 async def get_invoice_integration_service() -> InvoiceIntegrationService:

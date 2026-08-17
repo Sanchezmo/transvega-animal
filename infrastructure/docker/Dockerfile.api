@@ -26,8 +26,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código de la aplicación con permisos correctos
 COPY --chown=appuser:appuser services/integration-api/app ./app
 COPY --chown=appuser:appuser adapters ./app/adapters
-COPY --chown=appuser:appuser agents ./app/agents
-COPY --chown=appuser:appuser tests ./app/tests
+COPY --chown=appuser:appuser agents ./agents
+COPY --chown=appuser:appuser tests ./tests
 
 # Cambiar a usuario no-root
 USER appuser

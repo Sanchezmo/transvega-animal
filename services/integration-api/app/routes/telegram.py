@@ -86,6 +86,7 @@ async def _send_telegram_response(chat_id: int, text: str) -> bool:
 
 
 @router.post("/webhook")
+@router.post("/telegram/webhook")
 async def telegram_webhook(
     request: Request,
     x_telegram_bot_api_secret_token: str = Header(None),

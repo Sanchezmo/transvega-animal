@@ -120,6 +120,12 @@ class InvoiceProcessingAgent:
 
         # Storage roots - separate directories for each stage
         self.invoice_storage_root = config.get("INVOICE_STORAGE_ROOT", "/data/invoices")
+        # If running as non-root, use a temp directory
+        if not os.access(os.path.dirname(self.invoice_storage_root), os.W_OK):
+            import tempfile
+
+            self.invoice_storage_root = os.path.join(tempfile.gettempdir(), "transvega_invoices")
+
         self.pending_dir = os.path.join(self.invoice_storage_root, "pending")
         self.processed_dir = os.path.join(self.invoice_storage_root, "processed")
         self.rejected_dir = os.path.join(self.invoice_storage_root, "rejected")
@@ -588,7 +594,7 @@ Return ONLY the JSON, no extra text.
 
         # Step 1: FIRST create invoice in Dolibarr
         try:
-            from app.services.invoice_integration_service import InvoiceIntegrationService
+            from app.services.invoice_integration_service import DocumentAttachmentError, InvoiceIntegrationService
 
             service = InvoiceIntegrationService()
             async with service as s:
@@ -603,6 +609,15 @@ Return ONLY the JSON, no extra text.
                 )
             dolibarr_invoice_id = result.get("id")
             self.logger.info("dolibarr_invoice_created", invoice_id=dolibarr_invoice_id)
+        except DocumentAttachmentError as e:
+            self.logger.error("document_attachment_failed", invoice_id=e.invoice_id, error=str(e))
+            # Attachment failed but invoice exists in Dolibarr - return invoice_id for cleanup
+            return {
+                "success": False,
+                "error": "document_attachment_failed",
+                "dolibarr_invoice_id": e.invoice_id,
+                "requires_cleanup": True,
+            }
         except Exception as e:
             self.logger.error("dolibarr_invoice_create_failed", error=str(e))
             # Keep file in pending - don't move it

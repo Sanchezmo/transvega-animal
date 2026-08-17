@@ -217,7 +217,15 @@ class DogIntakeAgent:
             # Advance step if current field is filled
             while session.step in STEP_INFO:
                 field_name = STEP_INFO[session.step][0]
-                if field_name in session.data and session.data[field_name]:
+                field_filled = False
+                if field_name == "microchip":
+                    # microchip is optional - consider filled if value provided OR explicitly skipped
+                    has_microchip = "microchip" in session.data and session.data["microchip"]
+                    field_filled = has_microchip or session.data.get("microchip_skipped", False)
+                else:
+                    field_filled = field_name in session.data and session.data[field_name]
+
+                if field_filled:
                     # Move to next step
                     current_idx = INTAKE_STEPS.index(session.step)
                     if current_idx + 1 < len(INTAKE_STEPS):

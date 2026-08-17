@@ -165,11 +165,11 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       # Internal API URL for service-to-service communication
       - INTERNAL_API_URL=http://api:8000/api/v1
-      # Dolibarr (mock en staging)
-      - DOLIBARR_API_URL=http://mock-dolibarr:8001
+      # Dolibarr (REAL staging)
+      - DOLIBARR_API_URL=http://dolibarr:80
       - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
       - DOLIBARR_TIMEOUT=30
-      - MOCK_DOLIBARR_ENABLED=true
+      - MOCK_DOLIBARR_ENABLED=false
       # JWT & Cifrado
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - JWT_ALGORITHM=HS256
@@ -242,8 +242,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mock-dolibarr:
-        condition: service_started
+      dolibarr:
+        condition: service_healthy
       ollama:
         condition: service_healthy
     networks:
@@ -278,11 +278,17 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      # Dolibarr (mock)
-      - DOLIBARR_API_URL=http://mock-dolibarr:8001
+      # Dolibarr (REAL staging)
+      - DOLIBARR_API_URL=http://dolibarr:80
       - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
-      # JWT
+      - DOLIBARR_TIMEOUT=30
+      - MOCK_DOLIBARR_ENABLED=false
+      # JWT & Cifrado
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRATION_MINUTES=30
+      - JWT_REFRESH_EXPIRATION_DAYS=7
+      - FERNET_KEY=${FERNET_KEY}
       # Celery
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
@@ -313,6 +319,16 @@ services:
       - AGENT_API_KEY_DOG_INTAKE=${AGENT_API_KEY_DOG_INTAKE}
       - AGENT_API_KEY_EXPEDIENTES=${AGENT_API_KEY_EXPEDIENTES}
       - AGENT_API_KEY_FACTURACION=${AGENT_API_KEY_FACTURACION}
+      # Aprobaciones
+      - APPROVALS_SERVICE_URL=http://approvals:8000
+      # Notificaciones
+      - NOTIFICATION_WEBHOOK_URL=${NOTIFICATION_WEBHOOK_URL}
+      - NOTIFICATION_WEBHOOK_SECRET=${NOTIFICATION_WEBHOOK_SECRET}
+      # Telegram
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
+      - TELEGRAM_WEBHOOK_SECRET_REQUIRED=true
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS=24
       # Ollama
       - OLLAMA_ENDPOINT=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL}
@@ -320,9 +336,17 @@ services:
       # NVIDIA (solo para tareas permitidas)
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - NVIDIA_BASE_URL=${NVIDIA_BASE_URL}
-      # Telegram
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
+      # Cloudflare
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN_STAGING}
+      # Logs & Métricas
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - METRICS_ENABLED=true
+      - METRICS_PORT=9090
+      # Rate limiting & Idempotencia
+      - RATE_LIMIT_REQUESTS=100
+      - RATE_LIMIT_WINDOW_SECONDS=60
+      - IDEMPOTENCY_TTL_HOURS=24
     depends_on:
       redis:
         condition: service_healthy
@@ -360,6 +384,7 @@ services:
       - AUDIT_DB_NAME=audit
       - AUDIT_DB_USER=audit
       - AUDIT_DB_PASSWORD=${AUDIT_DB_PASSWORD}
+      - APPROVALS_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
       # Redis
       - REDIS_HOST=redis
       - REDIS_PORT=6379
