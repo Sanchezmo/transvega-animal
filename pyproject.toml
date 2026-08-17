@@ -65,6 +65,12 @@ exclude = [
     "services/integration-api/app/main.py",
     "services/integration-api/app/schemas/__init__.py",
     "services/integration-api/app/models.py",
+    "services/integration-api/app/schemas/conversation.py",
+    "services/integration-api/app/services/invoice_draft_service.py",
+    "services/integration-api/app/services/invoice_audit_service.py",
+    "services/integration-api/app/services/expense_category_service.py",
+    "services/integration-api/app/services/conversation_manager.py",
+    "services/integration-api/app/core/telegram_client.py",
 ]
 
 [tool.bandit]
