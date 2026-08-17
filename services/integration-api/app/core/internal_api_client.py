@@ -121,7 +121,7 @@ class InternalAPIClient:
 
     async def _request_with_retry(self, method: str, path: str, correlation_id: str, **kwargs: Any) -> httpx.Response:
         """Execute HTTP request with retry logic.
-        
+
         Only retries idempotent methods (GET, PUT, DELETE, HEAD, OPTIONS).
         For POST/PATCH, does NOT retry on timeout or transport errors to avoid
         duplicate resource creation.

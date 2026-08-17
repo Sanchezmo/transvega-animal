@@ -103,7 +103,7 @@ async def telegram_idempotency_dependency(
     Usa el update_id de Telegram como clave de idempotencia.
     Clave en Redis: telegram:update:<update_id>
     TTL configurable via TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS (default 24h).
-    
+
     Behavior:
     - On SUCCESS: Block future same update_id (return 409)
     - On FAILURE: Allow retry (don't block)
@@ -112,6 +112,7 @@ async def telegram_idempotency_dependency(
     body = await request.body()
     try:
         import json as json_lib
+
         update = json_lib.loads(body)
     except Exception:
         return
@@ -165,6 +166,7 @@ async def save_telegram_idempotency_result(
         ttl_hours = getattr(settings, "TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS", 24)
         ttl_seconds = ttl_hours * 3600
         import json as json_lib
+
         await redis.setex(
             request.state.telegram_idempotency_cache_key,
             ttl_seconds,

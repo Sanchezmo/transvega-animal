@@ -11,6 +11,7 @@ try:
     from fpdf import FPDF
 except ImportError:
     import subprocess
+
     subprocess.check_call(["pip", "install", "fpdf2"])
     from fpdf import FPDF
 

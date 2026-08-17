@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize Redis client and store in app state
     from app.core.database import get_redis_client
+
     redis_client = await get_redis_client()
     app.state.redis_client = redis_client
     logger.info("redis_client_initialized")

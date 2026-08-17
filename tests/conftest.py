@@ -7,6 +7,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config import get_settings
+from app.core.database import init_db
 from app.main import app
 
 
@@ -24,6 +25,12 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def init_database():
+    """Inicializar base de datos para tests de integración."""
+    await init_db()
 
 
 @pytest_asyncio.fixture(scope="session")
