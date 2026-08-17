@@ -4,23 +4,15 @@ Persistencia en Redis para supervivencia a reinicios.
 """
 
 import json
-import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 from redis.asyncio import Redis
 
 from app.core.config import get_settings
-from app.core.database import get_redis
-from app.schemas.conversation import (
-    ConversationSession,
-    ConversationSessionCreate,
-    ConversationSessionUpdate,
-    WorkflowStep,
-    WorkflowType,
-)
+from app.core.database import get_redis_client
 
 logger = structlog.get_logger()
 
@@ -33,17 +25,19 @@ DEFAULT_SESSION_TTL_SECONDS = DEFAULT_SESSION_TTL_HOURS * 3600
 # Prefijos de claves Redis
 SESSION_KEY_PREFIX = "telegram:session:"
 WORKFLOW_KEY_PREFIX = "telegram:workflow:"
+PENDING_MEDIA_KEY_PREFIX = "telegram:pending_media:"
 
 
 class TelegramConversationManager:
     """
     Gestor centralizado de conversaciones de Telegram.
-    
+
     Responsabilidades:
     - Crear, obtener, actualizar, eliminar sesiones
     - Persistencia en Redis con TTL
     - Gestión de workflow activo y step
     - Contexto persistente por sesión
+    - Gestión de pending_media para recuperación en 2 turnos
     - Expiración automática y limpieza
     """
 
@@ -54,7 +48,7 @@ class TelegramConversationManager:
     async def _get_redis(self) -> Redis:
         """Obtener cliente Redis."""
         if self._redis is None:
-            self._redis = await get_redis()
+            self._redis = await get_redis_client()
         return self._redis
 
     async def close(self):
@@ -75,13 +69,15 @@ class TelegramConversationManager:
         """Clave Redis para workflow: telegram:workflow:{user_id}:{chat_id}"""
         return f"{WORKFLOW_KEY_PREFIX}{user_id}:{chat_id}"
 
+    def _pending_media_key(self, user_id: int, chat_id: int) -> str:
+        """Clave Redis para pending_media: telegram:pending_media:{user_id}:{chat_id}"""
+        return f"{PENDING_MEDIA_KEY_PREFIX}{user_id}:{chat_id}"
+
     # =========================================================================
     # Sesiones
     # =========================================================================
 
-    async def get_session(
-        self, user_id: int, chat_id: int
-    ) -> dict[str, Any] | None:
+    async def get_session(self, user_id: int, chat_id: int) -> dict[str, Any] | None:
         """Obtener sesión existente."""
         redis = await self._get_redis()
         key = self._session_key(user_id, chat_id)
@@ -109,7 +105,6 @@ class TelegramConversationManager:
         """Crear nueva sesión."""
         redis = await self._get_redis()
 
-        session_id = str(uuid.uuid4())
         now = datetime.utcnow()
         ttl_h = ttl_hours or DEFAULT_SESSION_TTL_HOURS
         expires_at = now + timedelta(hours=ttl_h)
@@ -276,21 +271,43 @@ class TelegramConversationManager:
             return False
 
         # Resetear a estado inicial pero mantener sesión
-        return await self.update_session(
-            user_id=user_id,
-            chat_id=chat_id,
-            workflow_type="none",
-            workflow_step="awaiting_workflow_selection",
-            context={},
-        ) is not None
+        return (
+            await self.update_session(
+                user_id=user_id,
+                chat_id=chat_id,
+                workflow_type="none",
+                workflow_step="awaiting_workflow_selection",
+                context={},
+            )
+            is not None
+        )
+
+    async def complete_workflow(self, user_id: int, chat_id: int) -> bool:
+        """Marcar workflow como completado y limpiar estado."""
+        session = await self.get_session(user_id, chat_id)
+        if not session:
+            return False
+
+        return (
+            await self.update_session(
+                user_id=user_id,
+                chat_id=chat_id,
+                workflow_type="none",
+                workflow_step="awaiting_workflow_selection",
+                context={},
+            )
+            is not None
+        )
+
+    async def cancel_workflow(self, user_id: int, chat_id: int) -> bool:
+        """Cancelar workflow activo y limpiar contexto."""
+        return await self.clear_workflow(user_id, chat_id)
 
     # =========================================================================
     # Contexto
     # =========================================================================
 
-    async def update_context(
-        self, user_id: int, chat_id: int, context_updates: dict
-    ) -> dict | None:
+    async def update_context(self, user_id: int, chat_id: int, context_updates: dict) -> dict | None:
         """Actualizar contexto del workflow (merge)."""
         session = await self.get_session(user_id, chat_id)
         if not session:
@@ -299,9 +316,7 @@ class TelegramConversationManager:
         current_context = session.get("context", {})
         current_context.update(context_updates)
 
-        return await self.update_session(
-            user_id=user_id, chat_id=chat_id, context=current_context
-        )
+        return await self.update_session(user_id=user_id, chat_id=chat_id, context=current_context)
 
     async def get_context(self, user_id: int, chat_id: int) -> dict:
         """Obtener contexto actual."""
@@ -312,9 +327,35 @@ class TelegramConversationManager:
 
     async def clear_context(self, user_id: int, chat_id: int) -> bool:
         """Limpiar contexto del workflow."""
-        return await self.update_session(
-            user_id=user_id, chat_id=chat_id, context={}
-        ) is not None
+        return await self.update_session(user_id=user_id, chat_id=chat_id, context={}) is not None
+
+    # =========================================================================
+    # Pending Media (para recuperación en 2 turnos)
+    # =========================================================================
+
+    async def set_pending_media(self, user_id: int, chat_id: int, pending_media: dict) -> bool:
+        """Guardar pending_media con TTL independiente."""
+        redis = await self._get_redis()
+        key = self._pending_media_key(user_id, chat_id)
+        ttl_seconds = 3600  # 1 hora para pending media
+        await redis.setex(key, ttl_seconds, json.dumps(pending_media))
+        return True
+
+    async def get_pending_media(self, user_id: int, chat_id: int) -> dict | None:
+        """Obtener pending_media si existe."""
+        redis = await self._get_redis()
+        key = self._pending_media_key(user_id, chat_id)
+        data = await redis.get(key)
+        if data:
+            return json.loads(data)
+        return None
+
+    async def clear_pending_media(self, user_id: int, chat_id: int) -> bool:
+        """Limpiar pending_media."""
+        redis = await self._get_redis()
+        key = self._pending_media_key(user_id, chat_id)
+        result = await redis.delete(key)
+        return bool(result)
 
     # =========================================================================
     # Utilidades
@@ -334,9 +375,7 @@ class TelegramConversationManager:
             expires_at_dt = datetime.fromisoformat(session["expires_at"])
             remaining = expires_at_dt - datetime.utcnow()
             if remaining.total_seconds() <= 0:
-                await self.delete_session(
-                    session["telegram_user_id"], session["telegram_chat_id"]
-                )
+                await self.delete_session(session["telegram_user_id"], session["telegram_chat_id"])
                 return False
             ttl_seconds = int(remaining.total_seconds())
         else:

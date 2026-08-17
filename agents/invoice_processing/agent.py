@@ -449,7 +449,7 @@ Return ONLY the JSON, no extra text.
 
         # Check Ollama models are ready before processing
         if not await self._check_ollama_models_ready():
-            self.logger.warning("ollama_models_not_ready_waiting", 
+            self.logger.warning("ollama_models_not_ready_waiting",
                               required_models=[self.ollama_model, self.ollama_vision_model])
             if not await self._wait_for_models_ready(max_wait=120):
                 return {

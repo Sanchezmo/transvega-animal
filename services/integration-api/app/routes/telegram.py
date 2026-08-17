@@ -11,10 +11,9 @@ from agents.supervisor.agent import create_supervisor_agent
 from app.core.config import settings
 from app.core.telegram_client import TelegramAPIError, TelegramClient
 from app.dependencies.rate_limit import (
-    telegram_idempotency_dependency,
     save_telegram_idempotency_result,
+    telegram_idempotency_dependency,
 )
-from app.core.database import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -58,17 +57,38 @@ async def _require_webhook_secret(
 
 
 def _extract_chat_id(update: dict) -> int | None:
-    """Extract chat_id from Telegram update."""
+    """Extract chat_id from Telegram update (message or callback_query)."""
+    # Try message first
     message = update.get("message") or update.get("edited_message")
-    if not message:
-        return None
-    chat = message.get("chat")
-    if not chat:
-        return None
-    return chat.get("id")
+    if message:
+        chat = message.get("chat")
+        if chat:
+            return chat.get("id")
+
+    # Try callback_query
+    callback_query = update.get("callback_query")
+    if callback_query:
+        chat = callback_query.get("message", {}).get("chat")
+        if chat:
+            return chat.get("id")
+
+    return None
 
 
-async def _send_telegram_response(chat_id: int, text: str) -> bool:
+def _extract_user_id(update: dict) -> int | None:
+    """Extract user_id from Telegram update."""
+    message = update.get("message") or update.get("edited_message")
+    if message:
+        return message.get("from", {}).get("id")
+
+    callback_query = update.get("callback_query")
+    if callback_query:
+        return callback_query.get("from", {}).get("id")
+
+    return None
+
+
+async def _send_telegram_response(chat_id: int, text: str, reply_markup: dict | None = None) -> bool:
     """Send response message via Telegram Bot API.
 
     Returns True if sent successfully, False otherwise.
@@ -76,7 +96,7 @@ async def _send_telegram_response(chat_id: int, text: str) -> bool:
     """
     try:
         await telegram_client.start()
-        await telegram_client.send_message(chat_id=chat_id, text=text)
+        await telegram_client.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
         logger.info("telegram_outbound_sent chat_id=%s text_length=%d", chat_id, len(text))
         return True
     except TelegramAPIError as e:
@@ -99,7 +119,11 @@ async def telegram_webhook(
 ) -> dict[str, Any]:
     """
     Receive updates from Telegram and process them via the SupervisorAgent
-    which orchestrates: DogIntake → MediaPipeline → Content → Publishing.
+    which orchestrates: DogIntake → MediaPipeline → Content → Publishing
+    AND: Invoice Processing → Dolibarr.
+
+    The SupervisorAgent handles all outbound Telegram messages (including inline keyboards)
+    via its internal TelegramClient. This endpoint just processes and returns 200 OK.
     """
     try:
         update = await request.json()
@@ -114,26 +138,8 @@ async def telegram_webhook(
     # The update_id is available in request.state.telegram_update_id
 
     # Process the update with the supervisor agent
+    # The supervisor handles ALL outbound Telegram communication
     result = await supervisor_agent.handle_telegram_message(update)
-
-    # Extract chat_id for outbound response
-    chat_id = _extract_chat_id(update)
-
-    # Send response to Telegram user for any user-facing message
-    # This includes both intermediate steps and final completion
-    if chat_id and result.get("message"):
-        outbound_text = result["message"]
-        # Add dog info if creation was successful
-        if result.get("completed") and result.get("dog"):
-            dog = result["dog"]
-            outbound_text = (
-                f"Perro registrado correctamente.\n"
-                f"ID: {dog.get('internal_id', 'N/A')}\n"
-                f"Nombre: {dog.get('name', 'N/A')}\n"
-                f"Raza: {dog.get('breed_id', 'N/A')}"
-            )
-            # Note: breed name would require additional API call
-        await _send_telegram_response(chat_id, outbound_text)
 
     # Always return 200 OK to Telegram to avoid retries
     if not result.get("success"):

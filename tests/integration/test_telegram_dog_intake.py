@@ -173,7 +173,7 @@ class TestTelegramDogIntakeE2E:
 
     @pytest.mark.asyncio
     async def test_supervisor_routes_telegram_to_dog_intake(self, mock_telegram_update):
-        """Test that SupervisorAgent routes Telegram messages to DogIntakeAgent."""
+        """Test that SupervisorAgent routes Telegram messages to DogIntakeAgent via callback."""
         config = {
             "INTERNAL_API_URL": "http://localhost:8000/api/v1",
             "OLLAMA_ENDPOINT": "http://ollama:11434",
@@ -182,30 +182,65 @@ class TestTelegramDogIntakeE2E:
             "NVIDIA_API_KEY": "",
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
             "AGENT_API_KEY_SUPERVISOR": "test-supervisor-key",
+            "AGENT_API_KEY_DOG_INTAKE": "test-dog-intake",
         }
 
         agent = SupervisorAgent(config)
         # Mock the internal API client to avoid real HTTP calls
         agent.api_client = AsyncMock()
         agent.api_client.base_url = "http://localhost:8000/api/v1"
+        agent.api_client.aclose = AsyncMock()
 
         # Mock the dog_intake_agent
         agent.dog_intake_agent = AsyncMock()
+        agent.dog_intake_agent.start = AsyncMock()
+        agent.dog_intake_agent.stop = AsyncMock()
 
         # Mock the other sub-agents
         agent.media_pipeline_agent = AsyncMock()
         agent.content_agent = AsyncMock()
         agent.publishing_agent = AsyncMock()
         agent.listing_agent = AsyncMock()
-
-        # Mock the start/stop methods of sub-agents
-        for attr in ["dog_intake_agent", "media_pipeline_agent", "content_agent", "publishing_agent", "listing_agent"]:
+        for attr in ["media_pipeline_agent", "content_agent", "publishing_agent", "listing_agent"]:
             getattr(agent, attr).start = AsyncMock()
             getattr(agent, attr).stop = AsyncMock()
 
+        # Mock conversation manager
+        mock_cm = AsyncMock()
+        mock_cm.get_or_create_session = AsyncMock(
+            return_value={
+                "session_id": "test-session-123",
+                "telegram_user_id": 123456789,
+                "telegram_chat_id": 123456789,
+                "workflow_type": "none",
+                "workflow_step": "awaiting_workflow_selection",
+                "context": {},
+                "created_at": "2024-01-01T00:00:00",
+                "updated_at": "2024-01-01T00:00:00",
+                "expires_at": "2025-01-01T00:00:00",
+            }
+        )
+        mock_cm.update_session = AsyncMock(return_value=True)
+        mock_cm.update_context = AsyncMock(return_value=True)
+        mock_cm.clear_workflow = AsyncMock(return_value=True)
+        mock_cm.clear_context = AsyncMock(return_value=True)
+        mock_cm.get_session = AsyncMock(return_value=None)
+        agent.conversation_manager = mock_cm
+
+        # Mock telegram client
+        mock_tc = AsyncMock()
+        mock_tc.start = AsyncMock()
+        mock_tc.close = AsyncMock()
+        mock_tc.send_message = AsyncMock()
+        mock_tc.answer_callback_query = AsyncMock()
+
+        import app.core.telegram_client as tc_module
+
+        tc_module.create_telegram_client = AsyncMock(return_value=mock_tc)
+
         await agent.start()
 
-        # Mock DogIntakeAgent response for /start command
+        # Mock DogIntakeAgent response for dog management flow
         agent.dog_intake_agent.process_message.return_value = {
             "success": True,
             "completed": False,
@@ -215,22 +250,51 @@ class TestTelegramDogIntakeE2E:
             "privacy_scope": "LOCAL_ONLY",
         }
 
-        # Process the Telegram update through Supervisor
-        result = await agent.handle_telegram_message(mock_telegram_update)
+        # Step 1: /start shows menu
+        start_update = {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "date": 1700000000,
+                "chat": {"id": 123456789, "type": "private"},
+                "from": {"id": 123456789, "is_bot": False},
+                "text": "/start",
+            },
+        }
+        result_start = await agent.handle_telegram_message(start_update)
+        assert result_start["success"] is True
+        assert result_start["workflow_type"] == "none"
+        assert result_start["workflow_step"] == "awaiting_workflow_selection"
+        assert "session_id" in result_start
+        assert "nombre" in result_start["message"].lower() or "Hermes" in result_start["message"]
 
-        # Verify the flow
-        assert result["success"] is True
-        assert result["workflow_id"] == "wf-123456789-123456789"
-        assert result["step"] == "dog_intake"
-        assert "nombre" in result["message"].lower() or "nombre" in result["message"]
-        assert result["awaiting_input"] is True
+        # Step 2: User selects dog management via callback (button press)
+        callback_update = {
+            "update_id": 2,
+            "callback_query": {
+                "id": "callback-123",
+                "from": {"id": 123456789},
+                "message": {"chat": {"id": 123456789}},
+                "data": "workflow:dog_management",
+            },
+        }
+        result_callback = await agent.handle_telegram_message(callback_update)
 
-        # Verify DogIntakeAgent was called
+        # Verify the flow - new architecture uses session_id, workflow_type, workflow_step
+        assert result_callback["success"] is True
+        assert result_callback["workflow_type"] == "dog_management"
+        assert result_callback["workflow_step"] == "dog_awaiting_name"
+        assert "perro" in result_callback["message"].lower() or "gestión" in result_callback["message"].lower()
+        assert result_callback["awaiting_input"] is True
+        assert mock_tc.answer_callback_query.called
+
+        # Verify DogIntakeAgent was called for the dog management selection
         agent.dog_intake_agent.process_message.assert_called_once()
         call_args = agent.dog_intake_agent.process_message.call_args[0][0]
         assert call_args["chat_id"] == 123456789
         assert call_args["user_id"] == 123456789
-        assert call_args["text"] == "/start"
+        # The dog intake agent receives empty text for initial trigger
+        assert call_args["text"] == ""
 
     @pytest.mark.asyncio
     async def test_dog_intake_agent_creates_dog_via_api(self, mock_breed):
@@ -314,19 +378,63 @@ class TestTelegramDogIntakeE2E:
             "NVIDIA_API_KEY": "",
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
             "AGENT_API_KEY_SUPERVISOR": "test-supervisor-key",
+            "AGENT_API_KEY_DOG_INTAKE": "test-dog-intake",
         }
 
         supervisor = SupervisorAgent(config)
 
         # Mock the API client at the Supervisor level
         supervisor.api_client = AsyncMock()
+        supervisor.api_client.base_url = "http://localhost:8000/api/v1"
+        supervisor.api_client.aclose = AsyncMock()
 
         # Mock the DogIntakeAgent to simulate the intake flow
         supervisor.dog_intake_agent = AsyncMock()
 
-        # Simulate the intake conversation flow
+        # Mock the other sub-agents
+        supervisor.media_pipeline_agent = AsyncMock()
+        supervisor.content_agent = AsyncMock()
+        supervisor.publishing_agent = AsyncMock()
+        supervisor.listing_agent = AsyncMock()
+        for attr in ["media_pipeline_agent", "content_agent", "publishing_agent", "listing_agent"]:
+            getattr(supervisor, attr).start = AsyncMock()
+            getattr(supervisor, attr).stop = AsyncMock()
+
+        # Mock conversation manager (Redis session state)
+        mock_cm = AsyncMock()
+        session_data = {
+            "session_id": "test-session-123",
+            "telegram_user_id": 123456789,
+            "telegram_chat_id": 123456789,
+            "workflow_type": "none",
+            "workflow_step": "awaiting_workflow_selection",
+            "context": {},
+            "created_at": "2024-01-01T00:00:00",
+            "updated_at": "2024-01-01T00:00:00",
+            "expires_at": "2025-01-01T00:00:00",
+        }
+        mock_cm.get_or_create_session = AsyncMock(return_value=session_data)
+        mock_cm.update_session = AsyncMock(return_value=True)
+        mock_cm.update_context = AsyncMock(return_value=True)
+        mock_cm.clear_workflow = AsyncMock(return_value=True)
+        mock_cm.clear_context = AsyncMock(return_value=True)
+        mock_cm.get_session = AsyncMock(return_value=session_data)
+        supervisor.conversation_manager = mock_cm
+
+        # Mock telegram client
+        mock_tc = AsyncMock()
+        mock_tc.start = AsyncMock()
+        mock_tc.close = AsyncMock()
+        mock_tc.send_message = AsyncMock()
+        mock_tc.answer_callback_query = AsyncMock()
+
+        import app.core.telegram_client as tc_module
+
+        tc_module.create_telegram_client = AsyncMock(return_value=mock_tc)
+
+        # Simulate the intake conversation flow - DogIntakeAgent responses
         intake_responses = [
-            # Step 1: /start
+            # Step 1: /start - dog management selected
             {
                 "success": True,
                 "completed": False,
@@ -454,15 +562,17 @@ class TestTelegramDogIntakeE2E:
 
         # Set up the mock to return responses in sequence
         supervisor.dog_intake_agent.process_message.side_effect = intake_responses
+        supervisor.dog_intake_agent.start = AsyncMock()
+        supervisor.dog_intake_agent.stop = AsyncMock()
 
         await supervisor.start()
 
         # Simulate the complete Telegram conversation
         chat_id = 123456789
         user_id = 123456789
-        workflow_id = f"wf-{chat_id}-{user_id}"
 
-        # Step 1: /start
+        # Step 1: /start - first need to select dog management
+        # With new architecture, /start shows menu, then callback selects workflow
         result1 = await supervisor.handle_telegram_message(
             {
                 "update_id": 1,
@@ -478,12 +588,36 @@ class TestTelegramDogIntakeE2E:
 
         assert result1["success"] is True
         assert result1["awaiting_input"] is True
-        assert result1["workflow_id"] == workflow_id
+        assert result1["workflow_type"] == "none"
+        assert result1["workflow_step"] == "awaiting_workflow_selection"
+        assert "session_id" in result1
+
+        # Now select dog management via callback (simulating button press)
+        # The user would press the "Gestionar perro" button
+        session_data["workflow_type"] = "dog_management"
+        session_data["workflow_step"] = "dog_awaiting_name"
+
+        result_dog_select = await supervisor.handle_telegram_message(
+            {
+                "update_id": 2,
+                "callback_query": {
+                    "id": "callback-123",
+                    "from": {"id": user_id},
+                    "message": {"chat": {"id": chat_id}},
+                    "data": "workflow:dog_management",
+                },
+            }
+        )
+
+        assert result_dog_select["success"] is True
+        assert result_dog_select["workflow_type"] == "dog_management"
+        assert result_dog_select["workflow_step"] == "dog_awaiting_name"
+        assert mock_tc.answer_callback_query.called
 
         # Step 2: Name
         result2 = await supervisor.handle_telegram_message(
             {
-                "update_id": 2,
+                "update_id": 3,
                 "message": {
                     "message_id": 2,
                     "date": 1700000001,
@@ -500,7 +634,7 @@ class TestTelegramDogIntakeE2E:
         # Step 3: Breed
         result3 = await supervisor.handle_telegram_message(
             {
-                "update_id": 3,
+                "update_id": 4,
                 "message": {
                     "message_id": 3,
                     "date": 1700000002,
@@ -516,7 +650,7 @@ class TestTelegramDogIntakeE2E:
         # Step 4: Sex
         result4 = await supervisor.handle_telegram_message(
             {
-                "update_id": 4,
+                "update_id": 5,
                 "message": {
                     "message_id": 4,
                     "date": 1700000003,
@@ -532,7 +666,7 @@ class TestTelegramDogIntakeE2E:
         # Step 5: Birth date
         result5 = await supervisor.handle_telegram_message(
             {
-                "update_id": 5,
+                "update_id": 6,
                 "message": {
                     "message_id": 5,
                     "date": 1700000004,
@@ -548,7 +682,7 @@ class TestTelegramDogIntakeE2E:
         # Step 6: Color
         result6 = await supervisor.handle_telegram_message(
             {
-                "update_id": 6,
+                "update_id": 7,
                 "message": {
                     "message_id": 6,
                     "date": 1700000005,
@@ -564,7 +698,7 @@ class TestTelegramDogIntakeE2E:
         # Step 7: Microchip
         result7 = await supervisor.handle_telegram_message(
             {
-                "update_id": 7,
+                "update_id": 8,
                 "message": {
                     "message_id": 7,
                     "date": 1700000006,
@@ -580,7 +714,7 @@ class TestTelegramDogIntakeE2E:
         # Step 8: Purchase price (0)
         result8 = await supervisor.handle_telegram_message(
             {
-                "update_id": 8,
+                "update_id": 9,
                 "message": {
                     "message_id": 8,
                     "date": 1700000007,
@@ -596,7 +730,7 @@ class TestTelegramDogIntakeE2E:
         # Step 9: Sale price - dog creation completes
         result9 = await supervisor.handle_telegram_message(
             {
-                "update_id": 9,
+                "update_id": 10,
                 "message": {
                     "message_id": 9,
                     "date": 1700000008,
@@ -614,7 +748,8 @@ class TestTelegramDogIntakeE2E:
         assert result9["dog"]["name"] == "Thor"
         assert result9["dog"]["sale_price"] == 1200.0
 
-        # Verify workflow advanced
+        # Verify workflow advanced to media_ingest
+        workflow_id = f"wf-{chat_id}-{user_id}"
         workflow = supervisor.active_workflows.get(workflow_id)
         assert workflow is not None
         assert workflow["dog_internal_id"] == "DOG-2026-000001"
@@ -622,7 +757,7 @@ class TestTelegramDogIntakeE2E:
 
         await supervisor.stop()
 
-        # Verify DogIntakeAgent was called for each step
+        # Verify DogIntakeAgent was called for each step (9 times: start + 8 inputs)
         assert supervisor.dog_intake_agent.process_message.call_count == 9
 
     @pytest.mark.asyncio

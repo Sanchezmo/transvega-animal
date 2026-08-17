@@ -302,11 +302,7 @@ def get_help_text() -> str:
 
 def get_workflow_selection_text() -> str:
     """Texto para selección de workflow."""
-    return (
-        "🤖 <b>Hermes - Asistente Transvega</b>\n\n"
-        "¿Qué quieres hacer?\n\n"
-        "Selecciona una opción:"
-    )
+    return "🤖 <b>Hermes - Asistente Transvega</b>\n\n¿Qué quieres hacer?\n\nSelecciona una opción:"
 
 
 def get_invoice_approval_text(summary: dict) -> str:

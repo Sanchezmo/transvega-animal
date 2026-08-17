@@ -153,11 +153,18 @@ class InvoiceIntegrationService:
                 vat_rate = line.get("vat_rate")
                 if vat_rate is None:
                     # Try to get from taxes array
-                    vat_rate = 21.0  # Default Spanish VAT
+                    vat_rate = None
                     for tax in taxes:
                         if tax.get("type", "").upper() in ("IVA", "VAT"):
-                            vat_rate = float(tax.get("rate", 21.0))
+                            vat_rate = float(tax.get("rate", 0))
                             break
+
+                    if vat_rate is None:
+                        # NO DEFAULT - raise error to require review
+                        raise ValueError(
+                            f"Line '{line.get('description')}' missing vat_rate. "
+                            f"No default VAT allowed - requires manual review."
+                        )
 
                 # Dolibarr expects tva_tx as the VAT rate percentage
                 line_data = {

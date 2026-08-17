@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI):
     try:
         await supervisor_agent.stop()
         logger.info("supervisor_agent_stopped")
-    except Exception as e:
+    except Exception:
         pass
 
     # Shutdown
