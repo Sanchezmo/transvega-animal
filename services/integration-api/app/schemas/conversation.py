@@ -41,6 +41,7 @@ class WorkflowStep(StrEnum):
     INVOICE_FAILED = "invoice_failed"
 
     # Dog Management workflow
+    DOG_INTAKE = "dog_intake"
     DOG_AWAITING_NAME = "dog_awaiting_name"
     DOG_AWAITING_BREED = "dog_awaiting_breed"
     DOG_AWAITING_SEX = "dog_awaiting_sex"
