@@ -11,11 +11,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.core.config import get_settings
 from app.core.internal_api_client import InternalAPIClient
 from app.core.telegram_client import MockTelegramClient
 from app.main import app
 
-# Set up test environment variables BEFORE importing app
+# Set up test environment variables BEFORE importing app modules that depend on settings
 os.environ.setdefault("AUDIT_DB_HOST", "localhost")
 os.environ.setdefault("AUDIT_DB_PORT", "5432")
 os.environ.setdefault("AUDIT_DB_NAME", "audit_test")
@@ -49,8 +50,6 @@ os.environ.setdefault("TELEGRAM_WEBHOOK_SECRET", "test-secret")
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-bot-token")
 
 # Clear settings cache to pick up new environment variables
-from app.core.config import get_settings
-
 get_settings.cache_clear()
 
 

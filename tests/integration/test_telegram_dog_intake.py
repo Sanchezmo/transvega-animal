@@ -899,7 +899,6 @@ class TestTelegramDogIntakeE2E:
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             fake = FakeAgent("test_agent", "dog_intake", ["dog_intake", "write"])
-            from app.dependencies.auth import get_current_agent
 
             app.dependency_overrides[get_current_agent] = lambda: fake
 
