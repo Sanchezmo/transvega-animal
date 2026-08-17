@@ -339,14 +339,21 @@ class SupervisorAgent:
 
         workflow_id = f"wf-{chat_id}-{user_id}"
 
+        # FIRST: Detect intent BEFORE creating workflow
+        is_invoice = self._detect_invoice_intent(tg_message, text)
+
         # Initialize or get existing workflow
         if workflow_id not in self.active_workflows:
+            # Set initial step based on detected intent
+            initial_step = WorkflowStep.INVOICE_RECEIVED if is_invoice else WorkflowStep.DOG_INTAKE
+            initial_status = "invoice_processing" if is_invoice else "in_progress"
+            
             self.active_workflows[workflow_id] = {
                 "workflow_id": workflow_id,
                 "chat_id": chat_id,
                 "user_id": user_id,
-                "step": WorkflowStep.DOG_INTAKE,
-                "status": "in_progress",
+                "step": initial_step,
+                "status": initial_status,
                 "created_at": datetime.utcnow().isoformat(),
                 "dog_id": None,
                 "dog_internal_id": None,
@@ -473,13 +480,19 @@ class SupervisorAgent:
                     "dog": result["dog"],
                 }
 
-            return {
-                "success": True,
-                "workflow_id": workflow_id,
-                "step": workflow["step"],
-                "message": result.get("message", "Continúa con el ingreso..."),
-                "awaiting_input": True,
-            }
+            # Handle cancellation (completed=True but no dog)
+            if result.get("completed") and not result.get("dog"):
+                # Clear the workflow and fall through to detect new intent
+                del self.active_workflows[workflow_id]
+                # Fall through to PRIORITY 3 detection
+            else:
+                return {
+                    "success": True,
+                    "workflow_id": workflow_id,
+                    "step": workflow["step"],
+                    "message": result.get("message", "Continúa con el ingreso..."),
+                    "awaiting_input": True,
+                }
 
         # =========================================================================
         # PRIORITY 3: New message - detect intent (invoice vs dog intake)
@@ -512,6 +525,29 @@ class SupervisorAgent:
                 "message": tg_message,
             }
         )
+
+        # Handle cancellation from DogIntakeAgent
+        if result.get("completed") and not result.get("dog"):
+            # Clear the workflow and detect new intent
+            del self.active_workflows[workflow_id]
+            # Fall through to PRIORITY 3 detection
+            # Check for invoice document/photo
+            has_document = "document" in tg_message
+            has_photo = "photo" in tg_message
+            if has_document or has_photo:
+                is_invoice = self._detect_invoice_intent(tg_message, text)
+                if is_invoice:
+                    return await self._start_invoice_processing(message, workflow, workflow_id, update_id)
+            if text and self._detect_invoice_intent(tg_message, text):
+                return await self._start_invoice_processing(message, workflow, workflow_id, update_id)
+            # No invoice detected, return generic message
+            return {
+                "success": True,
+                "workflow_id": workflow_id,
+                "step": WorkflowStep.DOG_INTAKE,
+                "message": "Ingreso cancelado. ¿Qué quieres hacer? Puedes registrar un perro o enviar una factura.",
+                "awaiting_input": True,
+            }
 
         return {
             "success": True,
