@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy bandit
+          pip install "ruff==0.16.3" mypy bandit
           pip install -r services/integration-api/requirements.txt
 
       - name: Run Ruff (linting)
