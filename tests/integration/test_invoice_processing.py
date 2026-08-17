@@ -99,7 +99,7 @@ async def mock_dolibarr_service():
 @pytest_asyncio.fixture
 async def mock_model_router():
     """Mock ModelRouter to simulate local Ollama responses."""
-    with patch("agents.invoice_processing.agent.create_model_router") as mock:
+    with patch("app.core.model_router.create_model_router") as mock:
         router = AsyncMock()
 
         # Mock vision (OCR) response
@@ -353,7 +353,7 @@ class TestInvoiceProcessingAgent:
     @pytest.mark.asyncio
     async def test_cloud_provider_not_called(self, invoice_agent, mock_model_router):
         """Verify cloud provider (NVIDIA) is never called for invoice processing."""
-        with patch("agents.invoice_processing.agent.create_model_router") as mock_create:
+        with patch("app.core.model_router.create_model_router") as mock_create:
             # Create a router that tracks which provider is called
             router = AsyncMock()
             router.vision.return_value = {"text": "test"}
