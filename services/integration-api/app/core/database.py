@@ -3,9 +3,15 @@ Configuración de base de datos - SQLAlchemy + asyncpg para auditoría.
 """
 
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from redis.asyncio import Redis
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.ext.asyncio import AsyncSession as SQLAlchemyAsyncSession
 
 from app.core.base import Base
 from app.core.config import get_audit_db_url, settings
@@ -20,10 +26,10 @@ NAMING_CONVENTION = {
 }
 
 # Engine asíncrono para PostgreSQL - lazy initialization
-_engine = None
+_engine: AsyncEngine | None = None
 
 
-def get_engine():
+def get_engine() -> AsyncEngine:
     """Obtener engine de base de datos (lazy initialization)."""
     global _engine
     if _engine is None:
@@ -38,11 +44,11 @@ def get_engine():
     return _engine
 
 
-def get_async_session_maker():
+def get_async_session_maker() -> async_sessionmaker[SQLAlchemyAsyncSession]:
     """Obtener factory de sesiones (lazy initialization)."""
     return async_sessionmaker(
         get_engine(),
-        class_=AsyncSession,
+        class_=SQLAlchemyAsyncSession,
         expire_on_commit=False,
         autoflush=False,
     )
@@ -50,7 +56,7 @@ def get_async_session_maker():
 
 # Compatibilidad hacia atrás - engine y async_session_maker como propiedades de módulo
 # usando __getattr__ (Python 3.7+)
-def __getattr__(name):
+def __getattr__(name: str) -> Any:
     if name == "engine":
         return get_engine()
     if name == "async_session_maker":
@@ -58,7 +64,7 @@ def __getattr__(name):
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[SQLAlchemyAsyncSession, None]:
     """Dependency para obtener sesión de base de datos."""
     async with get_async_session_maker()() as session:
         try:

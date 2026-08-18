@@ -89,7 +89,6 @@ class Settings(BaseSettings):
     AGENT_API_KEY_EXPEDIENTES: str = ""
     AGENT_API_KEY_FACTURACION: str = ""
     AGENT_API_KEY_LISTING: str = ""
-    AGENT_API_KEY_LISTING: str = ""
 
     # Aprobaciones
     APPROVALS_SERVICE_URL: str = "http://approvals:8000"

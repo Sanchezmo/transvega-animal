@@ -112,6 +112,7 @@ jobs:
 
       - name: Run unit tests
         env:
+          # Infrastructure overrides for CI (these take precedence over .env.test)
           AUDIT_DB_HOST: localhost
           AUDIT_DB_PORT: "5432"
           AUDIT_DB_NAME: audit_test
@@ -122,18 +123,9 @@ jobs:
           REDIS_PORT: "6379"
           REDIS_PASSWORD: ""
 
-          DOLIBARR_API_URL: http://mock-dolibarr:8001
-          DOLIBARR_API_KEY: test-key
-
-          JWT_SECRET_KEY: test-secret-key-for-testing-only
-          FERNET_KEY: ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg=
-
-          ENVIRONMENT: test
-          MOCK_DOLIBARR_ENABLED: "true"
-
           PYTHONPATH: .:services/integration-api
         run: |
-          pytest tests/unit -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing
+          python scripts/load_env.py .env.test python -m pytest tests/unit -v --tb=short --cov=app --cov-report=xml --cov-report=term-missing
 
   # =============================================================================
   # INTEGRATION TESTS
@@ -192,6 +184,7 @@ jobs:
 
       - name: Run integration tests
         env:
+          # Infrastructure overrides for CI (these take precedence over .env.test)
           AUDIT_DB_HOST: localhost
           AUDIT_DB_PORT: "5432"
           AUDIT_DB_NAME: audit_test
@@ -205,15 +198,9 @@ jobs:
           DOLIBARR_API_URL: http://localhost:8001
           DOLIBARR_API_KEY: mock-dolibarr-key-12345
 
-          JWT_SECRET_KEY: test-secret-key-for-testing-only
-          FERNET_KEY: ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg=
-
-          ENVIRONMENT: test
-          MOCK_DOLIBARR_ENABLED: "true"
-
           PYTHONPATH: .:services/integration-api
         run: |
-          pytest tests/integration -v --tb=short
+          python scripts/load_env.py .env.test python -m pytest tests/integration -v --tb=short
 
       - name: Stop mock-dolibarr container
         if: always()

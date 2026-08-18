@@ -35,16 +35,15 @@ def main():
         print(f"Env file not found: {env_file}", file=sys.stderr)
         sys.exit(1)
 
-    # Load env vars
-    env_vars = load_env_file(env_file)
+    # Load env vars from file
+    file_env_vars = load_env_file(env_file)
 
-    # Update os.environ
-    os.environ.update(env_vars)
+    # Merge: existing environment takes precedence over file
+    # This allows CI to override test defaults (e.g., DATABASE_URL, REDIS_URL)
+    merged_env = {**file_env_vars, **os.environ}
 
-    # Execute command
-    # Don't use shell=True, pass command as list
-    # Use current working directory (allows caller to cd first)
-    result = subprocess.run(command, env=os.environ)
+    # Execute command with merged environment
+    result = subprocess.run(command, env=merged_env)
     sys.exit(result.returncode)
 
 

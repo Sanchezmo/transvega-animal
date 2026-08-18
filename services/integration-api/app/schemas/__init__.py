@@ -3,6 +3,7 @@ Esquemas Pydantic para validación de datos de entrada/salida.
 """
 
 import datetime
+from collections.abc import Sequence
 from typing import Any, Generic, TypeVar
 from uuid import UUID
 
@@ -323,7 +324,7 @@ class InvoiceLineResponse(InvoiceLineBase):
 class InvoiceBase(BaseModel):
     thirdparty_id: int = Field(..., gt=0)
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: list[InvoiceLineCreate] = Field(..., min_length=1)
+    lines: Sequence[InvoiceLineBase] = Field(..., min_length=1)
     payment_term_id: int | None = None
     cond_reglement_id: int | None = None
     mode_reglement_id: int | None = None
@@ -385,7 +386,7 @@ class SupplierInvoiceLineResponse(SupplierInvoiceLineBase):
 class SupplierInvoiceBase(BaseModel):
     thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: list[SupplierInvoiceLineCreate] = Field(..., min_length=1)
+    lines: Sequence[SupplierInvoiceLineBase] = Field(..., min_length=1)
     payment_term_id: int | None = None
     cond_reglement_id: int | None = None
     mode_reglement_id: int | None = None
@@ -450,7 +451,7 @@ class SupplierOrderLineResponse(SupplierOrderLineBase):
 class SupplierOrderBase(BaseModel):
     thirdparty_id: int = Field(..., gt=0, description="ID del proveedor (debe ser supplier=1)")
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: list[SupplierOrderLineCreate] = Field(..., min_length=1)
+    lines: Sequence[SupplierOrderLineBase] = Field(..., min_length=1)
     payment_term_id: int | None = None
     cond_reglement_id: int | None = None
     mode_reglement_id: int | None = None
@@ -544,7 +545,7 @@ DEFAULT_EXPENSE_CATEGORIES: list[dict[str, Any]] = [
 class SupplierProposalBase(BaseModel):
     thirdparty_id: int = Field(..., gt=0)
     date: datetime.date = Field(default_factory=datetime.date.today)
-    lines: list[SupplierOrderLineCreate] = Field(..., min_length=1)
+    lines: Sequence[SupplierOrderLineBase] = Field(..., min_length=1)
     payment_term_id: int | None = None
     cond_reglement_id: int | None = None
     note_private: str | None = None
@@ -622,17 +623,22 @@ class PublicationResponse(PublicationBase):
 
     @field_validator("photos", mode="before")
     @classmethod
-    def _parse_photos(cls, v):
+    def _parse_photos(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             import json
 
             try:
-                return json.loads(v)
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed]
+                return []
             except (json.JSONDecodeError, TypeError):
                 return []
         if v is None:
             return []
-        return v
+        if isinstance(v, list):
+            return [str(item) for item in v]
+        return []
 
 
 # =============================================================================
