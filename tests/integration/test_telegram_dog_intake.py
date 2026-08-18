@@ -4,8 +4,9 @@ E2E test for Telegram → Supervisor → DogIntakeAgent → InternalAPIClient �
 This test demonstrates the complete E2E flow without contacting real Telegram.
 """
 
+import asyncio
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -778,15 +779,17 @@ class TestTelegramDogIntakeE2E:
     @pytest.mark.asyncio
     async def test_telegram_webhook_secret_verification(self):
         """Test that Telegram webhook secret is verified."""
-        from unittest.mock import MagicMock
 
         from app.core.config import get_settings
         from app.routes.telegram import _verify_webhook_secret
 
         # Test with correct secret - patch where it's used in telegram module
-        mock_settings = MagicMock()
-        mock_settings.TELEGRAM_WEBHOOK_SECRET = "test-secret"
-        mock_settings.ENVIRONMENT = "development"
+        class MockSettings:
+            def __init__(self, secret, environment):
+                self.TELEGRAM_WEBHOOK_SECRET = secret
+                self.ENVIRONMENT = environment
+
+        mock_settings = MockSettings("test-secret", "development")
         with patch("app.routes.telegram.get_settings", return_value=mock_settings):
             get_settings.cache_clear()
             assert _verify_webhook_secret("test-secret") is True
@@ -794,17 +797,13 @@ class TestTelegramDogIntakeE2E:
             assert _verify_webhook_secret(None) is False
 
         # Test without secret in development (should allow)
-        mock_settings = MagicMock()
-        mock_settings.TELEGRAM_WEBHOOK_SECRET = None
-        mock_settings.ENVIRONMENT = "development"
+        mock_settings = MockSettings(None, "development")
         with patch("app.routes.telegram.get_settings", return_value=mock_settings):
             get_settings.cache_clear()
             assert _verify_webhook_secret("any-secret") is True
 
         # Test with secret in production (should require correct secret)
-        mock_settings = MagicMock()
-        mock_settings.TELEGRAM_WEBHOOK_SECRET = "test-secret"
-        mock_settings.ENVIRONMENT = "production"
+        mock_settings = MockSettings("test-secret", "production")
         with patch("app.routes.telegram.get_settings", return_value=mock_settings):
             get_settings.cache_clear()
             assert _verify_webhook_secret("test-secret") is True
@@ -1388,14 +1387,16 @@ class TestRequiredE2E:
         C) invalid webhook secret
         → 403
         """
-        from unittest.mock import MagicMock
 
         from app.core.config import get_settings
 
         # Patch get_settings in the telegram module where it's used
-        mock_settings = MagicMock()
-        mock_settings.TELEGRAM_WEBHOOK_SECRET = "test-secret"
-        mock_settings.ENVIRONMENT = "test"
+        class MockSettings:
+            def __init__(self, secret, environment):
+                self.TELEGRAM_WEBHOOK_SECRET = secret
+                self.ENVIRONMENT = environment
+
+        mock_settings = MockSettings("test-secret", "test")
         with patch("app.routes.telegram.get_settings", return_value=mock_settings):
             get_settings.cache_clear()
             async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -1721,22 +1722,23 @@ class TestRequiredE2E:
         # Create a simple mock agent that tracks start/stop
         class MockDogIntake:
             def __init__(self):
-                self.process_message = lambda *args, **kwargs: asyncio.sleep(0, result={
-                    "success": True,
-                    "completed": False,
-                    "message": "Test",
-                    "step": "awaiting_name",
-                    "session_id": "test",
-                    "privacy_scope": "LOCAL_ONLY",
-                })
+                self.process_message = lambda *args, **kwargs: asyncio.sleep(
+                    0,
+                    result={
+                        "success": True,
+                        "completed": False,
+                        "message": "Test",
+                        "step": "awaiting_name",
+                        "session_id": "test",
+                        "privacy_scope": "LOCAL_ONLY",
+                    },
+                )
 
             async def start(self):
                 start_called.append(True)
 
             async def stop(self):
                 stop_called.append(True)
-
-        mock_dog_intake = MockDogIntake()
 
         # Also mock other agents
         class MockAgent:
