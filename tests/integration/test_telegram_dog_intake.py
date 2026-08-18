@@ -869,7 +869,7 @@ class TestTelegramDogIntakeE2E:
         # The DogIntakeAgent explicitly passes privacy_scope="LOCAL_ONLY" to router calls
 
     @pytest.mark.asyncio
-    async def test_telegram_webhook_endpoint_integration(self, mock_breed):
+    async def test_telegram_webhook_endpoint_integration(self):
         """Test the actual Telegram webhook endpoint with mocked SupervisorAgent."""
         from app.core.config import get_settings
 
