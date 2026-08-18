@@ -63,6 +63,9 @@ class SupervisorAgent:
         self.agent_name = "Supervisor Agent"
         self.status = "idle"
 
+        # Test mode: disable background tasks for testing
+        self._test_mode = config.get("TEST_MODE", False)
+
         # Internal API client
         self.api_base = config.get("INTERNAL_API_URL", "http://localhost:8000/api/v1")
         self.api_client = httpx.AsyncClient(base_url=self.api_base, timeout=60.0)
@@ -110,7 +113,7 @@ class SupervisorAgent:
             "human_approval_required_for_invoice",
         ]
 
-        # Background tasks for monitoring/cleanup
+        # Background tasks for monitoring/cleanup (disabled in test mode)
         self._monitor_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
 
@@ -130,9 +133,10 @@ class SupervisorAgent:
         await self.publishing_agent.start()
         await self.listing_agent.start()
 
-        # Start background tasks
-        self._monitor_task = asyncio.create_task(self._monitor_workflows())
-        self._cleanup_task = asyncio.create_task(self._cleanup_completed_workflows())
+        # Start background tasks (skip in test mode)
+        if not self._test_mode:
+            self._monitor_task = asyncio.create_task(self._monitor_workflows())
+            self._cleanup_task = asyncio.create_task(self._cleanup_completed_workflows())
 
         logger.info("supervisor_started")
 
@@ -141,14 +145,15 @@ class SupervisorAgent:
         logger.info("stopping_supervisor")
         self.status = "stopped"
 
-        # Cancel background tasks
-        for task in (self._monitor_task, self._cleanup_task):
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+        # Cancel background tasks (skip in test mode)
+        if not self._test_mode:
+            for task in (self._monitor_task, self._cleanup_task):
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
 
         await self.api_client.aclose()
         await self.invoice_agent.stop()

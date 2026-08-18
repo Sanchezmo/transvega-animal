@@ -46,6 +46,7 @@ def _get_agent_config():
         "AGENT_API_KEY_EXPEDIENTES": getattr(s, "AGENT_API_KEY_EXPEDIENTES", ""),
         "AGENT_API_KEY_FACTURACION": getattr(s, "AGENT_API_KEY_FACTURACION", ""),
         "AGENT_API_KEY_LISTING": getattr(s, "AGENT_API_KEY_LISTING", ""),
+        "TEST_MODE": s.ENVIRONMENT == "test",
     }
 
 
