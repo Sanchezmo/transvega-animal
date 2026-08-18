@@ -1074,11 +1074,18 @@ class TestRequiredE2E:
         ]
 
         # Mock the global supervisor_agent's dog_intake_agent to return our test responses
+        # Also mock background tasks to avoid ExceptionGroup during lifespan teardown
         from app.routes.telegram import supervisor_agent as global_supervisor_agent
 
         # Mock the dog_intake_agent's process_message to return our test responses
         original_process_message = global_supervisor_agent.dog_intake_agent.process_message
         global_supervisor_agent.dog_intake_agent.process_message = AsyncMock(side_effect=intake_responses)
+
+        # Mock background tasks to avoid ExceptionGroup during lifespan teardown
+        original_monitor = global_supervisor_agent._monitor_workflows
+        original_cleanup = global_supervisor_agent._cleanup_completed_workflows
+        global_supervisor_agent._monitor_workflows = AsyncMock()
+        global_supervisor_agent._cleanup_completed_workflows = AsyncMock()
 
         # Create test client with real ASGI transport (lifespan handles supervisor_agent)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -1197,6 +1204,9 @@ class TestRequiredE2E:
                 app.dependency_overrides.clear()
                 # Restore original process_message
                 global_supervisor_agent.dog_intake_agent.process_message = original_process_message
+                # Restore original background tasks
+                global_supervisor_agent._monitor_workflows = original_monitor
+                global_supervisor_agent._cleanup_completed_workflows = original_cleanup
 
     @pytest.mark.asyncio
     async def test_B_missing_required_field_no_post_dogs(self, mock_breed):
