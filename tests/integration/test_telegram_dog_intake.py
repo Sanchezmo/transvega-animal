@@ -1699,8 +1699,6 @@ class TestRequiredE2E:
         → DogIntake started
         → DogIntake stopped
         """
-        from unittest.mock import AsyncMock
-
         from agents.supervisor.agent import create_supervisor_agent
 
         config = {
@@ -1720,29 +1718,38 @@ class TestRequiredE2E:
         start_called = []
         stop_called = []
 
-        # Create mock agent that tracks start/stop
-        mock_dog_intake = MagicMock()
-        mock_dog_intake.start = AsyncMock(side_effect=lambda: start_called.append(True))
-        mock_dog_intake.stop = AsyncMock(side_effect=lambda: stop_called.append(True))
-        mock_dog_intake.process_message = AsyncMock(
-            return_value={
-                "success": True,
-                "completed": False,
-                "message": "Test",
-                "step": "awaiting_name",
-                "session_id": "test",
-                "privacy_scope": "LOCAL_ONLY",
-            }
-        )
+        # Create a simple mock agent that tracks start/stop
+        class MockDogIntake:
+            def __init__(self):
+                self.process_message = lambda *args, **kwargs: asyncio.sleep(0, result={
+                    "success": True,
+                    "completed": False,
+                    "message": "Test",
+                    "step": "awaiting_name",
+                    "session_id": "test",
+                    "privacy_scope": "LOCAL_ONLY",
+                })
+
+            async def start(self):
+                start_called.append(True)
+
+            async def stop(self):
+                stop_called.append(True)
+
+        mock_dog_intake = MockDogIntake()
 
         # Also mock other agents
-        for attr in ["media_pipeline_agent", "content_agent", "publishing_agent", "listing_agent"]:
-            mock_agent = MagicMock()
-            mock_agent.start = AsyncMock()
-            mock_agent.stop = AsyncMock()
-            setattr(supervisor, attr, mock_agent)
+        class MockAgent:
+            async def start(self):
+                pass
 
-        supervisor.dog_intake_agent = mock_dog_intake
+            async def stop(self):
+                pass
+
+        for attr in ["media_pipeline_agent", "content_agent", "publishing_agent", "listing_agent"]:
+            setattr(supervisor, attr, MockAgent())
+
+        supervisor.dog_intake_agent = MockDogIntake()
 
         # Start supervisor (simulates FastAPI startup)
         await supervisor.start()

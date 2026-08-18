@@ -110,6 +110,10 @@ class SupervisorAgent:
             "human_approval_required_for_invoice",
         ]
 
+        # Background tasks for monitoring/cleanup
+        self._monitor_task: asyncio.Task | None = None
+        self._cleanup_task: asyncio.Task | None = None
+
     async def start(self):
         """Start the supervisor and sub-agents."""
         logger.info("starting_supervisor", agent_id=self.agent_id)
@@ -127,8 +131,8 @@ class SupervisorAgent:
         await self.listing_agent.start()
 
         # Start background tasks
-        asyncio.create_task(self._monitor_workflows())
-        asyncio.create_task(self._cleanup_completed_workflows())
+        self._monitor_task = asyncio.create_task(self._monitor_workflows())
+        self._cleanup_task = asyncio.create_task(self._cleanup_completed_workflows())
 
         logger.info("supervisor_started")
 
@@ -136,6 +140,16 @@ class SupervisorAgent:
         """Stop the supervisor and close connections."""
         logger.info("stopping_supervisor")
         self.status = "stopped"
+
+        # Cancel background tasks
+        for task in (self._monitor_task, self._cleanup_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
         await self.api_client.aclose()
         await self.invoice_agent.stop()
         await self.media_pipeline_agent.stop()
