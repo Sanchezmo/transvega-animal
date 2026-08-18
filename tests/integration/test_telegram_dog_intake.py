@@ -331,23 +331,25 @@ class TestTelegramDogIntakeE2E:
         }
 
         with patch("agents.dog_intake.agent.create_internal_api_client", return_value=mock_api_client):
-            await agent.start()
+            try:
+                await agent.start()
 
-            # Create dog via agent
-            dog_data = {
-                "name": "Thor",
-                "breed_id": mock_breed["id"],
-                "sex": "M",
-                "birth_date": "2026-06-10",
-                "color": "Dorado",
-                "microchip": "123456789012345",
-                "purchase_price": 0.0,
-                "sale_price": 1200.0,
-            }
+                # Create dog via agent
+                dog_data = {
+                    "name": "Thor",
+                    "breed_id": mock_breed["id"],
+                    "sex": "M",
+                    "birth_date": "2026-06-10",
+                    "color": "Dorado",
+                    "microchip": "123456789012345",
+                    "purchase_price": 0.0,
+                    "sale_price": 1200.0,
+                }
 
-            result = await agent._create_dog(dog_data)
-
-            await agent.stop()
+                result = await agent._create_dog(dog_data)
+            finally:
+                # Ensure agent is stopped even if test fails
+                await agent.stop()
 
         # Verify the result
         assert result["success"] is True
