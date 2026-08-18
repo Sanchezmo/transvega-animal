@@ -371,7 +371,7 @@ class TestTelegramDogIntakeE2E:
         assert payload["microchip"] == "123456789012345"
 
     @pytest.mark.asyncio
-    async def test_full_e2e_flow_telegram_to_db(self, mock_breed):
+    async def test_full_e2e_flow_telegram_to_db(self):
         """
         Test the complete E2E flow:
         Telegram → Supervisor → DogIntakeAgent → InternalAPIClient → Integration API → DB
@@ -390,6 +390,9 @@ class TestTelegramDogIntakeE2E:
             "AGENT_API_KEY_SUPERVISOR": "test-supervisor-key",
             "AGENT_API_KEY_DOG_INTAKE": "test-dog-intake",
         }
+
+        # Use a fixed breed ID (doesn't need to exist in DB for this mocked test)
+        test_breed_id = 1
 
         supervisor = SupervisorAgent(config)
 
@@ -557,7 +560,7 @@ class TestTelegramDogIntakeE2E:
                     "id": 1,
                     "internal_id": "DOG-2026-000001",
                     "name": "Thor",
-                    "breed_id": mock_breed["id"],
+                    "breed_id": test_breed_id,
                     "sex": "M",
                     "birth_date": "2026-06-10",
                     "color": "Dorado",
@@ -575,197 +578,199 @@ class TestTelegramDogIntakeE2E:
         supervisor.dog_intake_agent.start = AsyncMock()
         supervisor.dog_intake_agent.stop = AsyncMock()
 
-        await supervisor.start()
+        try:
+            await supervisor.start()
 
-        # Simulate the complete Telegram conversation
-        chat_id = 123456789
-        user_id = 123456789
+            # Simulate the complete Telegram conversation
+            chat_id = 123456789
+            user_id = 123456789
 
-        # Step 1: /start - first need to select dog management
-        # With new architecture, /start shows menu, then callback selects workflow
-        result1 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 1,
-                "message": {
-                    "message_id": 1,
-                    "date": 1700000000,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "/start",
-                },
-            }
-        )
+            # Step 1: /start - first need to select dog management
+            # With new architecture, /start shows menu, then callback selects workflow
+            result1 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 1,
+                    "message": {
+                        "message_id": 1,
+                        "date": 1700000000,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "/start",
+                    },
+                }
+            )
 
-        assert result1["success"] is True
-        assert result1["awaiting_input"] is True
-        assert result1["workflow_type"] == "none"
-        assert result1["workflow_step"] == "awaiting_workflow_selection"
-        assert "session_id" in result1
+            assert result1["success"] is True
+            assert result1["awaiting_input"] is True
+            assert result1["workflow_type"] == "none"
+            assert result1["workflow_step"] == "awaiting_workflow_selection"
+            assert "session_id" in result1
 
-        # Now select dog management via callback (simulating button press)
-        # The user would press the "Gestionar perro" button
-        session_data["workflow_type"] = "dog_management"
-        session_data["workflow_step"] = "dog_awaiting_name"
+            # Now select dog management via callback (simulating button press)
+            # The user would press the "Gestionar perro" button
+            session_data["workflow_type"] = "dog_management"
+            session_data["workflow_step"] = "dog_awaiting_name"
 
-        result_dog_select = await supervisor.handle_telegram_message(
-            {
-                "update_id": 2,
-                "callback_query": {
-                    "id": "callback-123",
-                    "from": {"id": user_id},
-                    "message": {"chat": {"id": chat_id}},
-                    "data": "workflow:dog_management",
-                },
-            }
-        )
+            result_dog_select = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 2,
+                    "callback_query": {
+                        "id": "callback-123",
+                        "from": {"id": user_id},
+                        "message": {"chat": {"id": chat_id}},
+                        "data": "workflow:dog_management",
+                    },
+                }
+            )
 
-        assert result_dog_select["success"] is True
-        assert result_dog_select["workflow_type"] == "dog_management"
-        assert result_dog_select["workflow_step"] == "dog_awaiting_name"
-        assert mock_tc.answer_callback_query.called
+            assert result_dog_select["success"] is True
+            assert result_dog_select["workflow_type"] == "dog_management"
+            assert result_dog_select["workflow_step"] == "dog_awaiting_name"
+            assert mock_tc.answer_callback_query.called
 
-        # Step 2: Name
-        result2 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 3,
-                "message": {
-                    "message_id": 2,
-                    "date": 1700000001,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "Thor",
-                },
-            }
-        )
+            # Step 2: Name
+            result2 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 3,
+                    "message": {
+                        "message_id": 2,
+                        "date": 1700000001,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "Thor",
+                    },
+                }
+            )
 
-        assert result2["success"] is True
-        assert result2["awaiting_input"] is True
+            assert result2["success"] is True
+            assert result2["awaiting_input"] is True
 
-        # Step 3: Breed
-        result3 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 4,
-                "message": {
-                    "message_id": 3,
-                    "date": 1700000002,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "Golden Retriever",
-                },
-            }
-        )
+            # Step 3: Breed
+            result3 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 4,
+                    "message": {
+                        "message_id": 3,
+                        "date": 1700000002,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "Golden Retriever",
+                    },
+                }
+            )
 
-        assert result3["success"] is True
+            assert result3["success"] is True
 
-        # Step 4: Sex
-        result4 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 5,
-                "message": {
-                    "message_id": 4,
-                    "date": 1700000003,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "M",
-                },
-            }
-        )
+            # Step 4: Sex
+            result4 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 5,
+                    "message": {
+                        "message_id": 4,
+                        "date": 1700000003,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "M",
+                    },
+                }
+            )
 
-        assert result4["success"] is True
+            assert result4["success"] is True
 
-        # Step 5: Birth date
-        result5 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 6,
-                "message": {
-                    "message_id": 5,
-                    "date": 1700000004,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "2026-06-10",
-                },
-            }
-        )
+            # Step 5: Birth date
+            result5 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 6,
+                    "message": {
+                        "message_id": 5,
+                        "date": 1700000004,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "2026-06-10",
+                    },
+                }
+            )
 
-        assert result5["success"] is True
+            assert result5["success"] is True
 
-        # Step 6: Color
-        result6 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 7,
-                "message": {
-                    "message_id": 6,
-                    "date": 1700000005,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "Dorado",
-                },
-            }
-        )
+            # Step 6: Color
+            result6 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 7,
+                    "message": {
+                        "message_id": 6,
+                        "date": 1700000005,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "Dorado",
+                    },
+                }
+            )
 
-        assert result6["success"] is True
+            assert result6["success"] is True
 
-        # Step 7: Microchip
-        result7 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 8,
-                "message": {
-                    "message_id": 7,
-                    "date": 1700000006,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "123456789012345",
-                },
-            }
-        )
+            # Step 7: Microchip
+            result7 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 8,
+                    "message": {
+                        "message_id": 7,
+                        "date": 1700000006,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "123456789012345",
+                    },
+                }
+            )
 
-        assert result7["success"] is True
+            assert result7["success"] is True
 
-        # Step 8: Purchase price (0)
-        result8 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 9,
-                "message": {
-                    "message_id": 8,
-                    "date": 1700000007,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "0",
-                },
-            }
-        )
+            # Step 8: Purchase price (0)
+            result8 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 9,
+                    "message": {
+                        "message_id": 8,
+                        "date": 1700000007,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "0",
+                    },
+                }
+            )
 
-        assert result8["success"] is True
+            assert result8["success"] is True
 
-        # Step 9: Sale price - dog creation completes
-        result9 = await supervisor.handle_telegram_message(
-            {
-                "update_id": 10,
-                "message": {
-                    "message_id": 9,
-                    "date": 1700000008,
-                    "chat": {"id": chat_id, "type": "private"},
-                    "from": {"id": user_id, "is_bot": False},
-                    "text": "1200",
-                },
-            }
-        )
+            # Step 9: Sale price - dog creation completes
+            result9 = await supervisor.handle_telegram_message(
+                {
+                    "update_id": 10,
+                    "message": {
+                        "message_id": 9,
+                        "date": 1700000008,
+                        "chat": {"id": chat_id, "type": "private"},
+                        "from": {"id": user_id, "is_bot": False},
+                        "text": "1200",
+                    },
+                }
+            )
 
-        assert result9["success"] is True
-        assert result9["completed"] is True  # Dog intake completed
-        assert "dog" in result9
-        assert result9["dog"]["internal_id"] == "DOG-2026-000001"
-        assert result9["dog"]["name"] == "Thor"
-        assert result9["dog"]["sale_price"] == 1200.0
+            assert result9["success"] is True
+            assert result9["completed"] is True  # Dog intake completed
+            assert "dog" in result9
+            assert result9["dog"]["internal_id"] == "DOG-2026-000001"
+            assert result9["dog"]["name"] == "Thor"
+            assert result9["dog"]["sale_price"] == 1200.0
 
-        # Verify workflow advanced to media_ingest (dog_awaiting_media in current implementation)
-        workflow_id = f"wf-{chat_id}-{user_id}"
-        workflow = supervisor.active_workflows.get(workflow_id)
-        assert workflow is not None
-        assert workflow["dog_internal_id"] == "DOG-2026-000001"
-        assert workflow["step"] in ("media_ingest", "dog_awaiting_media")
+            # Verify workflow advanced to media_ingest (dog_awaiting_media in current implementation)
+            workflow_id = f"wf-{chat_id}-{user_id}"
+            workflow = supervisor.active_workflows.get(workflow_id)
+            assert workflow is not None
+            assert workflow["dog_internal_id"] == "DOG-2026-000001"
+            assert workflow["step"] in ("media_ingest", "dog_awaiting_media")
 
-        await supervisor.stop()
+        finally:
+            await supervisor.stop()
 
         # Verify DogIntakeAgent was called for each step (9 times: start + 8 inputs)
         assert supervisor.dog_intake_agent.process_message.call_count == 9
