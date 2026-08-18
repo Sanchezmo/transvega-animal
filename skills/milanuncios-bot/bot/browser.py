@@ -2,20 +2,17 @@
 """
 Playwright browser lifecycle with stealth configuration.
 """
+
 import asyncio
 import random
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Optional
 
-from playwright.async_api import Browser, BrowserContext, Page, async_playwright
-
-from bot.config import settings
 from bot.metrics import (
     record_browser_start,
-    record_browser_error,
 )
-
+from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 # User agents for rotation
 USER_AGENTS = [
@@ -40,15 +37,15 @@ class BrowserManager:
     def __init__(self, headless: bool = True):
         self.headless = headless
         self._playwright = None
-        self._browser: Optional[Browser] = None
-        self._context: Optional[BrowserContext] = None
+        self._browser: Browser | None = None
+        self._context: BrowserContext | None = None
 
     async def start(self) -> None:
         """Launch browser with stealth configuration."""
         start_time = time.time()
-        
+
         self._playwright = await async_playwright().start()
-        
+
         # Launch with anti-detection settings
         self._browser = await self._playwright.chromium.launch(
             headless=self.headless,
@@ -66,7 +63,7 @@ class BrowserManager:
                 "--disable-popup-blocking",
             ],
         )
-        
+
         record_browser_start(time.time() - start_time)
 
     async def new_context(self) -> BrowserContext:
@@ -109,7 +106,7 @@ class BrowserManager:
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
             });
-            
+
             // Overwrite chrome property
             window.chrome = {
                 runtime: {},
@@ -117,7 +114,7 @@ class BrowserManager:
                 csi: function() {},
                 app: {}
             };
-            
+
             // Overwrite permissions
             const originalQuery = window.navigator.permissions.query;
             window.navigator.permissions.query = (parameters) => (
@@ -125,10 +122,10 @@ class BrowserManager:
                     Promise.resolve({ state: Notification.permission }) :
                     originalQuery(parameters)
             );
-            
+
             // Hide automation flags
             delete navigator.__proto__.webdriver;
-            
+
             // Mock plugins
             Object.defineProperty(navigator, 'plugins', {
                 get: () => [1, 2, 3, 4, 5].map(() => ({
@@ -137,17 +134,17 @@ class BrowserManager:
                     description: 'Portable Document Format'
                 }))
             });
-            
+
             // Mock languages
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['es-ES', 'es', 'en-US', 'en']
             });
-            
+
             // Mock hardware concurrency
             Object.defineProperty(navigator, 'hardwareConcurrency', {
                 get: () => 8
             });
-            
+
             // Mock device memory
             Object.defineProperty(navigator, 'deviceMemory', {
                 get: () => 8
@@ -162,16 +159,13 @@ class BrowserManager:
             await self.new_context()
 
         page = await self._context.new_page()
-        
+
         # Add random mouse movement
-        await page.mouse.move(
-            random.randint(100, 500),
-            random.randint(100, 500)
-        )
-        
+        await page.mouse.move(random.randint(100, 500), random.randint(100, 500))
+
         # Random initial scroll
         await page.evaluate(f"window.scrollTo(0, {random.randint(0, 300)})")
-        
+
         return page
 
     async def close(self) -> None:
@@ -206,7 +200,7 @@ class HumanBehavior:
         """Type text with human-like speed variations."""
         await page.click(selector)
         await HumanBehavior.random_delay(0.1, 0.3)
-        
+
         for char in text:
             await page.keyboard.type(char)
             await asyncio.sleep(random.uniform(0.05, 0.15))
@@ -220,7 +214,7 @@ class HumanBehavior:
             # Move to random point within element
             target_x = box["x"] + box["width"] * random.uniform(0.3, 0.7)
             target_y = box["y"] + box["height"] * random.uniform(0.3, 0.7)
-            
+
             await page.mouse.move(target_x, target_y, steps=random.randint(10, 20))
             await HumanBehavior.random_delay(0.1, 0.3)
             await page.mouse.click(target_x, target_y)
@@ -250,15 +244,15 @@ class HumanBehavior:
         recaptcha = await page.query_selector("iframe[src*='recaptcha']")
         if recaptcha:
             return False  # Need external solver
-        
+
         # Check for hCaptcha
         hcaptcha = await page.query_selector("iframe[src*='hcaptcha']")
         if hcaptcha:
             return False
-        
+
         # Check for text-based CAPTCHA
         captcha_text = await page.query_selector("text=/captcha|CAPTCHA|verificacion/i")
         if captcha_text:
             return False
-        
+
         return True  # No CAPTCHA detected

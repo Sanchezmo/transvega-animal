@@ -118,6 +118,64 @@ test-invoice: ## Tests de facturas de proveedor (unit + integration)
 	@echo "$(GREEN)Ejecutando tests de facturas...$(NC)"
 	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/integration/test_invoice_processing.py -v --tb=short
 
+# =============================================================================
+# TESTING LOCAL (infraestructura de test aislada - docker-compose.test.yml)
+# =============================================================================
+
+COMPOSE_TEST = docker-compose.test.yml
+ENV_TEST = .env.test
+TEST_PROJECT = transvega-test
+
+COMPOSE_TEST_CMD = docker compose -p $(TEST_PROJECT) -f $(COMPOSE_TEST) --env-file $(ENV_TEST)
+
+LOAD_ENV = python $(PWD)/scripts/load_env.py $(PWD)/$(ENV_TEST)
+
+test-services-up: ## Levantar servicios de test (PostgreSQL + Redis) en puertos 55432/56379
+	@echo "$(GREEN)Levantando servicios de test...$(NC)"
+	@$(COMPOSE_TEST_CMD) up -d
+	@echo "$(GREEN)Esperando health checks...$(NC)"
+	@for i in $$(seq 1 30); do \
+		if $(COMPOSE_TEST_CMD) ps postgres-test | grep -q "healthy"; then break; fi; \
+		if [ $$i -eq 30 ]; then echo "$(RED)Timeout PostgreSQL$(NC)"; exit 1; fi; \
+		sleep 1; \
+	done
+	@for i in $$(seq 1 15); do \
+		if $(COMPOSE_TEST_CMD) ps redis-test | grep -q "healthy"; then break; fi; \
+		if [ $$i -eq 15 ]; then echo "$(RED)Timeout Redis$(NC)"; exit 1; fi; \
+		sleep 1; \
+	done
+	@echo "$(GREEN)✓ Servicios de test listos$(NC)"
+
+test-services-down: ## Bajar servicios de test
+	@echo "$(YELLOW)Bajando servicios de test...$(NC)"
+	@$(COMPOSE_TEST_CMD) down -v
+
+test-services-logs: ## Ver logs de servicios de test
+	@$(COMPOSE_TEST_CMD) logs -f --tail=100
+
+test-db-init: ## Inicializar schema en base de datos de test
+	@echo "$(GREEN)Inicializando schema de test...$(NC)"
+	@cd services/integration-api && $(LOAD_ENV) python -c 'import asyncio, sys; sys.path.insert(0, "."); from app.core.database import init_db; asyncio.run(init_db()); print("✓ Schema inicializado")'
+
+test-integration-local: test-services-up test-db-init ## Tests de integración local (levanta BD, init schema, ejecuta pytest)
+	@echo "$(GREEN)Ejecutando tests de integración local...$(NC)"
+	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/integration -v --tb=short --asyncio-mode=auto
+	@echo "$(GREEN)Tests de integración: PASARON$(NC)"
+
+test-integration-local-keep: test-services-up test-db-init ## Tests de integración local (mantiene servicios arriba)
+	@echo "$(GREEN)Ejecutando tests de integración local (servicios se mantienen)...$(NC)"
+	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/integration -v --tb=short --asyncio-mode=auto
+	@echo "$(GREEN)Tests de integración: PASARON$(NC)"
+	@echo "$(YELLOW)Servicios de test siguen corriendo. Usa 'make test-services-down' para bajarlos.$(NC)"
+
+test-all-local: test-services-up test-db-init ## Tests unitarios + integración local
+	@echo "$(GREEN)Ejecutando tests unitarios...$(NC)"
+	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/unit -v --tb=short --asyncio-mode=auto
+	@echo "$(GREEN)Ejecutando tests de integración...$(NC)"
+	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/integration -v --tb=short --asyncio-mode=auto
+	@make test-services-down
+	@echo "$(GREEN)Todos los tests: PASARON$(NC)"
+
 test-cov: ## Tests con cobertura
 	@docker compose -f $(COMPOSE_FILE) exec -T api pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
 

@@ -2,8 +2,6 @@
 """
 Telegram notifications for critical events.
 """
-import os
-from typing import Optional
 
 from bot.config import settings
 
@@ -15,12 +13,13 @@ async def send_alert(message: str, parse_mode: str = "Markdown") -> bool:
     """
     token = settings.TELEGRAM_BOT_TOKEN
     chat_id = settings.TELEGRAM_CHAT_ID
-    
+
     if not token or not chat_id:
         return False
-    
+
     try:
         import aiohttp
+
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {
             "chat_id": chat_id,
@@ -28,7 +27,7 @@ async def send_alert(message: str, parse_mode: str = "Markdown") -> bool:
             "parse_mode": parse_mode,
             "disable_web_page_preview": True,
         }
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload, timeout=10) as resp:
                 return resp.status == 200

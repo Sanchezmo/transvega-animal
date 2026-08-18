@@ -27,6 +27,7 @@ AGENT_ROLES = {
     "tax": ["tax", "read", "write"],
     "marketing": ["marketing", "read", "write"],
     "technical": ["technical", "read", "write"],
+    "dog_intake": ["dog_intake", "read", "write"],
     "expedientes": ["expedientes", "read", "write"],
     "facturacion": ["facturacion", "read", "write"],
 }
@@ -52,6 +53,9 @@ class AgentIdentity:
 
     def has_any_role(self, roles: list[str]) -> bool:
         return any(r in self.roles for r in roles) or "admin" in self.roles
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
 
 
 async def get_current_agent(

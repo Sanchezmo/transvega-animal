@@ -208,14 +208,15 @@ class SupervisorAgent:
             workflow = self.active_workflows.get(workflow_id)
             if workflow and workflow.get("step") in [
                 WorkflowStep.DOG_INTAKE,
-                WorkflowStep.MEDIA_INGEST,
-                WorkflowStep.MEDIA_ANALYZE,
-                WorkflowStep.MEDIA_SELECT,
-                WorkflowStep.CONTENT_GENERATE,
-                WorkflowStep.CONTENT_APPROVE,
-                WorkflowStep.PUBLISH_DRAFT,
-                WorkflowStep.PUBLISH_APPROVE,
-                WorkflowStep.PUBLISH_EXECUTE,
+                WorkflowStep.DOG_AWAITING_NAME,
+                WorkflowStep.DOG_AWAITING_BREED,
+                WorkflowStep.DOG_AWAITING_SEX,
+                WorkflowStep.DOG_AWAITING_BIRTH_DATE,
+                WorkflowStep.DOG_AWAITING_COLOR,
+                WorkflowStep.DOG_AWAITING_MICROCHIP,
+                WorkflowStep.DOG_AWAITING_PURCHASE_PRICE,
+                WorkflowStep.DOG_AWAITING_SALE_PRICE,
+                WorkflowStep.DOG_AWAITING_MEDIA,
             ]:
                 return True
         return False
@@ -2109,12 +2110,14 @@ class SupervisorAgent:
         text = "🐶 <b>Gestión de perros</b>\n\n¿Qué quieres hacer?"
         await self._send_telegram_message(chat_id, text, reply_markup=keyboard)
 
+        workflow_id = session.get("session_id", f"wf-{chat_id}-{user_id}")
         return {
             "success": True,
             "workflow_type": WorkflowType.DOG_MANAGEMENT,
             "workflow_step": WorkflowStep.DOG_AWAITING_NAME,
             "message": text,
             "awaiting_input": True,
+            "workflow_id": workflow_id,
         }
 
     async def _handle_dog_workflow(
@@ -2151,7 +2154,7 @@ class SupervisorAgent:
         if result.get("completed") and result.get("dog"):
             workflow["dog_id"] = result["dog"]["id"]
             workflow["dog_internal_id"] = result["dog"]["internal_id"]
-            workflow["step"] = WorkflowStep.MEDIA_INGEST
+            workflow["step"] = WorkflowStep.DOG_AWAITING_MEDIA
             workflow["status"] = "awaiting_media"
 
             await self.conversation_manager.update_session(
@@ -2168,6 +2171,7 @@ class SupervisorAgent:
                 "step": workflow["step"],
                 "message": text,
                 "dog": result["dog"],
+                "completed": True,
                 "awaiting_input": True,
             }
 

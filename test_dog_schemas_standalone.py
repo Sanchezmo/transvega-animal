@@ -2,27 +2,29 @@
 """
 Standalone test for dog schemas.
 """
-import sys
+
 import os
+import sys
 from datetime import date, datetime
 
 # Add the integration-api app to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'services', 'integration-api', 'app'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "services", "integration-api", "app"))
 
 from schemas import (
-    DogCreate,
-    DogResponse,
     BreedCreate,
     BreedResponse,
-    LitterCreate,
-    LitterResponse,
-    DogMediaCreate,
-    DogMediaResponse,
+    DogCreate,
     DogHealthCreate,
     DogHealthResponse,
+    DogMediaCreate,
+    DogMediaResponse,
+    DogResponse,
     DogStatusHistoryCreate,
     DogStatusHistoryResponse,
+    LitterCreate,
+    LitterResponse,
 )
+
 
 def test_breed_schema():
     data = {
@@ -42,15 +44,18 @@ def test_breed_schema():
     assert breed.average_weight_kg == 30.0
 
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+        }
+    )
     response = BreedResponse(**response_data)
     assert response.id == 1
     assert response.name == "Labrador Retriever"
     print("��✓ Breed schema test passed")
+
 
 def test_litter_schema():
     data = {
@@ -67,15 +72,18 @@ def test_litter_schema():
     assert litter.size == 6
 
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+        }
+    )
     response = LitterResponse(**response_data)
     assert response.id == 1
     assert response.breed_id == 1
     print("��✓ Litter schema test passed")
+
 
 def test_dog_schema():
     data = {
@@ -101,19 +109,22 @@ def test_dog_schema():
     assert dog.sex == "M"
 
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "internal_id": "DOG-2026-00001",
-        "created_at": datetime.now(),
-        "updated_at": datetime.now(),
-        "created_by": 1,
-        "updated_by": 1,
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "internal_id": "DOG-2026-00001",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "created_by": 1,
+            "updated_by": 1,
+        }
+    )
     response = DogResponse(**response_data)
     assert response.id == 1
     assert response.internal_id == "DOG-2026-00001"
     assert response.name == "Buddy"
     print("��✓ Dog schema test passed")
+
 
 def test_dog_media_schema():
     data = {
@@ -133,14 +144,17 @@ def test_dog_media_schema():
     assert media.media_type == "photo"
 
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "created_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "created_at": datetime.now(),
+        }
+    )
     response = DogMediaResponse(**response_data)
     assert response.id == 1
     assert response.dog_id == 1
     print("��✓ DogMedia schema test passed")
+
 
 def test_dog_health_schema():
     data = {
@@ -161,16 +175,19 @@ def test_dog_health_schema():
     assert health.temperature_celsius == 38.5
 
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "dog_id": 1,
-        "recorded_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "dog_id": 1,
+            "recorded_at": datetime.now(),
+        }
+    )
     response = DogHealthResponse(**response_data)
     assert response.id == 1
     assert response.dog_id == 1
     assert response.weight_kg == 5.5
     print("��✓ DogHealth schema test passed")
+
 
 def test_dog_status_history_schema():
     data = {
@@ -183,16 +200,19 @@ def test_dog_status_history_schema():
     assert history.changed_by == 1
 
     response_data = data.copy()
-    response_data.update({
-        "id": 1,
-        "dog_id": 1,
-        "changed_at": datetime.now(),
-    })
+    response_data.update(
+        {
+            "id": 1,
+            "dog_id": 1,
+            "changed_at": datetime.now(),
+        }
+    )
     response = DogStatusHistoryResponse(**response_data)
     assert response.id == 1
     assert response.dog_id == 1
     assert response.status == "available"
     print("��✓ DogStatusHistory schema test passed")
+
 
 if __name__ == "__main__":
     test_breed_schema()

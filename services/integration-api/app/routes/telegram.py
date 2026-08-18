@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from agents.supervisor.agent import create_supervisor_agent
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.telegram_client import TelegramAPIError, TelegramClient
 from app.dependencies.rate_limit import (
     save_telegram_idempotency_result,
@@ -19,18 +19,38 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["telegram"])
 
-# Initialize the supervisor agent with full config
-agent_config = {
-    "INTERNAL_API_URL": getattr(settings, "INTERNAL_API_URL", "http://localhost:8000"),
-    "OLLAMA_ENDPOINT": getattr(settings, "OLLAMA_ENDPOINT", "http://ollama:11434"),
-    "OLLAMA_MODEL": getattr(settings, "OLLAMA_MODEL", "llama3.1:8b"),
-    "OLLAMA_VISION_MODEL": getattr(settings, "OLLAMA_VISION_MODEL", "llava:7b"),
-    "NVIDIA_API_KEY": getattr(settings, "NVIDIA_API_KEY", ""),
-    "NVIDIA_BASE_URL": getattr(settings, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-    "AGENT_API_KEY_SUPERVISOR": getattr(settings, "AGENT_API_KEY_SUPERVISOR", ""),
-    "AGENT_API_KEY_DOG_INTAKE": getattr(settings, "AGENT_API_KEY_DOG_INTAKE", ""),
-}
-supervisor_agent = create_supervisor_agent(config=agent_config)
+
+def _get_agent_config():
+    """Get agent config with fresh settings."""
+    s = get_settings()
+    return {
+        "INTERNAL_API_URL": getattr(s, "INTERNAL_API_URL", "http://localhost:8000/api/v1"),
+        "OLLAMA_ENDPOINT": getattr(s, "OLLAMA_ENDPOINT", "http://ollama:11434"),
+        "OLLAMA_MODEL": getattr(s, "OLLAMA_MODEL", "llama3.1:8b"),
+        "OLLAMA_VISION_MODEL": getattr(s, "OLLAMA_VISION_MODEL", "llava:7b"),
+        "NVIDIA_API_KEY": getattr(s, "NVIDIA_API_KEY", ""),
+        "NVIDIA_BASE_URL": getattr(s, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+        "AGENT_API_KEY_SUPERVISOR": getattr(s, "AGENT_API_KEY_SUPERVISOR", ""),
+        "AGENT_API_KEY_DOG_INTAKE": getattr(s, "AGENT_API_KEY_DOG_INTAKE", ""),
+        "AGENT_API_KEY_PRODUCTS": getattr(s, "AGENT_API_KEY_PRODUCTS", ""),
+        "AGENT_API_KEY_COMPLIANCE": getattr(s, "AGENT_API_KEY_COMPLIANCE", ""),
+        "AGENT_API_KEY_PUBLISHING": getattr(s, "AGENT_API_KEY_PUBLISHING", ""),
+        "AGENT_API_KEY_SALES": getattr(s, "AGENT_API_KEY_SALES", ""),
+        "AGENT_API_KEY_INVOICING": getattr(s, "AGENT_API_KEY_INVOICING", ""),
+        "AGENT_API_KEY_PURCHASES": getattr(s, "AGENT_API_KEY_PURCHASES", ""),
+        "AGENT_API_KEY_BANKING": getattr(s, "AGENT_API_KEY_BANKING", ""),
+        "AGENT_API_KEY_ACCOUNTING": getattr(s, "AGENT_API_KEY_ACCOUNTING", ""),
+        "AGENT_API_KEY_TAX": getattr(s, "AGENT_API_KEY_TAX", ""),
+        "AGENT_API_KEY_MARKETING": getattr(s, "AGENT_API_KEY_MARKETING", ""),
+        "AGENT_API_KEY_TECHNICAL": getattr(s, "AGENT_API_KEY_TECHNICAL", ""),
+        "AGENT_API_KEY_EXPEDIENTES": getattr(s, "AGENT_API_KEY_EXPEDIENTES", ""),
+        "AGENT_API_KEY_FACTURACION": getattr(s, "AGENT_API_KEY_FACTURACION", ""),
+        "AGENT_API_KEY_LISTING": getattr(s, "AGENT_API_KEY_LISTING", ""),
+    }
+
+
+# Initialize the supervisor agent with fresh config
+supervisor_agent = create_supervisor_agent(config=_get_agent_config())
 
 # Initialize Telegram client for outbound messages
 telegram_client = TelegramClient()
@@ -38,10 +58,11 @@ telegram_client = TelegramClient()
 
 def _verify_webhook_secret(provided: str | None) -> bool:
     """Verify the Telegram webhook secret using constant-time comparison."""
-    expected = settings.TELEGRAM_WEBHOOK_SECRET
+    s = get_settings()
+    expected = s.TELEGRAM_WEBHOOK_SECRET
     if not expected:
         # In development, allow missing secret; in production, require it
-        return settings.ENVIRONMENT == "development"
+        return s.ENVIRONMENT == "development"
     if not provided:
         return False
     return hmac.compare_digest(provided, expected)

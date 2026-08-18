@@ -1,10 +1,12 @@
 """
 Dashboard Service - Main FastAPI application.
 """
+
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-import structlog
 
 logger = structlog.get_logger()
 
@@ -92,4 +94,5 @@ async def metrics():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=3000, reload=True)

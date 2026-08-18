@@ -1,9 +1,11 @@
 """
 Tareas Celery para publicaciones/anuncios.
 """
-from celery import shared_task
+
 from datetime import datetime
+
 import structlog
+from celery import shared_task
 
 logger = structlog.get_logger()
 
@@ -12,11 +14,11 @@ logger = structlog.get_logger()
 def publicar_en_plataforma(self, publicacion_id: int, plataforma: str):
     """
     Publicar anuncio en plataforma externa.
-    
+
     Plataformas soportadas: milanuncios, facebook, instagram, tiktok, web
     """
     logger.info("publicando_anuncio", publicacion_id=publicacion_id, plataforma=plataforma)
-    
+
     try:
         # TODO: Implementar publicación real
         # 1. Obtener datos de la publicación
@@ -24,13 +26,13 @@ def publicar_en_plataforma(self, publicacion_id: int, plataforma: str):
         # 4. Subir fotos/video
         # 5. Publicar via API o automatización
         # 6. Guardar external_id y URL
-        
+
         logger.info(
             "publicacion_exitosa",
             publicacion_id=publicacion_id,
             plataforma=plataforma,
         )
-        
+
         return {
             "success": True,
             "publicacion_id": publicacion_id,
@@ -39,7 +41,7 @@ def publicar_en_plataforma(self, publicacion_id: int, plataforma: str):
             "url": f"https://{plataforma}.com/anuncio/{publicacion_id}",
             "published_at": datetime.now().isoformat(),
         }
-        
+
     except Exception as exc:
         logger.error(
             "error_publicando",
@@ -56,7 +58,7 @@ def renovar_publicacion(self, publicacion_id: int):
     Renovar anuncio en plataforma (ej. Milanuncios cada 7 días).
     """
     logger.info("renovando_publicacion", publicacion_id=publicacion_id)
-    
+
     try:
         # TODO: Implementar renovación
         return {"success": True, "publicacion_id": publicacion_id}
@@ -70,7 +72,7 @@ def retirar_publicacion(self, publicacion_id: int, motivo: str = "Vendido"):
     Retirar anuncio de plataforma.
     """
     logger.info("retirando_publicacion", publicacion_id=publicacion_id, motivo=motivo)
-    
+
     try:
         # TODO: Implementar retirada
         return {"success": True, "publicacion_id": publicacion_id}
@@ -82,18 +84,18 @@ def retirar_publicacion(self, publicacion_id: int, motivo: str = "Vendido"):
 def generar_contenido_publicacion(self, expediente_id: int, plataforma: str):
     """
     Generar título, descripción y seleccionar fotos para una plataforma.
-    
+
     Adapta el contenido según las reglas de cada plataforma.
     """
     logger.info("generando_contenido", expediente_id=expediente_id, plataforma=plataforma)
-    
+
     try:
         # TODO: Implementar generación de contenido
         # 1. Obtener datos del expediente
         # 2. Aplicar plantilla por plataforma
         # 3. Seleccionar mejores fotos
         # 4. Generar hashtags
-        
+
         templates = {
             "milanuncios": {
                 "title_max": 70,
@@ -121,11 +123,11 @@ def generar_contenido_publicacion(self, expediente_id: int, plataforma: str):
                 "hashtags": False,
             },
         }
-        
+
         template = templates.get(plataforma, templates["web"])
-        
+
         logger.info("contenido_generado", expediente_id=expediente_id, plataforma=plataforma)
-        
+
         return {
             "success": True,
             "expediente_id": expediente_id,
@@ -136,7 +138,7 @@ def generar_contenido_publicacion(self, expediente_id: int, plataforma: str):
             "photos": ["foto1.jpg", "foto2.jpg"],
             "template_used": template,
         }
-        
+
     except Exception as exc:
         logger.error(
             "error_generando_contenido",

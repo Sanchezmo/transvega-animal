@@ -1,6 +1,8 @@
 """Health check endpoints."""
-from fastapi import APIRouter
+
 from datetime import datetime
+
+from fastapi import APIRouter
 
 router = APIRouter()
 

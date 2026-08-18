@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     AGENT_API_KEY_DOG_INTAKE: str = ""
     AGENT_API_KEY_EXPEDIENTES: str = ""
     AGENT_API_KEY_FACTURACION: str = ""
+    AGENT_API_KEY_LISTING: str = ""
+    AGENT_API_KEY_LISTING: str = ""
 
     # Aprobaciones
     APPROVALS_SERVICE_URL: str = "http://approvals:8000"
@@ -158,6 +160,7 @@ class Settings(BaseSettings):
             "dog_intake": self.AGENT_API_KEY_DOG_INTAKE,
             "expedientes": self.AGENT_API_KEY_EXPEDIENTES,
             "facturacion": self.AGENT_API_KEY_FACTURACION,
+            "listing": self.AGENT_API_KEY_LISTING,
         }
 
     @property

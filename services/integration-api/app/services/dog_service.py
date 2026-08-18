@@ -156,7 +156,20 @@ class DogService:
         )
         self.db.add(status_history)
         await self.db.flush()
-        await self.db.refresh(dog)
+        await self.db.flush()
+        # Eagerly load relationships for response serialization
+        result = await self.db.execute(
+            select(Dog)
+            .options(
+                selectinload(Dog.breed),
+                selectinload(Dog.litter),
+                selectinload(Dog.media),
+                selectinload(Dog.health_records),
+                selectinload(Dog.status_history),
+            )
+            .where(Dog.id == dog.id)
+        )
+        dog = result.scalar_one()
         return dog
 
     async def get_dog(self, dog_id: int) -> Dog | None:

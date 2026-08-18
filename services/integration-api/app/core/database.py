@@ -9,14 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.base import Base
 from app.core.config import get_audit_db_url, settings
-from app.models import (  # noqa: F401
-    Breed,
-    Dog,
-    DogHealth,
-    DogMedia,
-    DogStatusHistory,
-    Litter,
-)
 
 # Convención de nombres para constraints (mejora migraciones Alembic)
 NAMING_CONVENTION = {
@@ -27,35 +19,48 @@ NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 
-# metadata = MetaData(naming_convention=NAMING_CONVENTION)
+# Engine asíncrono para PostgreSQL - lazy initialization
+_engine = None
 
 
-# class Base(DeclarativeBase):
-#     metadata = metadata
+def get_engine():
+    """Obtener engine de base de datos (lazy initialization)."""
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine(
+            get_audit_db_url(settings).replace("postgresql://", "postgresql+asyncpg://"),
+            echo=settings.ENVIRONMENT == "development",
+            pool_size=10,
+            max_overflow=20,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+        )
+    return _engine
 
 
-# Engine asíncrono para PostgreSQL
-engine = create_async_engine(
-    get_audit_db_url(settings).replace("postgresql://", "postgresql+asyncpg://"),
-    echo=settings.ENVIRONMENT == "development",
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True,
-    pool_recycle=3600,
-)
+def get_async_session_maker():
+    """Obtener factory de sesiones (lazy initialization)."""
+    return async_sessionmaker(
+        get_engine(),
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
 
-# Session factory
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-)
+
+# Compatibilidad hacia atrás - engine y async_session_maker como propiedades de módulo
+# usando __getattr__ (Python 3.7+)
+def __getattr__(name):
+    if name == "engine":
+        return get_engine()
+    if name == "async_session_maker":
+        return get_async_session_maker()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency para obtener sesión de base de datos."""
-    async with async_session_maker() as session:
+    async with get_async_session_maker()() as session:
         try:
             yield session
             await session.commit()
@@ -94,10 +99,13 @@ async def get_redis_client() -> Redis:
 
 async def init_db() -> None:
     """Inicializar base de datos - crear tablas."""
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:
     """Cerrar conexiones."""
-    await engine.dispose()
+    global _engine
+    if _engine is not None:
+        await _engine.dispose()
+        _engine = None

@@ -1,20 +1,21 @@
 """Authentication dependencies for approval service."""
-from typing import Optional
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from app.core.config import settings
 
 security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """Get current user from API key (development version)."""
     # In development, allow any token or no token
     if settings.ENVIRONMENT == "development":
         return {"id": "dev-user", "role": "admin"}
-    
+
     # Production: validate API key
     if not credentials:
         raise HTTPException(
@@ -22,7 +23,7 @@ async def get_current_user(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # TODO: Validate API key against database
     # For now, accept any token in production too
     return {"id": "api-user", "role": "user"}

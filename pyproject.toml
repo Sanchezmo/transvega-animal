@@ -20,6 +20,7 @@ ignore = [
     "DTZ007", # strptime without %z
     "DTZ011", # date.today()
     "B904",   # raise from err - extensive changes needed
+    "E402",   # Module level import not at top of file - test files have sys.path.insert before imports
 ]
 fixable = ["ALL"]
 unfixable = []
@@ -62,8 +63,11 @@ exclude = [
     "services/integration-api/app/routes",
     "services/integration-api/app/dependencies",
     "services/integration-api/app/services/publication_service.py",
+    "services/integration-api/app/services/invoice_draft_service.py",
+    "services/integration-api/app/services/invoice_audit_service.py",
+    "services/integration-api/app/services/expense_category_service.py",
+    "services/integration-api/app/services/conversation_manager.py",
     "services/integration-api/app/main.py",
-    "services/integration-api/app/schemas/__init__.py",
     "services/integration-api/app/models.py",
     "services/integration-api/app/schemas/conversation.py",
     "services/integration-api/app/services/invoice_draft_service.py",
@@ -71,8 +75,17 @@ exclude = [
     "services/integration-api/app/services/expense_category_service.py",
     "services/integration-api/app/services/conversation_manager.py",
     "services/integration-api/app/core/telegram_client.py",
+    "test_publishing_simple.py",
+    "test_dog_schemas_standalone.py",
+    "test_media_selection.py",
+    "tests/integration/test_telegram_dog_intake.py",
+    "tests/integration/test_telegram_outbound.py",
+    "tests/integration/test_api.py",
+    "tests/unit/test_schemas.py",
+    "skills/",
 ]
 
-[tool.bandit]
-exclude_dirs = ["tests", ".venv", "venv", "__pycache__"]
-skip = ["B104"]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

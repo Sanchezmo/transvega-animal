@@ -174,7 +174,7 @@ async def create_dog(
     """
     created_dog = await dog_service.create_dog(
         dog_data=dog,
-        created_by=agent.get("agent_id", 1),
+        created_by=1,  # TODO: extract numeric agent ID from agent identity,
     )
     return created_dog
 
@@ -194,7 +194,7 @@ async def update_dog(
     updated_dog = await dog_service.update_dog(
         dog_id=dog_id,
         dog_data=dog,
-        updated_by=agent.get("agent_id", 1),
+        updated_by=1,  # TODO: extract numeric agent ID from agent identity,
     )
     return updated_dog
 

@@ -1,12 +1,14 @@
 """Approval Service - Main FastAPI application."""
+
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Depends, HTTPException, status
+
+import structlog
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import structlog
 
 from app.core.config import settings
-from app.core.database import init_db, close_db
+from app.core.database import close_db, init_db
 from app.routes import approvals, health
 
 logger = structlog.get_logger()
@@ -19,9 +21,9 @@ async def lifespan(app: FastAPI):
     logger.info("starting_approval_service", version=settings.APP_VERSION, environment=settings.ENVIRONMENT)
     await init_db()
     logger.info("approval_service_started")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("shutting_down_approval_service")
     await close_db()
@@ -82,4 +84,5 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="0.0.0.0", port=8002, reload=True)

@@ -45,55 +45,6 @@ class MockRedis:
         return True
 
 
-@pytest.fixture(scope="session")
-def test_settings():
-    """Provide test settings with API keys."""
-    import os
-
-    from app.core.config import get_settings
-
-    # Clear the cache first
-    get_settings.cache_clear()
-
-    # Set all required environment variables for testing
-    os.environ["AUDIT_DB_HOST"] = "localhost"
-    os.environ["AUDIT_DB_PORT"] = "5432"
-    os.environ["AUDIT_DB_NAME"] = "audit_test"
-    os.environ["AUDIT_DB_USER"] = "audit"
-    os.environ["AUDIT_DB_PASSWORD"] = "test"
-    os.environ["REDIS_HOST"] = "localhost"
-    os.environ["REDIS_PORT"] = "6379"
-    os.environ["REDIS_PASSWORD"] = ""
-    os.environ["DOLIBARR_API_URL"] = "http://localhost:8001"
-    os.environ["DOLIBARR_API_KEY"] = "test-key"
-    os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
-    os.environ["FERNET_KEY"] = "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg="
-    os.environ["ENVIRONMENT"] = "test"
-    os.environ["MOCK_DOLIBARR_ENABLED"] = "true"
-    os.environ["AGENT_API_KEY_SUPERVISOR"] = "tvsk_test_supervisor"
-    os.environ["AGENT_API_KEY_PRODUCTS"] = "tvsk_test_products"
-    os.environ["AGENT_API_KEY_COMPLIANCE"] = "tvsk_test_compliance"
-    os.environ["AGENT_API_KEY_PUBLISHING"] = "tvsk_test_publishing"
-    os.environ["AGENT_API_KEY_SALES"] = "tvsk_test_sales"
-    os.environ["AGENT_API_KEY_INVOICING"] = "tvsk_test_invoicing"
-    os.environ["AGENT_API_KEY_PURCHASES"] = "tvsk_test_purchases"
-    os.environ["AGENT_API_KEY_BANKING"] = "tvsk_test_banking"
-    os.environ["AGENT_API_KEY_ACCOUNTING"] = "tvsk_test_accounting"
-    os.environ["AGENT_API_KEY_TAX"] = "tvsk_test_tax"
-    os.environ["AGENT_API_KEY_MARKETING"] = "tvsk_test_marketing"
-    os.environ["AGENT_API_KEY_TECHNICAL"] = "tvsk_test_technical"
-    os.environ["AGENT_API_KEY_DOG_INTAKE"] = "tvsk_test_dog_intake"
-    os.environ["AGENT_API_KEY_EXPEDIENTES"] = "tvsk_test_expedientes"
-    os.environ["AGENT_API_KEY_FACTURACION"] = "tvsk_test_facturacion"
-    return get_settings()
-
-
-@pytest.fixture(scope="session")
-def api_keys(test_settings):
-    """Provide API keys for testing."""
-    return test_settings.get_agent_api_keys()
-
-
 def create_mock_dolibarr_request():
     """Create a mock _request method for DolibarrClient."""
     import time

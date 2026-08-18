@@ -156,6 +156,7 @@ class InvoiceProcessingAgent:
         """Check if required Ollama models are available."""
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(f"{self.ollama_endpoint}/api/tags")
                 if resp.status_code != 200:
@@ -171,6 +172,7 @@ class InvoiceProcessingAgent:
     async def _wait_for_models_ready(self, max_wait: int = 300) -> bool:
         """Wait for Ollama models to be ready, with timeout."""
         import asyncio
+
         for _ in range(max_wait):
             if await self._check_ollama_models_ready():
                 return True
@@ -449,8 +451,9 @@ Return ONLY the JSON, no extra text.
 
         # Check Ollama models are ready before processing
         if not await self._check_ollama_models_ready():
-            self.logger.warning("ollama_models_not_ready_waiting",
-                              required_models=[self.ollama_model, self.ollama_vision_model])
+            self.logger.warning(
+                "ollama_models_not_ready_waiting", required_models=[self.ollama_model, self.ollama_vision_model]
+            )
             if not await self._wait_for_models_ready(max_wait=120):
                 return {
                     "success": False,

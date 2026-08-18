@@ -1,0 +1,54 @@
+version: '3.8'
+
+name: transvega-test
+
+services:
+  # =============================================================================
+  # POSTGRESQL DE TEST (aislado, puerto 55432 para no colisionar con dev/staging)
+  # =============================================================================
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: transvega-postgres-test
+    environment:
+      POSTGRES_DB: transvega_test
+      POSTGRES_USER: transvega_test
+      POSTGRES_PASSWORD: transvega_test
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transvega_test -d transvega_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - test-network
+    tmpfs:
+      - /var/lib/postgresql/data
+    restart: "no"
+
+  # =============================================================================
+  # REDIS DE TEST (aislado, puerto 56379)
+  # =============================================================================
+  redis-test:
+    image: redis:7-alpine
+    container_name: transvega-redis-test
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+    networks:
+      - test-network
+    tmpfs:
+      - /data
+    restart: "no"
+
+networks:
+  test-network:
+    driver: bridge

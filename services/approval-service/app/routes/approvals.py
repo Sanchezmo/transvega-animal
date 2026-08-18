@@ -1,20 +1,18 @@
 """Approval routes."""
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from typing import List, Optional
-from uuid import UUID
-from datetime import datetime
 
-from app.schemas import (
-    ApprovalRequestCreate,
-    ApprovalDecision,
-    ApprovalResponse,
-    ApprovalListResponse,
-    ApprovalStats,
-)
-from app.dependencies.auth import get_current_user, require_approver, require_admin
-from app.database import get_db
-from app.service import ApprovalService
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.dependencies.auth import get_current_user, require_approver
+from app.schemas import (
+    ApprovalListResponse,
+    ApprovalRequestCreate,
+    ApprovalResponse,
+)
+from app.service import ApprovalService
 
 router = APIRouter(prefix="/api/v1/approvals", tags=["Approvals"])
 
@@ -42,15 +40,15 @@ async def create_approval(
 async def list_approvals(
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    status: Optional[str] = Query(None),
-    user_id: Optional[str] = Query(None),
+    status: str | None = Query(None),
+    user_id: str | None = Query(None),
     current_user: dict = Depends(get_current_user),
     service: ApprovalService = Depends(get_approval_service),
 ):
     """List approval requests (admin/supervisor view)."""
     if current_user["role"] not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="Not authorized to view all approvals")
-    
+
     try:
         result = await service.get_pending(limit=limit, offset=offset)
         return {"items": result, "total": len(result), "limit": limit, "offset": offset}
@@ -99,11 +97,11 @@ async def get_approval(
         result = await service.get_approval(str(approval_id))
         if not result:
             raise HTTPException(status_code=404, detail="Approval not found")
-        
+
         # Check permissions
         if current_user["role"] not in ["admin", "supervisor"] and result.get("requested_by") != current_user["id"]:
             raise HTTPException(status_code=403, detail="Not authorized to view this approval")
-        
+
         return result
     except HTTPException:
         raise
@@ -121,7 +119,7 @@ async def approve(
     """Approve a pending request."""
     if not decision.get("approved", True):
         raise HTTPException(status_code=400, detail="Use reject endpoint for rejection")
-    
+
     try:
         result = await service.approve(approval_id, decision, current_user["id"])
         if not result.get("success"):
@@ -141,7 +139,7 @@ async def reject(
     """Reject a pending request."""
     if not decision.get("comment"):
         raise HTTPException(status_code=400, detail="Comment required when rejecting")
-    
+
     try:
         result = await service.reject(approval_id, decision, current_user["id"])
         if not result.get("success"):

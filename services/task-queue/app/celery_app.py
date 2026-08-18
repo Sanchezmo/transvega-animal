@@ -1,11 +1,13 @@
 """
 Configuración de Celery para el worker.
 """
-from celery import Celery
 
 # Import settings directly from the integration-api config
 import sys
-sys.path.insert(0, '/app')
+
+from celery import Celery
+
+sys.path.insert(0, "/app")
 
 from app.core.config import get_settings
 
@@ -30,19 +32,15 @@ celery_app.conf.update(
     task_serializer=settings.CELERY_TASK_SERIALIZER,
     result_serializer=settings.CELERY_RESULT_SERIALIZER,
     accept_content=settings.CELERY_ACCEPT_CONTENT,
-    
     # Zona horaria
     timezone=settings.CELERY_TIMEZONE,
     enable_utc=True,
-    
     # Tracking
     task_track_started=settings.CELERY_TASK_TRACK_STARTED,
     task_time_limit=settings.CELERY_TASK_TIME_LIMIT,
-    
     # Worker
     worker_prefetch_multiplier=settings.CELERY_WORKER_PREFETCH_MULTIPLIER,
     worker_concurrency=settings.CELERY_WORKER_CONCURRENCY,
-    
     # Colas
     task_default_queue=settings.CELERY_TASK_DEFAULT_QUEUE,
     task_queues={
@@ -58,15 +56,12 @@ celery_app.conf.update(
         "app.tasks.facturacion.*": {"queue": "high"},
         "app.tasks.notificaciones.*": {"queue": "notifications"},
     },
-    
     # Reintentos
     task_acks_late=True,
     task_reject_on_worker_lost=True,
-    
     # Resultados
     result_expires=3600,
     result_compression="gzip",
-    
     # Beat schedule (tareas periódicas)
     beat_schedule={
         "verificar-expedientes-vencidos": {

@@ -1,12 +1,13 @@
 """Pydantic schemas for approval service."""
+
 from datetime import datetime
-from typing import Optional, Dict, Any, List
-from uuid import UUID
+from enum import StrEnum
+from typing import Any
+
 from pydantic import BaseModel, Field
-from enum import Enum
 
 
-class ApprovalAction(str, Enum):
+class ApprovalAction(StrEnum):
     PUBLISH = "publish"
     PRICE_CHANGE = "price_change"
     DISCOUNT = "discount"
@@ -25,21 +26,21 @@ class ApprovalAction(str, Enum):
     BULK_EXPORT = "bulk_export"
 
 
-class ApprovalPriority(str, Enum):
+class ApprovalPriority(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
 
 
-class ApprovalRiskLevel(str, Enum):
+class ApprovalRiskLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
 
 
-class ApprovalStatus(str, Enum):
+class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -52,67 +53,67 @@ class ApprovalStatus(str, Enum):
 
 class ApprovalRequestCreate(BaseModel):
     model_config = {"use_enum_values": True}
-    
+
     action: ApprovalAction
-    action_type: Optional[str] = None
+    action_type: str | None = None
     reason: str = Field(..., min_length=10, max_length=5000)
-    current_state: Dict[str, Any] = Field(default_factory=dict)
-    proposed_state: Dict[str, Any] = Field(default_factory=dict)
+    current_state: dict[str, Any] = Field(default_factory=dict)
+    proposed_state: dict[str, Any] = Field(default_factory=dict)
     risk_level: ApprovalRiskLevel = ApprovalRiskLevel.MEDIUM
-    risk_factors: List[str] = Field(default_factory=list)
-    evidence_urls: List[str] = Field(default_factory=list)
-    evidence_notes: Optional[str] = None
+    risk_factors: list[str] = Field(default_factory=list)
+    evidence_urls: list[str] = Field(default_factory=list)
+    evidence_notes: str | None = None
     requested_by: str
     expires_at: datetime
     priority: ApprovalPriority = ApprovalPriority.MEDIUM
-    idempotency_key: Optional[str] = None
-    task_id: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str | None = None
+    task_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApprovalDecision(BaseModel):
     approved: bool = True
-    comment: Optional[str] = None
+    comment: str | None = None
 
 
 class ApprovalResponse(BaseModel):
     model_config = {"use_enum_values": True}
-    
+
     id: str
     action: ApprovalAction
-    action_type: Optional[str] = None
+    action_type: str | None = None
     reason: str
-    current_state: Dict[str, Any] = {}
-    proposed_state: Dict[str, Any] = {}
+    current_state: dict[str, Any] = {}
+    proposed_state: dict[str, Any] = {}
     risk_level: ApprovalRiskLevel
-    risk_factors: List[str] = []
-    evidence_urls: List[str] = []
-    evidence_notes: Optional[str] = None
+    risk_factors: list[str] = []
+    evidence_urls: list[str] = []
+    evidence_notes: str | None = None
     requested_by: str
     requested_at: datetime
     expires_at: datetime
-    auto_approve_at: Optional[datetime] = None
-    auto_reject_at: Optional[datetime] = None
+    auto_approve_at: datetime | None = None
+    auto_reject_at: datetime | None = None
     status: ApprovalStatus
     priority: ApprovalPriority
     notifications_sent: bool = False
-    approved_by: Optional[str] = None
-    approved_at: Optional[datetime] = None
-    approval_comment: Optional[str] = None
-    rejection_reason: Optional[str] = None
-    execution_result: Optional[Dict[str, Any]] = None
-    execution_error: Optional[str] = None
-    idempotency_key: Optional[str] = None
-    task_id: Optional[str] = None
-    metadata: Dict[str, Any] = {}
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    approval_comment: str | None = None
+    rejection_reason: str | None = None
+    execution_result: dict[str, Any] | None = None
+    execution_error: str | None = None
+    idempotency_key: str | None = None
+    task_id: str | None = None
+    metadata: dict[str, Any] = {}
     created_at: datetime
-    updated_at: Optional[datetime] = None
-    comments: List[Dict[str, Any]] = []
-    history: List[Dict[str, Any]] = []
+    updated_at: datetime | None = None
+    comments: list[dict[str, Any]] = []
+    history: list[dict[str, Any]] = []
 
 
 class ApprovalListResponse(BaseModel):
-    items: List[ApprovalResponse]
+    items: list[ApprovalResponse]
     total: int
     limit: int
     offset: int
@@ -134,12 +135,12 @@ class ApprovalCommentResponse(BaseModel):
 class ApprovalHistoryResponse(BaseModel):
     id: str
     approval_id: str
-    from_status: Optional[str] = None
+    from_status: str | None = None
     to_status: str
     changed_by: str
-    comment: Optional[str] = None
+    comment: str | None = None
     created_at: datetime
-    metadata: Dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
 
 
 class ApprovalStats(BaseModel):
@@ -147,5 +148,5 @@ class ApprovalStats(BaseModel):
     approved_today: int = 0
     rejected_today: int = 0
     avg_resolution_hours: float = 0
-    by_action: Dict[str, int] = {}
-    by_priority: Dict[str, int] = {}
+    by_action: dict[str, int] = {}
+    by_priority: dict[str, int] = {}
