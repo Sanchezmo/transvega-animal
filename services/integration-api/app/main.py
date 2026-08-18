@@ -90,15 +90,6 @@ async def lifespan(app: FastAPI):
     try:
         await supervisor_agent.stop()
         logger.info("supervisor_agent_stopped")
-    except Exception:
-        pass
-
-    # Shutdown
-    logger.info("shutting_down_application")
-    # Stop Supervisor agent
-    try:
-        await supervisor_agent.stop()
-        logger.info("supervisor_agent_stopped")
     except Exception as e:
         logger.warning("supervisor_agent_stop_failed", error=str(e))
     await close_db()

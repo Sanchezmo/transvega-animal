@@ -943,8 +943,6 @@ class TestRequiredE2E:
         # Import and start the supervisor agent (lifespan doesn't run with ASGITransport)
         from unittest.mock import AsyncMock
 
-        from app.routes.telegram import supervisor_agent
-
         # Mock the DogIntakeAgent's process_message to simulate the intake flow
         # This avoids needing the real API client
         intake_responses = [
@@ -1075,8 +1073,12 @@ class TestRequiredE2E:
             },
         ]
 
-        # Set up the mock to return responses in sequence
-        supervisor_agent.dog_intake_agent.process_message = AsyncMock(side_effect=intake_responses)
+        # Mock the global supervisor_agent's dog_intake_agent to return our test responses
+        from app.routes.telegram import supervisor_agent as global_supervisor_agent
+
+        # Mock the dog_intake_agent's process_message to return our test responses
+        original_process_message = global_supervisor_agent.dog_intake_agent.process_message
+        global_supervisor_agent.dog_intake_agent.process_message = AsyncMock(side_effect=intake_responses)
 
         # Create test client with real ASGI transport (lifespan handles supervisor_agent)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -1193,6 +1195,8 @@ class TestRequiredE2E:
 
             finally:
                 app.dependency_overrides.clear()
+                # Restore original process_message
+                global_supervisor_agent.dog_intake_agent.process_message = original_process_message
 
     @pytest.mark.asyncio
     async def test_B_missing_required_field_no_post_dogs(self, mock_breed):
