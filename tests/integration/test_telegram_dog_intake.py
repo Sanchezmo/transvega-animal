@@ -299,7 +299,7 @@ class TestTelegramDogIntakeE2E:
         assert call_args["text"] == ""
 
     @pytest.mark.asyncio
-    async def test_dog_intake_agent_creates_dog_via_api(self, mock_breed):
+    async def test_dog_intake_agent_creates_dog_via_api(self):
         """Test DogIntakeAgent creates a dog via InternalAPIClient → Integration API."""
 
         config = {
@@ -315,15 +315,18 @@ class TestTelegramDogIntakeE2E:
         mock_api_client.start = AsyncMock()
         mock_api_client.close = AsyncMock()
 
+        # Use a fixed breed ID (doesn't need to exist in DB for this mocked test)
+        test_breed_id = 1
+
         # Mock breed lookup
-        mock_api_client.get.return_value = {"data": [{"id": mock_breed["id"], "name": "Golden Retriever"}]}
+        mock_api_client.get.return_value = {"data": [{"id": test_breed_id, "name": "Golden Retriever"}]}
 
         # Mock dog creation response
         mock_api_client.post.return_value = {
             "id": 1,
             "internal_id": "DOG-2026-000001",
             "name": "Thor",
-            "breed_id": mock_breed["id"],
+            "breed_id": test_breed_id,
             "sex": "M",
             "birth_date": "2026-06-10",
             "color": "Dorado",
@@ -337,7 +340,7 @@ class TestTelegramDogIntakeE2E:
                 # Create dog via agent
                 dog_data = {
                     "name": "Thor",
-                    "breed_id": mock_breed["id"],
+                    "breed_id": test_breed_id,
                     "sex": "M",
                     "birth_date": "2026-06-10",
                     "color": "Dorado",
@@ -363,7 +366,7 @@ class TestTelegramDogIntakeE2E:
         assert call_args[0][0] in ("/dogs/", "/dogs")
         payload = call_args[1]["json"]
         assert payload["name"] == "Thor"
-        assert payload["breed_id"] == mock_breed["id"]
+        assert payload["breed_id"] == 1
         assert payload["sex"] == "M"
         assert payload["microchip"] == "123456789012345"
 
