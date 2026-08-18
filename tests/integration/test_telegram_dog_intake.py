@@ -921,7 +921,7 @@ class TestTelegramDogIntakeE2E:
                 mock_supervisor.handle_telegram_message.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_api_create_dog_direct(self, mock_breed):
+    async def test_api_create_dog_direct(self):
         """Test direct API call to create dog (verifies the API layer works)."""
         import random
         import uuid
@@ -944,9 +944,12 @@ class TestTelegramDogIntakeE2E:
             # Ensure it starts with 9 to avoid conflicts with existing test data
             unique_microchip = "9" + unique_microchip[1:]
 
+            # Use a fixed breed ID (doesn't need to exist in DB for this test since it's mocked)
+            test_breed_id = 1
+
             dog_payload = {
                 "name": "Thor",
-                "breed_id": mock_breed["id"],
+                "breed_id": test_breed_id,
                 "sex": "M",
                 "birth_date": "2026-06-10",
                 "color": "Dorado",
