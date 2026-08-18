@@ -1077,12 +1077,8 @@ class TestRequiredE2E:
 
         # Set up the mock to return responses in sequence
         supervisor_agent.dog_intake_agent.process_message = AsyncMock(side_effect=intake_responses)
-        supervisor_agent.dog_intake_agent.start = AsyncMock()
-        supervisor_agent.dog_intake_agent.stop = AsyncMock()
 
-        await supervisor_agent.start()
-
-        # Create test client with real ASGI transport
+        # Create test client with real ASGI transport (lifespan handles supervisor_agent)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             # Override auth to use dog_intake agent with write permission
             from app.dependencies.auth import get_current_agent
@@ -1197,7 +1193,6 @@ class TestRequiredE2E:
 
             finally:
                 app.dependency_overrides.clear()
-                await supervisor_agent.stop()
 
     @pytest.mark.asyncio
     async def test_B_missing_required_field_no_post_dogs(self, mock_breed):
