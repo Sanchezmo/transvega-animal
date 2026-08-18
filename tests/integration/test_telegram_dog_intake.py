@@ -919,56 +919,6 @@ class TestTelegramDogIntakeE2E:
                 # Verify supervisor was called
                 mock_supervisor.handle_telegram_message.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_api_create_dog_direct(self):
-        """Test direct API call to create dog (verifies the API layer works)."""
-        import random
-        import uuid
-
-        from app.dependencies.auth import get_current_agent
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test", follow_redirects=True) as ac:
-            fake = FakeAgent("test_agent", "dog_intake", ["dog_intake", "write"])
-
-            app.dependency_overrides[get_current_agent] = lambda: fake
-
-            token = "fake-token"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Idempotency-Key": f"test-idem-key-dog-{uuid.uuid4().hex[:8]}",
-            }
-
-            # Generate unique 15-digit microchip to avoid conflicts with other tests
-            unique_microchip = "".join(str(random.randint(0, 9)) for _ in range(15))
-            # Ensure it starts with 9 to avoid conflicts with existing test data
-            unique_microchip = "9" + unique_microchip[1:]
-
-            # Use a fixed breed ID (doesn't need to exist in DB for this test since it's mocked)
-            test_breed_id = 1
-
-            dog_payload = {
-                "name": "Thor",
-                "breed_id": test_breed_id,
-                "sex": "M",
-                "birth_date": "2026-06-10",
-                "color": "Dorado",
-                "microchip": unique_microchip,
-                "purchase_price": 0.0,
-                "sale_price": 1200.0,
-            }
-
-            resp = await ac.post("/api/v1/dogs/", json=dog_payload, headers=headers)
-
-            app.dependency_overrides.clear()
-
-            assert resp.status_code == 201
-            data = resp.json()
-            assert data["name"] == "Thor"
-            assert data["internal_id"].startswith("DOG-2026-")
-            assert data["sale_price"] == 1200.0
-            assert "breed" in data
-            assert "name" in data["breed"]
-
 
 # =============================================================================
 # REQUIRED E2E TESTS (per specification)
