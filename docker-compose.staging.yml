@@ -110,6 +110,12 @@ services:
     networks:
       - transvega-backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/health || curl -sf http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -464,12 +470,15 @@ services:
     container_name: transvega-ollama-staging
     volumes:
       - ollama-data-staging:/root/.ollama
+      - ./scripts/ollama-entrypoint.sh:/usr/local/bin/ollama-entrypoint.sh:ro
     ports:
       - "127.0.0.1:11435:11434"
     environment:
-      - OLLAMA_MODELS=${OLLAMA_MODELS}
+      - OLLAMA_MODELS=${OLLAMA_MODELS:-llama3.1-10t,llava-10t}
+      - OLLAMA_CUSTOM_MODELS=${OLLAMA_CUSTOM_MODELS:-llama3.1-10t:llama3.1:8b,num_thread=10,num_ctx=4096,temperature=0.2;llava-10t:llava:7b,num_thread=10,num_ctx=4096,temperature=0.2}
       - OLLAMA_NUM_PARALLEL=4
       - OLLAMA_NUM_THREAD=10
+    entrypoint: ["/usr/local/bin/ollama-entrypoint.sh"]
     networks:
       - transvega-backend
     restart: unless-stopped
@@ -478,7 +487,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 120s
     deploy:
       resources:
         limits:

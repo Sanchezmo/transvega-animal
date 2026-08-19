@@ -1341,6 +1341,12 @@ class SupervisorAgent:
         try:
             from app.core.telegram_client import create_telegram_client
 
+            # Convert Pydantic InlineKeyboardMarkup to dict for JSON serialization
+            if reply_markup is not None and hasattr(reply_markup, "model_dump"):
+                reply_markup = reply_markup.model_dump(exclude_none=True)
+            elif reply_markup is not None and hasattr(reply_markup, "dict"):
+                reply_markup = reply_markup.dict(exclude_none=True)
+
             client = await create_telegram_client()
             await client.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
             await client.close()

@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     DOLIBARR_API_KEY: str
     DOLIBARR_TIMEOUT: int = 30
 
+    # Ollama (Local LLM for invoice processing - LOCAL_ONLY)
+    OLLAMA_ENDPOINT: str = "http://ollama:11434"
+    OLLAMA_MODEL: str = "llama3.1-10t:latest"
+    OLLAMA_VISION_MODEL: str = "llava-10t:latest"
+
     # JWT
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
