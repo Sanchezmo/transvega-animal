@@ -108,7 +108,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r services/integration-api/requirements.txt
-          pip install pytest pytest-asyncio pytest-cov pytest-mock httpx
+          pip install pytest "pytest-asyncio>=0.23.0" pytest-cov pytest-mock httpx
 
       - name: Run unit tests
         env:
@@ -180,7 +180,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r services/integration-api/requirements.txt
-          pip install pytest pytest-asyncio pytest-cov httpx
+          pip install pytest "pytest-asyncio>=0.23.0" pytest-cov httpx
 
       - name: Run integration tests
         env:
