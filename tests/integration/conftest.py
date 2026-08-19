@@ -177,6 +177,32 @@ def mock_agent():
     }
 
 
+@pytest.fixture
+def api_keys():
+    """API keys for testing from settings."""
+    from app.core.config import get_settings
+
+    s = get_settings()
+    return {
+        "supervisor": s.AGENT_API_KEY_SUPERVISOR,
+        "products": s.AGENT_API_KEY_PRODUCTS,
+        "compliance": s.AGENT_API_KEY_COMPLIANCE,
+        "publishing": s.AGENT_API_KEY_PUBLISHING,
+        "sales": s.AGENT_API_KEY_SALES,
+        "invoicing": s.AGENT_API_KEY_INVOICING,
+        "purchases": s.AGENT_API_KEY_PURCHASES,
+        "banking": s.AGENT_API_KEY_BANKING,
+        "accounting": s.AGENT_API_KEY_ACCOUNTING,
+        "tax": s.AGENT_API_KEY_TAX,
+        "marketing": s.AGENT_API_KEY_MARKETING,
+        "technical": s.AGENT_API_KEY_TECHNICAL,
+        "dog_intake": s.AGENT_API_KEY_DOG_INTAKE,
+        "expedientes": s.AGENT_API_KEY_EXPEDIENTES,
+        "facturacion": s.AGENT_API_KEY_FACTURACION,
+        "listing": s.AGENT_API_KEY_LISTING,
+    }
+
+
 # Configuración de pytest
 def pytest_configure(config):
     """Configuración global de pytest."""
