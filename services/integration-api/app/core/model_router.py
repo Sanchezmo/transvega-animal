@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -31,12 +32,16 @@ class OllamaProvider(ModelProvider):
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(base_url=self.endpoint, timeout=60.0)
+            self._client = httpx.AsyncClient(base_url=self.endpoint, timeout=120.0)
         return self._client
 
     async def generate(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         client = await self._get_client()
+        # Extract format parameter if provided (for structured output)
+        format_schema = kwargs.pop("format", None)
         payload = {"model": self.model, "prompt": prompt, "stream": False, **kwargs}
+        if format_schema:
+            payload["format"] = json.loads(format_schema) if isinstance(format_schema, str) else format_schema
         resp = await client.post("/api/generate", json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -79,7 +84,7 @@ class NvidiaProvider(ModelProvider):
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=60.0,
+                timeout=120.0,
             )
         return self._client
 

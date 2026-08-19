@@ -37,6 +37,7 @@ logger = structlog.get_logger()
 # Pydantic model for invoice (simple)
 try:
     from pydantic import BaseModel, Field, validator
+    from pydantic.json_schema import model_json_schema
 except ImportError:
     # If pydantic not installed, we'll skip validation for now; but we assume it's present.
     pass
@@ -357,7 +358,8 @@ Return ONLY the JSON, no extra text.
                 privacy_scope="LOCAL_ONLY",
                 prompt=prompt,
                 temperature=0.1,
-                max_tokens=1024,
+                max_tokens=128,
+                stop=["}"],
             )
             json_str = result.get("text", "").strip()
             # Try to find JSON substring
