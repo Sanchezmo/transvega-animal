@@ -200,8 +200,7 @@ jobs:
 
           PYTHONPATH: .:services/integration-api
         run: |
-          export ENVIRONMENT=test
-          python scripts/load_env.py .env.test python -m pytest tests/integration -v --tb=short
+          ENVIRONMENT=test python scripts/load_env.py .env.test python -m pytest tests/integration -v --tb=short
 
       - name: Stop mock-dolibarr container
         if: always()
