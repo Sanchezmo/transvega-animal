@@ -7,6 +7,7 @@ import hashlib
 import mimetypes
 import os
 import shutil
+import time
 from typing import Any
 
 import structlog
@@ -37,7 +38,6 @@ logger = structlog.get_logger()
 # Pydantic model for invoice (simple)
 try:
     from pydantic import BaseModel, Field, validator
-    from pydantic.json_schema import model_json_schema
 except ImportError:
     # If pydantic not installed, we'll skip validation for now; but we assume it's present.
     pass
@@ -87,6 +87,10 @@ class InvoiceData(BaseModel):
         return v
 
 
+# JSON Schema for native structured output
+INVOICE_JSON_SCHEMA = InvoiceData.model_json_schema()
+
+
 class InvoiceProcessingAgent:
     """
     Agent that processes supplier invoices (PDF or image) through:
@@ -110,15 +114,19 @@ class InvoiceProcessingAgent:
         ollama_model = config.get("OLLAMA_MODEL", "transvega-local")
         nvidia_api_key = config.get("NVIDIA_API_KEY", "")
         nvidia_base_url = config.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+        # Invoice-specific timeout (default 600s = 10 minutes)
+        ollama_invoice_timeout = config.get("OLLAMA_INVOICE_TIMEOUT", 600.0)
         self.router = create_model_router(
             ollama_endpoint=ollama_endpoint,
             ollama_model=ollama_model,
             ollama_vision_model=ollama_model,  # Same model for vision (multimodal)
             nvidia_api_key=nvidia_api_key,
             nvidia_base_url=nvidia_base_url,
+            ollama_default_timeout=ollama_invoice_timeout,
         )
         self.ollama_model = ollama_model
         self.ollama_endpoint = ollama_endpoint
+        self.ollama_invoice_timeout = ollama_invoice_timeout
 
         # Storage roots - separate directories for each stage
         self.invoice_storage_root = config.get("INVOICE_STORAGE_ROOT", "/data/invoices")
@@ -321,6 +329,7 @@ class InvoiceProcessingAgent:
                 privacy_scope="LOCAL_ONLY",
                 image_path=image_path,
                 prompt="Extract all text from this image. Return only the raw text, no extra commentary.",
+                request_timeout=self.ollama_invoice_timeout,
             )
 
             # Clean up temp file if we created one
@@ -336,44 +345,102 @@ class InvoiceProcessingAgent:
             return ""
 
     async def _extract_structured_data(self, raw_text: str) -> dict[str, Any]:
-        """Send raw text to Ollama (local) to produce structured JSON per InvoiceData schema."""
+        """Send raw text to Ollama (local) to produce structured JSON per InvoiceData schema.
+
+        Uses native structured output with JSON Schema, think=false, and generous token budget.
+        """
         prompt = f"""
-Extract the supplier invoice information from the following text and return a JSON object matching this schema:
-{{
-  "supplier": {{ "name": "", "tax_id": "" }},
-  "invoice": {{ "number": "", "date": "" }},
-  "lines": [ {{ "description": "", "quantity": 0, "unit_price": 0.0, "total": 0.0 }}, ... ],
-  "taxes": [ {{ "type": "", "rate": 0.0, "amount": 0.0 }}, ... ],
-  "subtotal": 0.0,
-  "tax_total": 0.0,
-  "total": 0.0,
-  "currency": "EUR"
-}}
+Extract the supplier invoice information from the following text and return a JSON object matching the schema.
 Text:
 \"\"\"{raw_text}\"\"\"
 Return ONLY the JSON, no extra text.
 """
+        start_time = time.perf_counter()
         try:
+            # Use native structured output with JSON Schema
+            # Ollama parameters: format (JSON Schema), think=false, num_predict (max tokens)
             result = await self.router.generate(
                 privacy_scope="LOCAL_ONLY",
                 prompt=prompt,
                 temperature=0.1,
-                max_tokens=128,
-                stop=["}"],
+                num_predict=2048,
+                think=False,
+                format=INVOICE_JSON_SCHEMA,
+                request_timeout=self.ollama_invoice_timeout,
             )
+            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
             json_str = result.get("text", "").strip()
-            # Try to find JSON substring
-            import json
+            raw_response = result.get("raw", {})
 
-            # Find first { and last }
-            start = json_str.find("{")
-            end = json_str.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                json_str = json_str[start : end + 1]
+            # Extract Ollama metrics if available
+            total_duration = raw_response.get("total_duration")
+            load_duration = raw_response.get("load_duration")
+            prompt_eval_count = raw_response.get("prompt_eval_count")
+            prompt_eval_duration = raw_response.get("prompt_eval_duration")
+            eval_count = raw_response.get("eval_count")
+            eval_duration = raw_response.get("eval_duration")
+
+            # Log diagnostic information (safe - no PII)
+            self.logger.info(
+                "structured_extraction_completed",
+                elapsed_ms=elapsed_ms,
+                response_length=len(json_str),
+                model=self.ollama_model,
+                input_type="text",
+                processing_strategy="native_structured_output",
+                native_text_chars=len(raw_text),
+                requested_max_tokens=2048,
+                actual_generated_tokens=eval_count,
+                total_duration_ns=total_duration,
+                load_duration_ns=load_duration,
+                prompt_eval_count=prompt_eval_count,
+                prompt_eval_duration_ns=prompt_eval_duration,
+                eval_duration_ns=eval_duration,
+                # Calculate tokens per second if available
+                prompt_tokens_per_second=(
+                    (prompt_eval_count / (prompt_eval_duration / 1e9))
+                    if prompt_eval_duration and prompt_eval_duration > 0 else None
+                ),
+                generation_tokens_per_second=(
+                    (eval_count / (eval_duration / 1e9))
+                    if eval_duration and eval_duration > 0 else None
+                ),
+            )
+
+            # Parse JSON (Ollama should return valid JSON with format=JSON Schema)
+            import json
             data = json.loads(json_str)
             return dict(data)
+
+        except TimeoutError as e:
+            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+            self.logger.error(
+                "structured_extraction_timeout",
+                exception_type="asyncio.TimeoutError",
+                safe_exception_message=str(e),
+                elapsed_ms=elapsed_ms,
+                model=self.ollama_model,
+                input_type="text",
+                processing_strategy="native_structured_output",
+                native_text_chars=len(raw_text),
+                requested_max_tokens=2048,
+            )
+            raise
+
         except Exception as e:
-            self.logger.error("structured_extraction_failed", error=str(e))
+            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+            # Log detailed diagnostic information
+            self.logger.error(
+                "structured_extraction_failed",
+                exception_type=type(e).__name__,
+                safe_exception_message=str(e),
+                elapsed_ms=elapsed_ms,
+                model=self.ollama_model,
+                input_type="text",
+                processing_strategy="native_structured_output",
+                native_text_chars=len(raw_text),
+                requested_max_tokens=2048,
+            )
             raise
 
     async def _validate_with_pydantic(self, data: dict[str, Any]) -> InvoiceData:
@@ -491,6 +558,9 @@ Return ONLY the JSON, no extra text.
 
         temp_file_path = None
         raw_text = ""
+        has_native_text = False
+        native_text_chars = 0
+        inference_count = 0
 
         try:
             # Create a temp file for OCR processing
@@ -503,7 +573,11 @@ Return ONLY the JSON, no extra text.
             if mime_type == "application/pdf" or filename.lower().endswith(".pdf"):
                 # First try to extract text layer
                 raw_text = await self._extract_text_from_pdf(temp_file_path)
-                if not raw_text or len(raw_text.strip()) < 50:
+                if raw_text and len(raw_text.strip()) >= 50:
+                    has_native_text = True
+                    native_text_chars = len(raw_text)
+                    self.logger.info("pdf_native_text_extracted", chars=native_text_chars)
+                else:
                     # No text layer or very little text - likely scanned PDF
                     # Render pages to images and OCR each
                     self.logger.info("pdf_no_text_layer_rendering_for_ocr", file_path=temp_file_path)
@@ -519,6 +593,7 @@ Return ONLY the JSON, no extra text.
                                 )
                                 if page_text:
                                     ocr_texts.append(f"--- Page {i + 1} ---\n{page_text}")
+                                    inference_count += 1
                             except TimeoutError:
                                 self.logger.warning("ocr_page_timeout", page=i + 1, timeout=self.ocr_timeout)
                                 continue
@@ -527,6 +602,7 @@ Return ONLY the JSON, no extra text.
                 # Assume image - apply timeout
                 try:
                     raw_text = await asyncio.wait_for(self._ocr_via_ollama(temp_file_path), timeout=self.ocr_timeout)
+                    inference_count += 1
                 except TimeoutError:
                     self.logger.warning("ocr_timeout", filename=filename, timeout=self.ocr_timeout)
                     raw_text = ""
@@ -537,14 +613,30 @@ Return ONLY the JSON, no extra text.
             # Step 3: Extract structured data via Ollama
             try:
                 extracted = await self._extract_structured_data(raw_text)
+                inference_count += 1
+            except TimeoutError:
+                return {
+                    "success": False,
+                    "error": "invoice_processing_timeout",
+                    "message": "El procesamiento de la factura ha superado el tiempo máximo permitido.",
+                    "requires_review": False,  # This is a timeout, not a validation issue
+                }
             except Exception:
                 return {"success": False, "error": "structured_extraction_failed", "requires_review": True}
 
             # Step 4: Validate with Pydantic
             try:
                 invoice = await self._validate_with_pydantic(extracted)
-            except Exception:
-                return {"success": False, "error": "pydantic_validation_failed", "requires_review": True}
+            except Exception as e:
+                # Validation errors should be NEEDS_REVIEW, not FAILED
+                self.logger.warning("pydantic_validation_failed", error=str(e))
+                return {
+                    "success": False,
+                    "error": "pydantic_validation_failed",
+                    "message": "La factura se ha interpretado pero algunos datos no son válidos.",
+                    "requires_review": True,
+                    "needs_review": True,
+                }
 
             # Step 5: Deterministic checks
             check_errors = await self._deterministic_checks(invoice)
@@ -553,7 +645,9 @@ Return ONLY the JSON, no extra text.
                     "success": False,
                     "error": "deterministic_checks_failed",
                     "details": check_errors,
+                    "message": "La factura se ha interpretado pero las validaciones contables no cuadran.",
                     "requires_review": True,
+                    "needs_review": True,
                 }
 
             # Step 6: Lookup supplier in Dolibarr
@@ -621,6 +715,13 @@ Return ONLY the JSON, no extra text.
                 "total": invoice.total,
                 "currency": invoice.currency,
                 "line_count": len(invoice.lines),
+            },
+            # Diagnostics for monitoring
+            "diagnostics": {
+                "has_native_text": has_native_text,
+                "native_text_chars": native_text_chars,
+                "inference_count": inference_count,
+                "input_type": "pdf" if filename.lower().endswith(".pdf") else "image",
             },
         }
 

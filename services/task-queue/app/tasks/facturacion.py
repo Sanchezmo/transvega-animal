@@ -2,8 +2,7 @@
 Tareas Celery para facturación.
 """
 
-from datetime import date
-from decimal import Decimal
+import base64
 
 import structlog
 from celery import shared_task
@@ -164,3 +163,146 @@ def detectar_facturas_vencidas():
     """Detectar facturas impagadas vencidas."""
     logger.info("detectando_facturas_vencidas")
     return {"success": True, "vencidas": 0}
+
+
+# =============================================================================
+# Async Invoice Processing Task
+# =============================================================================
+
+from datetime import date
+from decimal import Decimal
+
+
+@shared_task(bind=True, max_retries=0, time_limit=720, soft_time_limit=660)
+def procesar_factura_async(self, task_data: dict):
+    """
+    Procesar factura de forma asíncrona.
+
+    Args:
+        task_data: {
+            "file_content_b64": str,  # base64 encoded file content
+            "filename": str,
+            "telegram_user_id": int,
+            "telegram_chat_id": int,
+            "telegram_message_id": int,
+            "update_id": int,
+            "correlation_id": str,
+        }
+
+    Returns:
+        dict with processing result
+    """
+    import asyncio
+    import os
+    import tempfile
+
+    logger.info(
+        "procesar_factura_async_started",
+        task_id=self.request.id,
+        correlation_id=task_data.get("correlation_id"),
+    )
+
+    try:
+        # Decode file content
+        file_content = base64.b64decode(task_data["file_content_b64"])
+        filename = task_data["filename"]
+        telegram_user_id = task_data["telegram_user_id"]
+        telegram_chat_id = task_data["telegram_chat_id"]
+        telegram_message_id = task_data.get("telegram_message_id", 0)
+        _ = task_data.get("update_id", 0)  # unused
+        correlation_id = task_data["correlation_id"]
+
+        # Create temp file
+        with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as tmp:
+            tmp.write(file_content)
+            temp_file_path = tmp.name
+
+        # Import here to avoid circular imports
+        from agents.invoice_processing.agent import create_invoice_processing_agent
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        config = {
+            "OLLAMA_ENDPOINT": settings.OLLAMA_ENDPOINT,
+            "OLLAMA_MODEL": settings.OLLAMA_MODEL,
+            "NVIDIA_API_KEY": settings.NVIDIA_API_KEY,
+            "NVIDIA_BASE_URL": settings.NVIDIA_BASE_URL,
+            "INVOICE_STORAGE_ROOT": "/data/invoices",
+            "OCR_DPI": 150,
+            "OCR_MAX_PAGES": 5,
+            "OCR_MAX_FILE_MB": 10,
+            "OCR_TIMEOUT": 120,
+            "OLLAMA_INVOICE_TIMEOUT": 600,
+        }
+
+        # Run async processing
+        async def run_processing():
+            agent = create_invoice_processing_agent(config)
+            await agent.start()
+            try:
+                result = await agent.process_invoice(file_content, filename)
+                return result
+            finally:
+                await agent.stop()
+
+        result = asyncio.run(run_processing())
+
+        # Clean up temp file
+        if os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+
+        logger.info("procesar_factura_async_completed",
+                    task_id=self.request.id,
+                    correlation_id=correlation_id,
+                    success=result.get("success"))
+
+        # Store result in Redis for retrieval
+        # This will be picked up by the supervisor to send Telegram update
+        import json
+
+        from app.core.database import get_redis_client
+
+        async def store_result():
+            redis = await get_redis_client()
+            result_key = f"invoice_result:{correlation_id}"
+            await redis.setex(result_key, 3600, json.dumps(result))
+
+            # Also publish to channel for real-time notification
+            await redis.publish("invoice_results", json.dumps({
+                "correlation_id": correlation_id,
+                "telegram_user_id": telegram_user_id,
+                "telegram_chat_id": telegram_chat_id,
+                "telegram_message_id": telegram_message_id,
+                "result": result,
+            }))
+
+        asyncio.run(store_result())
+
+        return result
+
+    except Exception as exc:
+        logger.error("procesar_factura_async_failed", task_id=self.request.id, error=str(exc))
+
+        # Store error result
+        error_result = {
+            "success": False,
+            "error": "processing_failed",
+            "message": f"Error procesando factura: {str(exc)}",
+            "requires_review": True,
+        }
+
+        try:
+            import json
+
+            from app.core.database import get_redis_client
+            correlation_id = task_data.get("correlation_id")
+            if correlation_id:
+                async def store_error():
+                    redis = await get_redis_client()
+                    result_key = f"invoice_result:{correlation_id}"
+                    await redis.setex(result_key, 3600, json.dumps(error_result))
+                asyncio.run(store_error())
+        except Exception:
+            pass
+
+        return error_result

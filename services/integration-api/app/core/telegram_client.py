@@ -232,6 +232,34 @@ class TelegramClient:
             text=result.get("caption"),
         )
 
+    async def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        parse_mode: str | None = "HTML",
+        reply_markup: dict | None = None,
+    ) -> TelegramMessage:
+        """Edit text of a message sent by the bot."""
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+
+        result = await self._post("editMessageText", **payload)
+
+        return TelegramMessage(
+            message_id=result["message_id"],
+            chat_id=result["chat"]["id"],
+            date=result["date"],
+            text=result.get("text"),
+        )
+
     # =========================================================================
     # FILE OPERATIONS
     # =========================================================================

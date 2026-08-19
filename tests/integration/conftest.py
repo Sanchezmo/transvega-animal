@@ -7,8 +7,101 @@ import os
 
 # Force test environment BEFORE any other imports
 os.environ["ENVIRONMENT"] = "test"
+os.environ["DEBUG"] = "true"
 os.environ["MOCK_DOLIBARR_ENABLED"] = "true"
 os.environ["TEST_MODE"] = "true"
+
+# Required settings for config validation
+os.environ["AUDIT_DB_HOST"] = "127.0.0.1"
+os.environ["AUDIT_DB_PORT"] = "55432"
+os.environ["AUDIT_DB_NAME"] = "transvega_test"
+os.environ["AUDIT_DB_USER"] = "transvega_test"
+os.environ["AUDIT_DB_PASSWORD"] = "transvega_test"
+
+os.environ["REDIS_HOST"] = "127.0.0.1"
+os.environ["REDIS_PORT"] = "56379"
+os.environ["REDIS_PASSWORD"] = ""
+
+os.environ["DOLIBARR_API_URL"] = "http://localhost:8001"
+os.environ["DOLIBARR_API_KEY"] = "test_dolibarr_key"
+os.environ["DOLIBARR_TIMEOUT"] = "30"
+
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only-32chars"
+os.environ["JWT_ALGORITHM"] = "HS256"
+os.environ["JWT_EXPIRATION_MINUTES"] = "30"
+os.environ["JWT_REFRESH_EXPIRATION_DAYS"] = "7"
+os.environ["FERNET_KEY"] = "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg="
+
+# API Keys por agente
+os.environ["AGENT_API_KEY_SUPERVISOR"] = "tvsk_test_supervisor_key_123"
+os.environ["AGENT_API_KEY_PRODUCTS"] = "tvsk_test_products_key_123"
+os.environ["AGENT_API_KEY_COMPLIANCE"] = "tvsk_test_compliance_key_123"
+os.environ["AGENT_API_KEY_PUBLISHING"] = "tvsk_test_publishing_key_123"
+os.environ["AGENT_API_KEY_SALES"] = "tvsk_test_sales_key_123"
+os.environ["AGENT_API_KEY_INVOICING"] = "tvsk_test_invoicing_key_123"
+os.environ["AGENT_API_KEY_PURCHASES"] = "tvsk_test_purchases_key_123"
+os.environ["AGENT_API_KEY_BANKING"] = "tvsk_test_banking_key_123"
+os.environ["AGENT_API_KEY_ACCOUNTING"] = "tvsk_test_accounting_key_123"
+os.environ["AGENT_API_KEY_TAX"] = "tvsk_test_tax_key_123"
+os.environ["AGENT_API_KEY_MARKETING"] = "tvsk_test_marketing_key_123"
+os.environ["AGENT_API_KEY_TECHNICAL"] = "tvsk_test_technical_key_123"
+os.environ["AGENT_API_KEY_DOG_INTAKE"] = "tvsk_test_dog_intake_key_123"
+os.environ["AGENT_API_KEY_EXPEDIENTES"] = "tvsk_test_expedientes_key_123"
+os.environ["AGENT_API_KEY_FACTURACION"] = "tvsk_test_facturacion_key_123"
+os.environ["AGENT_API_KEY_LISTING"] = "tvsk_test_listing_key_123"
+
+os.environ["APPROVALS_SERVICE_URL"] = "http://localhost:8002"
+
+os.environ["NOTIFICATION_WEBHOOK_URL"] = ""
+os.environ["NOTIFICATION_WEBHOOK_SECRET"] = ""
+
+os.environ["TELEGRAM_WEBHOOK_SECRET"] = "test_telegram_webhook_secret"
+os.environ["TELEGRAM_WEBHOOK_SECRET_REQUIRED"] = "false"
+os.environ["TELEGRAM_BOT_TOKEN"] = "test_bot_token"
+os.environ["TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS"] = "24"
+
+os.environ["GOOGLE_CLIENT_ID"] = ""
+os.environ["GOOGLE_CLIENT_SECRET"] = ""
+os.environ["GOOGLE_WORKSPACE_DOMAIN"] = "transvega-animal.es"
+
+os.environ["CLOUDFLARE_API_TOKEN"] = ""
+os.environ["CLOUDFLARE_ACCOUNT_ID"] = ""
+os.environ["CLOUDFLARE_ZONE_ID"] = ""
+
+os.environ["LOG_LEVEL"] = "DEBUG"
+os.environ["LOG_FORMAT"] = "json"
+
+os.environ["METRICS_ENABLED"] = "false"
+os.environ["METRICS_PORT"] = "9090"
+
+os.environ["VERIFACTU_PROVIDER"] = ""
+os.environ["VERIFACTU_CERT_PATH"] = ""
+os.environ["VERIFACTU_KEY_PATH"] = ""
+os.environ["VERIFACTU_TEST_MODE"] = "true"
+
+os.environ["CELERY_BROKER_URL"] = "redis://127.0.0.1:56379/0"
+os.environ["CELERY_RESULT_BACKEND"] = "redis://127.0.0.1:56379/2"
+os.environ["CELERY_TASK_SERIALIZER"] = "json"
+os.environ["CELERY_RESULT_SERIALIZER"] = "json"
+os.environ["CELERY_ACCEPT_CONTENT"] = '["json"]'
+os.environ["CELERY_TIMEZONE"] = "Europe/Madrid"
+os.environ["CELERY_TASK_TRACK_STARTED"] = "true"
+os.environ["CELERY_TASK_TIME_LIMIT"] = "3600"
+os.environ["CELERY_WORKER_PREFETCH_MULTIPLIER"] = "4"
+os.environ["CELERY_WORKER_CONCURRENCY"] = "4"
+os.environ["CELERY_TASK_DEFAULT_QUEUE"] = "default"
+
+os.environ["RATE_LIMIT_REQUESTS"] = "100"
+os.environ["RATE_LIMIT_WINDOW_SECONDS"] = "60"
+os.environ["IDEMPOTENCY_TTL_HOURS"] = "24"
+
+os.environ["OLLAMA_ENDPOINT"] = "http://localhost:11434"
+os.environ["OLLAMA_MODEL"] = "transvega-local"
+
+os.environ["NVIDIA_API_KEY"] = ""
+os.environ["NVIDIA_BASE_URL"] = ""
+
+os.environ["INTERNAL_API_URL"] = "http://localhost:8000/api/v1"
 
 
 import pytest

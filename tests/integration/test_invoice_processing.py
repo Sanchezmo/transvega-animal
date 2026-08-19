@@ -497,5 +497,252 @@ class TestInvoiceDataModel:
         assert isinstance(invoice.taxes, list)
 
 
+class TestInvoiceProcessingStructuredOutput:
+    """Tests for native structured output configuration."""
+
+    @pytest.mark.asyncio
+    async def test_structured_output_uses_json_schema(
+        self, invoice_agent, mock_dolibarr_service, mock_model_router, sample_invoice_text
+    ):
+        """Test that structured extraction uses native JSON Schema format."""
+        file_content = sample_invoice_text.encode("utf-8")
+        filename = "test_invoice.pdf"
+
+        result = await invoice_agent.process_invoice(file_content, filename)
+
+        assert result["success"] is True
+
+        # Verify generate was called with format parameter (JSON Schema)
+        call_args = mock_model_router.generate.call_args
+        assert call_args is not None, "generate should have been called"
+
+        # Check that format parameter was passed (JSON Schema)
+        kwargs = call_args.kwargs
+        assert "format" in kwargs, "format parameter should be passed for structured output"
+
+        # Check that think=False was passed
+        assert kwargs.get("think") is False, "think should be False for structured extraction"
+
+        # Check that num_predict=2048 was passed (not max_tokens)
+        assert kwargs.get("num_predict") == 2048, "num_predict should be 2048"
+
+        # Check that stop=["}"] is NOT passed
+        assert "stop" not in kwargs, "stop parameter should not be passed"
+
+    @pytest.mark.asyncio
+    async def test_invoice_timeout_configuration(self, invoice_agent):
+        """Test that invoice agent uses 600s timeout for Ollama."""
+        assert invoice_agent.ollama_invoice_timeout == 600.0
+
+    @pytest.mark.asyncio
+    async def test_model_router_timeout_passed_to_generate(
+        self, invoice_agent, mock_dolibarr_service, mock_model_router, sample_invoice_text
+    ):
+        """Test that request_timeout is passed to router.generate."""
+        file_content = sample_invoice_text.encode("utf-8")
+        filename = "test_invoice.pdf"
+
+        result = await invoice_agent.process_invoice(file_content, filename)
+
+        assert result["success"] is True
+
+        # Verify generate was called with request_timeout
+        call_args = mock_model_router.generate.call_args
+        kwargs = call_args.kwargs
+        assert "request_timeout" in kwargs, "request_timeout should be passed"
+        assert kwargs["request_timeout"] == 600.0, "request_timeout should be 600s"
+
+    @pytest.mark.asyncio
+    async def test_privacy_local_only_enforced(
+        self, invoice_agent, mock_dolibarr_service, mock_model_router, sample_invoice_text
+    ):
+        """Test that LOCAL_ONLY privacy scope is always used for invoices."""
+        file_content = sample_invoice_text.encode("utf-8")
+        filename = "test_invoice.pdf"
+
+        result = await invoice_agent.process_invoice(file_content, filename)
+
+        assert result["success"] is True
+        assert result["privacy_scope"] == "LOCAL_ONLY"
+
+        # Verify both vision and generate were called with LOCAL_ONLY
+        vision_calls = mock_model_router.vision.call_args_list
+        generate_calls = mock_model_router.generate.call_args_list
+
+        for call in vision_calls:
+            kwargs = call.kwargs
+            assert kwargs.get("privacy_scope") == "LOCAL_ONLY"
+
+        for call in generate_calls:
+            kwargs = call.kwargs
+            assert kwargs.get("privacy_scope") == "LOCAL_ONLY"
+
+
+class TestInvoiceProcessingDiagnostics:
+    """Tests for diagnostic logging and metrics."""
+
+    @pytest.mark.asyncio
+    async def test_diagnostics_included_in_result(
+        self, invoice_agent, mock_dolibarr_service, sample_invoice_text
+    ):
+        """Test that diagnostics are included in successful result."""
+        file_content = sample_invoice_text.encode("utf-8")
+        filename = "test_invoice.pdf"
+
+        result = await invoice_agent.process_invoice(file_content, filename)
+
+        assert result["success"] is True
+        assert "diagnostics" in result
+        diagnostics = result["diagnostics"]
+
+        assert "has_native_text" in diagnostics
+        assert "native_text_chars" in diagnostics
+        assert "inference_count" in diagnostics
+        assert "input_type" in diagnostics
+
+        # For text PDF, should have native text
+        assert diagnostics["has_native_text"] is True
+        assert diagnostics["native_text_chars"] > 0
+        assert diagnostics["inference_count"] >= 1  # At least structured extraction
+        assert diagnostics["input_type"] == "pdf"
+
+    @pytest.mark.asyncio
+    async def test_scanned_pdf_diagnostics(
+        self, invoice_agent, mock_dolibarr_service, mock_model_router, sample_invoice_text
+    ):
+        """Test diagnostics for scanned PDF (no native text)."""
+        # Mock PDF text extraction to return empty
+        async def mock_extract_text_from_pdf(file_path: str) -> str:
+            return ""
+
+        invoice_agent._extract_text_from_pdf = mock_extract_text_from_pdf
+
+        # Mock OCR to return text
+        async def mock_render_pdf_pages_to_images(file_path: str):
+            return [b"fake_image_bytes"]
+
+        invoice_agent._render_pdf_pages_to_images = mock_render_pdf_pages_to_images
+
+        async def mock_ocr_via_ollama(image_path_or_bytes: str = None, image_bytes: bytes = None) -> str:
+            return sample_invoice_text
+
+        invoice_agent._ocr_via_ollama = mock_ocr_via_ollama
+
+        file_content = b"fake pdf content"
+        filename = "scanned_invoice.pdf"
+
+        result = await invoice_agent.process_invoice(file_content, filename)
+
+        assert result["success"] is True
+        diagnostics = result["diagnostics"]
+
+        # For scanned PDF, should not have native text
+        assert diagnostics["has_native_text"] is False
+        assert diagnostics["native_text_chars"] == 0
+        assert diagnostics["inference_count"] >= 2  # OCR + structured extraction
+        assert diagnostics["input_type"] == "pdf"
+
+
+class TestInvoiceProcessingErrors:
+    """Tests for error handling improvements."""
+
+    @pytest.mark.asyncio
+    async def test_timeout_error_handling(
+        self, invoice_agent, mock_dolibarr_service, mock_model_router, sample_invoice_text
+    ):
+        """Test that timeout errors are handled correctly."""
+
+        # Mock generate to raise TimeoutError
+        async def mock_generate_timeout(*args, **kwargs):
+            raise TimeoutError("Ollama timeout")
+
+        mock_model_router.generate.side_effect = mock_generate_timeout
+
+        file_content = sample_invoice_text.encode("utf-8")
+        filename = "test_invoice.pdf"
+
+        result = await invoice_agent.process_invoice(file_content, filename)
+
+        assert result["success"] is False
+        assert result["error"] == "invoice_processing_timeout"
+        assert "tiempo máximo" in result["message"].lower()
+        assert result["requires_review"] is False  # Timeout is not a validation issue
+
+    @pytest.mark.asyncio
+    async def test_validation_error_needs_review(
+        self, invoice_agent, mock_dolibarr_service, mock_model_router, sample_invoice_text
+    ):
+        """Test that validation errors return needs_review=True."""
+
+        # Mock generate to return invalid data (missing required fields)
+        mock_model_router.generate.return_value = {
+            "text": (
+                '{"supplier": {"name": "Test"}, "invoice": {}, "lines": [], '
+                '"taxes": [], "subtotal": 0, "tax_total": 0, "total": 0, '
+                '"currency": "EUR"}'
+            )
+        }
+
+        file_content = sample_invoice_text.encode("utf-8")
+        filename = "test_invoice.pdf"
+
+        result = await invoice_agent.process_invoice(file_content, filename)
+
+        assert result["success"] is False
+        assert result["error"] == "pydantic_validation_failed"
+        assert result["needs_review"] is True
+        assert result["requires_review"] is True
+        # Check for revision-related message (case insensitive, handle accents)
+        assert "revis" in result["message"].lower() or "válido" in result["message"].lower()
+
+
+class TestInvoiceProcessingTelegramFlow:
+    """Tests for Telegram flow integration (mocked)."""
+
+    @pytest.mark.asyncio
+    async def test_invoice_processing_queues_async_task(self):
+        """Test that invoice processing queues async Celery task."""
+        # This test would require mocking Celery and Redis
+        # For now, verify the supervisor method exists and has correct signature
+        from agents.supervisor.agent import SupervisorAgent
+
+        # Verify the method exists
+        assert hasattr(SupervisorAgent, '_handle_invoice_document')
+        assert hasattr(SupervisorAgent, '_listen_invoice_results')
+        assert hasattr(SupervisorAgent, '_handle_invoice_result')
+        assert hasattr(SupervisorAgent, '_handle_invoice_success')
+        assert hasattr(SupervisorAgent, '_handle_invoice_timeout')
+        assert hasattr(SupervisorAgent, '_handle_invoice_needs_review')
+        assert hasattr(SupervisorAgent, '_handle_invoice_error')
+        assert hasattr(SupervisorAgent, '_send_long_processing_warning')
+        assert hasattr(SupervisorAgent, '_edit_telegram_message')
+
+
+class TestInvoiceProcessingModelRouter:
+    """Tests for model router timeout configuration."""
+
+    def test_create_model_router_with_custom_timeout(self):
+        """Test that create_model_router accepts ollama_default_timeout."""
+        # This is a basic test - in reality would need full mocking
+        # Just verify the function signature accepts the parameter
+        import inspect
+
+        from app.core.model_router import create_model_router
+        sig = inspect.signature(create_model_router)
+        assert "ollama_default_timeout" in sig.parameters
+        assert sig.parameters["ollama_default_timeout"].default == 600.0
+
+    def test_ollama_provider_accepts_default_timeout(self):
+        """Test that OllamaProvider accepts default_timeout parameter."""
+        from app.core.model_router import OllamaProvider
+
+        provider = OllamaProvider(
+            endpoint="http://localhost:11434",
+            model="test-model",
+            default_timeout=600.0
+        )
+        assert provider.default_timeout == 600.0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

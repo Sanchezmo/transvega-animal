@@ -24,19 +24,28 @@ class ModelProvider:
 class OllamaProvider(ModelProvider):
     """Provider that talks to a local Ollama instance."""
 
-    def __init__(self, endpoint: str, model: str, vision_model: str | None = None) -> None:
+    def __init__(
+        self,
+        endpoint: str,
+        model: str,
+        vision_model: str | None = None,
+        default_timeout: float = 600.0,
+    ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.vision_model = vision_model or model
+        self.default_timeout = default_timeout
         self._client: httpx.AsyncClient | None = None
 
-    async def _get_client(self) -> httpx.AsyncClient:
+    async def _get_client(self, timeout: float | None = None) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(base_url=self.endpoint, timeout=120.0)
+            self._client = httpx.AsyncClient(base_url=self.endpoint, timeout=timeout or self.default_timeout)
         return self._client
 
     async def generate(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        client = await self._get_client()
+        # Extract timeout if provided for this specific request
+        request_timeout = kwargs.pop("request_timeout", None)
+        client = await self._get_client(timeout=request_timeout)
         # Extract format parameter if provided (for structured output)
         format_schema = kwargs.pop("format", None)
         payload = {"model": self.model, "prompt": prompt, "stream": False, **kwargs}
@@ -45,12 +54,16 @@ class OllamaProvider(ModelProvider):
         resp = await client.post("/api/generate", json=payload)
         resp.raise_for_status()
         data = resp.json()
-        # Ollama returns {"response": "...", ...}
+        # Ollama returns {"response": "...", "total_duration": ..., "eval_count": ..., ...}
         return {"text": data.get("response", ""), "raw": data}
 
     async def vision(self, image_path: str, prompt: str | None = None, **kwargs: Any) -> dict[str, Any]:
         # Ollama vision models expect a base64 image; we'll read file and send.
         import base64
+
+        # Extract timeout if provided for this specific request
+        request_timeout = kwargs.pop("request_timeout", None)
+        client = await self._get_client(timeout=request_timeout)
 
         with open(image_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
@@ -60,7 +73,6 @@ class OllamaProvider(ModelProvider):
             "images": [b64],
             "stream": False,
         }
-        client = await self._get_client()
         resp = await client.post("/api/generate", json=payload)
         resp.raise_for_status()
         data = resp.json()
@@ -194,8 +206,10 @@ class ModelRouter:
 
 
 # Factory helpers
-def create_ollama_provider(endpoint: str, model: str, vision_model: str | None = None) -> OllamaProvider:
-    return OllamaProvider(endpoint=endpoint, model=model, vision_model=vision_model)
+def create_ollama_provider(
+    endpoint: str, model: str, vision_model: str | None = None, default_timeout: float = 600.0
+) -> OllamaProvider:
+    return OllamaProvider(endpoint=endpoint, model=model, vision_model=vision_model, default_timeout=default_timeout)
 
 
 def create_nvidia_provider(api_key: str, base_url: str = "https://integrate.api.nvidia.com/v1") -> NvidiaProvider:
@@ -208,7 +222,10 @@ def create_model_router(
     ollama_vision_model: str,
     nvidia_api_key: str,
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1",
+    ollama_default_timeout: float = 600.0,
 ) -> ModelRouter:
-    ollama = create_ollama_provider(ollama_endpoint, ollama_model, ollama_vision_model)
+    ollama = create_ollama_provider(
+        ollama_endpoint, ollama_model, ollama_vision_model, default_timeout=ollama_default_timeout
+    )
     nvidia = create_nvidia_provider(nvidia_api_key, nvidia_base_url)
     return ModelRouter(ollama=ollama, nvidia=nvidia)
