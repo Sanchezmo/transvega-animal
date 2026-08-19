@@ -95,7 +95,8 @@ This system manages the lifecycle of dogs for a breeder/broker business, integra
 - `DOG_MEDIA_ROOT`: Root directory for storing media (default /data/dogs)
 - `INVOICE_STORAGE_ROOT`: Root for supplier invoices (default /data/invoices)
 - `OLLAMA_ENDPOINT`: http://ollama:11434
-- `OLLAMA_MODEL`: e.g., qwen4b:latest
+- `OLLAMA_MODEL`: e.g., transvega-local
+- `OLLAMA_BASE_MODEL`: e.g., qwen3.5:4b-q4_K_M
 - `NVIDIA_API_KEY`: Key for NVIDIA API
 - `NVIDIA_BASE_URL`: https://api.nvidia.com/v1
 - `MEDIA_SELECTION_THRESHOLDS`: JSON for sharpness, exposure, dog_visibility thresholds

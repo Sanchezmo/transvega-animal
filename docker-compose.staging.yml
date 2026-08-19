@@ -211,7 +211,6 @@ services:
       # Ollama (Local LLM para facturas - LOCAL_ONLY)
       - OLLAMA_ENDPOINT=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL}
-      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL}
       # NVIDIA (solo para tareas permitidas, NO para facturas)
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - NVIDIA_BASE_URL=${NVIDIA_BASE_URL}
@@ -338,7 +337,6 @@ services:
       # Ollama
       - OLLAMA_ENDPOINT=http://ollama:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL}
-      - OLLAMA_VISION_MODEL=${OLLAMA_VISION_MODEL}
       # NVIDIA (solo para tareas permitidas)
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - NVIDIA_BASE_URL=${NVIDIA_BASE_URL}
@@ -471,12 +469,13 @@ services:
     volumes:
       - ollama-data-staging:/root/.ollama
       - ./scripts/ollama-entrypoint.sh:/usr/local/bin/ollama-entrypoint.sh:ro
+      - ./infrastructure/ollama/Modelfile:/app/infrastructure/ollama/Modelfile:ro
     ports:
       - "127.0.0.1:11435:11434"
     environment:
-      - OLLAMA_MODELS=${OLLAMA_MODELS:-llama3.1-10t,llava-10t}
-      - OLLAMA_CUSTOM_MODELS=${OLLAMA_CUSTOM_MODELS:-llama3.1-10t:llama3.1:8b,num_thread=10,num_ctx=4096,temperature=0.2;llava-10t:llava:7b,num_thread=10,num_ctx=4096,temperature=0.2}
-      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-transvega-local}
+      - OLLAMA_BASE_MODEL=${OLLAMA_BASE_MODEL:-qwen3.5:4b-q4_K_M}
+      - OLLAMA_NUM_PARALLEL=1
       - OLLAMA_NUM_THREAD=10
     entrypoint: ["/usr/local/bin/ollama-entrypoint.sh"]
     networks:
@@ -492,10 +491,8 @@ services:
       resources:
         limits:
           memory: 8G
-          cpus: '10'
         reservations:
           memory: 4G
-          cpus: '5'
 
 networks:
   transvega-frontend:

@@ -142,8 +142,7 @@ class TestTelegramDogIntakeE2E:
         config = {
             "INTERNAL_API_URL": "http://localhost:8000/api/v1",
             "OLLAMA_ENDPOINT": "http://ollama:11434",
-            "OLLAMA_MODEL": "llama3.1:8b",
-            "OLLAMA_VISION_MODEL": "llava:7b",
+            "OLLAMA_MODEL": "transvega-local",
             "NVIDIA_API_KEY": "",
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
             "AGENT_API_KEY_SUPERVISOR": "test-supervisor-key",
@@ -346,8 +345,7 @@ class TestTelegramDogIntakeE2E:
         config = {
             "INTERNAL_API_URL": "http://localhost:8000/api/v1",
             "OLLAMA_ENDPOINT": "http://ollama:11434",
-            "OLLAMA_MODEL": "llama3.1:8b",
-            "OLLAMA_VISION_MODEL": "llava:7b",
+            "OLLAMA_MODEL": "transvega-local",
             "NVIDIA_API_KEY": "",
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
             "AGENT_API_KEY_SUPERVISOR": "test-supervisor-key",
@@ -784,8 +782,7 @@ class TestTelegramDogIntakeE2E:
         config = {
             "INTERNAL_API_URL": "http://localhost:8000/api/v1",
             "OLLAMA_ENDPOINT": "http://ollama:11434",
-            "OLLAMA_MODEL": "llama3.1:8b",
-            "OLLAMA_VISION_MODEL": "llava:7b",
+            "OLLAMA_MODEL": "transvega-local",
             "NVIDIA_API_KEY": "test-nvidia-key",
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
             "AGENT_API_KEY_DOG_INTAKE": "test-key",
@@ -800,15 +797,15 @@ class TestTelegramDogIntakeE2E:
         # Check the router creation
         router = create_model_router(
             ollama_endpoint="http://ollama:11434",
-            ollama_model="llama3.1:8b",
-            ollama_vision_model="llava:7b",
+            ollama_model="transvega-local",
+            ollama_vision_model="transvega-local",
             nvidia_api_key="test-nvidia-key",
             nvidia_base_url="https://integrate.api.nvidia.com/v1",
         )
 
         # Verify Ollama provider is local
         assert router.ollama.endpoint == "http://ollama:11434"
-        assert router.ollama.model == "llama3.1:8b"
+        assert router.ollama.model == "transvega-local"
 
         # Test privacy routing - invoice processing should use LOCAL_ONLY
         scope = privacy_router.get_privacy_scope({"supplier_invoice": {"tax_id": "B12345678", "iban": "ES1234567890"}})
@@ -1348,8 +1345,7 @@ class TestRequiredE2E:
         invalid_config = {
             "INTERNAL_API_URL": "http://localhost:8000/api/v1",
             "OLLAMA_ENDPOINT": "http://ollama:11434",
-            "OLLAMA_MODEL": "llama3.1:8b",
-            "OLLAMA_VISION_MODEL": "llava:7b",
+            "OLLAMA_MODEL": "transvega-local",
             "NVIDIA_API_KEY": "",
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
             "AGENT_API_KEY_SUPERVISOR": "test-supervisor",
@@ -1618,11 +1614,10 @@ class TestRequiredE2E:
         config = {
             "INTERNAL_API_URL": "http://localhost:8000/api/v1",
             "OLLAMA_ENDPOINT": "http://ollama:11434",
-            "OLLAMA_MODEL": "llama3.1:8b",
-            "OLLAMA_VISION_MODEL": "llava:7b",
+            "OLLAMA_MODEL": "transvega-local",
             "NVIDIA_API_KEY": "",
             "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
-            "AGENT_API_KEY_SUPERVISOR": "test-supervisor",
+            "AGENT_API_KEY_SUPERVISOR": "test-supervisor-key",
             "AGENT_API_KEY_DOG_INTAKE": "test-dog-intake",
         }
 

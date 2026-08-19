@@ -156,8 +156,7 @@ async def invoice_agent(mock_dolibarr_service, mock_model_router):
 
     config = {
         "OLLAMA_ENDPOINT": "http://ollama:11434",
-        "OLLAMA_MODEL": "llama3.1:8b",
-        "OLLAMA_VISION_MODEL": "llava:7b",
+        "OLLAMA_MODEL": "transvega-local",
         "NVIDIA_API_KEY": "",
         "INVOICE_STORAGE_ROOT": "/tmp/test_invoices",
         "OCR_DPI": 150,

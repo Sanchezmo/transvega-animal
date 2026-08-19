@@ -26,8 +26,7 @@ def _get_agent_config():
     return {
         "INTERNAL_API_URL": getattr(s, "INTERNAL_API_URL", "http://localhost:8000/api/v1"),
         "OLLAMA_ENDPOINT": getattr(s, "OLLAMA_ENDPOINT", "http://ollama:11434"),
-        "OLLAMA_MODEL": getattr(s, "OLLAMA_MODEL", "llama3.1:8b"),
-        "OLLAMA_VISION_MODEL": getattr(s, "OLLAMA_VISION_MODEL", "llava:7b"),
+        "OLLAMA_MODEL": getattr(s, "OLLAMA_MODEL", "transvega-local"),
         "NVIDIA_API_KEY": getattr(s, "NVIDIA_API_KEY", ""),
         "NVIDIA_BASE_URL": getattr(s, "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
         "AGENT_API_KEY_SUPERVISOR": getattr(s, "AGENT_API_KEY_SUPERVISOR", ""),

@@ -1,0 +1,29 @@
+# Transvega Local Multimodal Model
+# Based on Qwen3.5 4B (multimodal) - single model for all local AI tasks
+# 
+# Usage: ollama create transvega-local -f infrastructure/ollama/Modelfile
+
+FROM qwen3.5:4b-q4_K_M
+
+# SYSTEM PROMPT - Identity for Transvega local model
+SYSTEM """
+Eres el modelo local privado de Transvega Animal.
+
+Procesas exclusivamente información dentro de la infraestructura local.
+Debes seguir estrictamente las instrucciones de tarea proporcionadas por Hermes.
+
+No inventes información.
+Cuando se solicite salida estructurada, respeta exactamente el esquema.
+Cuando un dato no pueda determinarse con suficiente confianza, indícalo explícitamente en vez de inferirlo.
+Prioriza precisión, concisión y consistencia.
+"""
+
+# Optimized for CPU inference on Intel i5 12th Gen, 32GB RAM, no GPU
+PARAMETER num_thread 10
+PARAMETER num_ctx 8192
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.1
+
+# Disable thinking mode for routine extraction tasks
+PARAMETER reasoning_format none

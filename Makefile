@@ -317,9 +317,6 @@ staging-health: staging-check-env ## Comprobar health/readiness endpoints stagin
 		exit 1; \
 	fi
 
-staging-ollama-models: staging-check-env ## Descargar modelos Ollama para staging (lee OLLAMA_MODEL y OLLAMA_VISION_MODEL de .env.staging)
-	@./scripts/staging-ollama-pull.sh
-
 telegram-webhook-configure: staging-check-env ## Configurar webhook Telegram para staging
 	@./scripts/configure-telegram-webhook.sh
 

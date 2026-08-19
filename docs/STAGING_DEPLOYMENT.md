@@ -263,5 +263,5 @@ Ver `.env.staging.example` para lista completa. Variables obligatorias:
 | TELEGRAM_WEBHOOK_SECRET | Secreto webhook (hex 32 bytes) |
 | TELEGRAM_WEBHOOK_PUBLIC_URL | URL pública webhook |
 | CLOUDFLARE_TUNNEL_TOKEN_STAGING | Token túnel Cloudflare |
-| OLLAMA_MODEL | Modelo LLM (ej: llama3.1:8b) |
-| OLLAMA_VISION_MODEL | Modelo visión (ej: llava:7b) |
+| OLLAMA_MODEL | Modelo LLM multimodal (ej: transvega-local) |
+| OLLAMA_BASE_MODEL | Modelo base Qwen (ej: qwen3.5:4b-q4_K_M) |

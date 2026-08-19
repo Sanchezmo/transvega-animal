@@ -65,8 +65,8 @@ class Settings(BaseSettings):
 
     # Ollama (Local LLM for invoice processing - LOCAL_ONLY)
     OLLAMA_ENDPOINT: str = "http://ollama:11434"
-    OLLAMA_MODEL: str = "llama3.1-10t:latest"
-    OLLAMA_VISION_MODEL: str = "llava-10t:latest"
+    OLLAMA_MODEL: str = "transvega-local"
+    OLLAMA_BASE_MODEL: str = "qwen3.5:4b-q4_K_M"
 
     # JWT
     JWT_SECRET_KEY: str

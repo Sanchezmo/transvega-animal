@@ -83,8 +83,7 @@ async def telegram_test_setup(monkeypatch):
             {
                 "INTERNAL_API_URL": "http://localhost:8000/api/v1",
                 "OLLAMA_ENDPOINT": "http://localhost:11434",
-                "OLLAMA_MODEL": "llama3.1:8b",
-                "OLLAMA_VISION_MODEL": "llava:7b",
+                "OLLAMA_MODEL": "transvega-local",
                 "NVIDIA_API_KEY": "",
                 "NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
                 "AGENT_API_KEY_SUPERVISOR": "test-supervisor",

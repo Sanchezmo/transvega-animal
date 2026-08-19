@@ -226,12 +226,24 @@ services:
     container_name: transvega-ollama
     volumes:
       - ollama-data:/root/.ollama
+      - ./scripts/ollama-entrypoint.sh:/usr/local/bin/ollama-entrypoint.sh:ro
+      - ./infrastructure/ollama/Modelfile:/app/infrastructure/ollama/Modelfile:ro
     # NO exponer puertos - solo red interna
     environment:
-      - OLLAMA_MODELS=${OLLAMA_MODELS}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-transvega-local}
+      - OLLAMA_BASE_MODEL=${OLLAMA_BASE_MODEL:-qwen3.5:4b-q4_K_M}
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_NUM_THREAD=10
+    entrypoint: ["/usr/local/bin/ollama-entrypoint.sh"]
     networks:
       - transvega-backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     deploy:
       resources:
         limits:

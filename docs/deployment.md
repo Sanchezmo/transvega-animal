@@ -363,7 +363,15 @@ services:
     ports:
       - "11434:11434"
     environment:
-      - OLLAMA_MODELS=llama3.1:8b,mistral:7b,codellama:7b
+      - OLLAMA_MODEL=transvega-local
+      - OLLAMA_BASE_MODEL=qwen3.5:4b-q4_K_M
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_NUM_THREAD=10
+    entrypoint: ["/usr/local/bin/ollama-entrypoint.sh"]
+    volumes:
+      - ollama-data:/root/.ollama
+      - ./scripts/ollama-entrypoint.sh:/usr/local/bin/ollama-entrypoint.sh:ro
+      - ./infrastructure/ollama/Modelfile:/app/infrastructure/ollama/Modelfile:ro
     deploy:
       resources:
         limits:
@@ -804,9 +812,12 @@ TEMPO_PORT=3200
 MIMIR_PORT=9009
 
 # IA Local
-OLLAMA_MODELS=llama3.1:8b,mistral:7b,codellama:7b
+OLLAMA_MODEL=transvega-local
+OLLAMA_BASE_MODEL=qwen3.5:4b-q4_K_M
 OLLAMA_HOST=ollama
 OLLAMA_PORT=11434
+OLLAMA_NUM_PARALLEL=1
+OLLAMA_NUM_THREAD=10
 VLLM_HOST=vllm
 VLLM_PORT=8000
 
@@ -1061,7 +1072,7 @@ inhibit_rules:
 - [ ] Redis con persistencia AOF + RDB
 - [ ] Aprobaciones funcionando (webhook notificaciones)
 - [ ] Dashboard accesible via Cloudflare Access
-- [ ] Ollama/Models cargados (llama3.1:8b, mistral:7b)
+- [ ] Ollama/Models cargados (transvega-local / qwen3.5:4b-q4_K_M)
 - [ ] vLLM opcional para alta carga
 
 ### Integraciones
