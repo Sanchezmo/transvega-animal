@@ -42,6 +42,12 @@ def main():
     # This allows CI to override test defaults (e.g., DATABASE_URL, REDIS_URL)
     merged_env = {**file_env_vars, **os.environ}
 
+    # Force test environment for test commands to ensure TEST_MODE is enabled
+    if any("pytest" in arg for arg in command):
+        merged_env["ENVIRONMENT"] = "test"
+        merged_env["MOCK_DOLIBARR_ENABLED"] = "true"
+        merged_env["TEST_MODE"] = "true" 
+
     # Execute command with merged environment
     result = subprocess.run(command, env=merged_env)
     sys.exit(result.returncode)
