@@ -146,11 +146,15 @@ async def telegram_webhook(
     The SupervisorAgent handles all outbound Telegram messages (including inline keyboards)
     via its internal TelegramClient. This endpoint just processes and returns 200 OK.
     """
-    try:
-        update = await request.json()
-    except Exception as e:
-        logger.error("Failed to parse JSON: %s", e)
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+    # Get parsed update from idempotency dependency (body already consumed there)
+    update = getattr(request.state, "telegram_update", None)
+    if update is None:
+        # Fallback: try to parse JSON (for cases where idempotency was skipped)
+        try:
+            update = await request.json()
+        except Exception as e:
+            logger.error("Failed to parse JSON: %s", e)
+            raise HTTPException(status_code=400, detail="Invalid JSON")
 
     update_id = update.get("update_id")
     logger.info("telegram_update_received update_id=%s", update_id)

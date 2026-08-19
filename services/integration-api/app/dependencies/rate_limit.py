@@ -115,6 +115,7 @@ async def telegram_idempotency_dependency(
 
         update = json_lib.loads(body)
     except Exception:
+        # If JSON parsing fails, allow the request to continue (endpoint will handle 400)
         return
 
     update_id = update.get("update_id")
@@ -147,6 +148,9 @@ async def telegram_idempotency_dependency(
         # First time - set to "processing"
         await redis.setex(cache_key, ttl_seconds, json_lib.dumps({"status": "processing"}))
 
+    # Store the parsed update in request.state so the endpoint can use it
+    # without re-reading the consumed body stream
+    request.state.telegram_update = update
     request.state.telegram_update_id = update_id
     request.state.telegram_idempotency_key = f"telegram:update:{update_id}"
     request.state.telegram_idempotency_cache_key = f"idempotency:telegram:update:{update_id}"
