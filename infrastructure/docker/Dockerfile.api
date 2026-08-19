@@ -28,6 +28,7 @@ COPY --chown=appuser:appuser services/integration-api/app ./app
 COPY --chown=appuser:appuser adapters ./app/adapters
 COPY --chown=appuser:appuser agents ./agents
 COPY --chown=appuser:appuser tests ./tests
+COPY --chown=appuser:appuser services/task-queue/app/tasks ./tasks
 
 # Cambiar a usuario no-root
 USER appuser
