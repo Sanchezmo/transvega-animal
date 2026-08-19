@@ -4,29 +4,15 @@ Sets up test environment BEFORE any test modules are imported.
 """
 
 import os
-import sys
 
 # Force test environment BEFORE any other imports
 os.environ["ENVIRONMENT"] = "test"
 os.environ["MOCK_DOLIBARR_ENABLED"] = "true"
 os.environ["TEST_MODE"] = "true"
 
-# Clear any cached settings
-if "app.core.config" in sys.modules:
-    import app.core.config as config_module
-    from app.core.config import get_settings
 
-    get_settings.cache_clear()
-    config_module.settings = get_settings()
-
-# Now safe to import test dependencies
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
-from app.core.config import get_settings
-from app.core.database import init_db
-from app.main import app
 
 
 class MockRedis:
@@ -88,12 +74,16 @@ def mock_redis():
         mock = MockRedis()
         yield mock
 
+    async def mock_get_redis_client():
+        return MockRedis()
+
     # Patch get_redis where it's used (rate_limit imports it at module level)
     # Also patch Redis class in database module where it's instantiated
+    # get_redis_client() returns a Redis instance directly (async function)
     with pytest.MonkeyPatch().context() as m:
         m.setattr("app.dependencies.rate_limit.get_redis", mock_get_redis)
         m.setattr("app.core.database.get_redis", mock_get_redis)
-        m.setattr("app.core.database.get_redis_client", mock_get_redis)
+        m.setattr("app.core.database.get_redis_client", mock_get_redis_client)
         m.setattr("app.core.database.Redis", MockRedis)
         yield
 
@@ -101,7 +91,12 @@ def mock_redis():
 @pytest.fixture(scope="session")
 def settings():
     """Configuración de test."""
-    return get_settings()
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    value = get_settings()
+    yield value
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")
@@ -117,12 +112,20 @@ def event_loop():
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def init_database():
     """Inicializar base de datos para tests de integración."""
+    from app.core.database import close_db, init_db
+
     await init_db()
+    yield
+    await close_db()
 
 
 @pytest_asyncio.fixture(scope="session")
 async def test_app():
     """App FastAPI para testing."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client

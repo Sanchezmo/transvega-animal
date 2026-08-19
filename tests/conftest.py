@@ -4,17 +4,17 @@ Configuración de pytest y fixtures compartidas.
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
-from app.core.config import get_settings
-from app.core.database import init_db
-from app.main import app
 
 
 @pytest.fixture(scope="session")
 def settings():
     """Configuración de test."""
-    return get_settings()
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    value = get_settings()
+    yield value
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")
@@ -30,12 +30,20 @@ def event_loop():
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def init_database():
     """Inicializar base de datos para tests de integración."""
+    from app.core.database import close_db, init_db
+
     await init_db()
+    yield
+    await close_db()
 
 
 @pytest_asyncio.fixture(scope="session")
 async def test_app():
     """App FastAPI para testing."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
