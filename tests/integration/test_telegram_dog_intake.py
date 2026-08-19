@@ -46,8 +46,11 @@ os.environ.setdefault("TELEGRAM_WEBHOOK_SECRET", "test-secret")
 
 # Clear settings cache to pick up new environment variables
 from app.core.config import get_settings  # noqa: E402
+import app.core.config as config_module  # noqa: E402
 
 get_settings.cache_clear()
+# Clear the module-level settings instance that was created at import time
+config_module.settings = get_settings()
 
 from agents.dog_intake.agent import DogIntakeAgent  # noqa: E402
 from agents.supervisor.agent import SupervisorAgent  # noqa: E402
