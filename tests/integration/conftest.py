@@ -15,6 +15,7 @@ os.environ["TEST_MODE"] = "true"
 if "app.core.config" in sys.modules:
     import app.core.config as config_module
     from app.core.config import get_settings
+
     get_settings.cache_clear()
     config_module.settings = get_settings()
 
@@ -82,6 +83,7 @@ class FakeAgent:
 @pytest.fixture(autouse=True)
 def mock_redis():
     """Mock Redis for testing."""
+
     async def mock_get_redis():
         mock = MockRedis()
         yield mock
