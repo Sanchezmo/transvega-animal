@@ -99,16 +99,6 @@ def settings():
     get_settings.cache_clear()
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Event loop para tests async."""
-    import asyncio
-
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def init_database():
     """Inicializar base de datos para tests de integración."""
