@@ -5,6 +5,7 @@ AND: Telegram → Invoice Processing → Dolibarr (Supplier Invoices)
 """
 
 import asyncio
+import os
 import re
 import uuid
 from datetime import datetime
@@ -545,14 +546,34 @@ class SupervisorAgent:
         if not result.get("success"):
             # Check if supplier not found - need to ask user
             if result.get("error") == "supplier_not_found":
+                # Create draft with PENDING_SUPPLIER status to persist file reference
+                correlation_id = str(uuid.uuid4())
+                from app.services.invoice_draft_service import get_invoice_draft_service
+
+                draft_service = await get_invoice_draft_service()
+                chat_id = tg_message.get("chat", {}).get("id", 0)
+                draft = await draft_service.create_draft(
+                    correlation_id=correlation_id,
+                    telegram_user_id=tg_message.get("from", {}).get("id", 0),
+                    telegram_chat_id=chat_id,
+                    telegram_message_id=tg_message.get("message_id", 0),
+                    telegram_update_id=update_id or 0,
+                    file_content=file_content,
+                    file_path=result["file_path"],
+                    final_path=result["final_path"],
+                    supplier_tax_id=result["invoice"]["supplier"]["tax_id"],
+                    supplier_name=result["invoice"]["supplier"]["name"],
+                    invoice_data=result["invoice"],
+                    summary=result["summary"],
+                )
+                # Update draft status to PENDING_SUPPLIER
+                await draft_service.update_draft_status(draft.draft_id, "PENDING_SUPPLIER")
+
                 workflow["step"] = WorkflowStep.INVOICE_PENDING_APPROVAL
                 workflow["status"] = "supplier_not_found"
-                workflow["invoice_draft_id"] = None  # Not persisted yet
-                workflow["pending_invoice_data"] = {
-                    "file_content": file_content,
-                    "filename": filename,
-                    "result": result,
-                }
+                workflow["invoice_draft_id"] = draft.draft_id
+                workflow["invoice_correlation_id"] = correlation_id
+
                 tax_id = result.get("tax_id", "desconocido")
                 return {
                     "success": True,
@@ -2027,18 +2048,33 @@ class SupervisorAgent:
     async def _handle_supplier_creation_callback(self, user_id: int, chat_id: int, session: dict) -> dict:
         """Handle supplier creation after user confirmation."""
         context = session.get("context", {})
-        pending_data = context.get("pending_invoice_data")
+        draft_id = context.get("invoice_draft_id")
 
-        if not pending_data:
-            return {"success": False, "error": "No pending invoice data"}
+        if not draft_id:
+            return {"success": False, "error": "No draft ID in session context"}
 
-        file_content = pending_data["file_content"]
-        filename = pending_data["filename"]
-        result = pending_data["result"]
+        # Retrieve the persisted draft
+        from app.services.invoice_draft_service import get_invoice_draft_service
 
-        tax_id = result.get("tax_id", "desconocido")
-        supplier_name = result.get("invoice", {}).get("supplier", {}).get("name", "Proveedor desconocido")
-        address = result.get("invoice", {}).get("supplier", {}).get("address")
+        draft_service = await get_invoice_draft_service()
+        draft = await draft_service.get_draft(draft_id)
+
+        if not draft:
+            return {"success": False, "error": "Draft not found"}
+
+        # Read file from persisted path
+        try:
+            with open(draft.file_path, "rb") as f:
+                file_content = f.read()
+        except Exception as e:
+            logger.error("failed_to_read_draft_file", draft_id=draft_id, error=str(e))
+            return {"success": False, "error": f"No se pudo leer el archivo del borrador: {str(e)}"}
+
+        filename = os.path.basename(draft.file_path)
+        invoice_data = draft.invoice_data
+        supplier_name = invoice_data.get("supplier", {}).get("name", "Proveedor desconocido")
+        tax_id = invoice_data.get("supplier", {}).get("tax_id", "desconocido")
+        address = invoice_data.get("supplier", {}).get("address")
 
         # Create supplier in Dolibarr
         try:
@@ -2060,33 +2096,24 @@ class SupervisorAgent:
             if not process_result.get("success"):
                 return {"success": False, "error": f"Error re-procesando: {process_result.get('error')}"}
 
-            # Create draft for approval
-            correlation_id = str(uuid.uuid4())
-            from app.services.invoice_draft_service import get_invoice_draft_service
-
-            draft_service = await get_invoice_draft_service()
-            draft = await draft_service.create_draft(
-                correlation_id=correlation_id,
-                telegram_user_id=user_id,
-                telegram_chat_id=chat_id,
-                telegram_message_id=0,
-                telegram_update_id=0,
-                file_content=file_content,
-                file_path=process_result["file_path"],
-                final_path=process_result["final_path"],
-                supplier_tax_id=process_result["invoice"]["supplier"]["tax_id"],
-                supplier_name=process_result["invoice"]["supplier"]["name"],
-                invoice_data=process_result["invoice"],
-                summary=process_result["summary"],
-            )
+            # Update existing draft with new correlation_id and status
+            new_correlation_id = str(uuid.uuid4())
+            draft = await draft_service.update_draft_status(draft_id, "PENDING_APPROVAL")
+            if draft:
+                draft.correlation_id = new_correlation_id
+                draft.invoice_data = process_result["invoice"]
+                draft.summary = process_result["summary"]
+                draft.file_path = process_result["file_path"]
+                draft.final_path = process_result["final_path"]
+                await draft_service.update_invoice_data(draft_id, process_result["invoice"], process_result["summary"])
 
             await self.conversation_manager.update_session(
                 user_id,
                 chat_id,
                 workflow_step=WorkflowStep.INVOICE_AWAITING_APPROVAL,
                 context={
-                    "invoice_draft_id": draft.draft_id,
-                    "invoice_correlation_id": correlation_id,
+                    "invoice_draft_id": draft_id,
+                    "invoice_correlation_id": new_correlation_id,
                 },
             )
 

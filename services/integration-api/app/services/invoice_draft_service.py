@@ -138,7 +138,8 @@ class InvoiceDraftService:
                     -- Constraints
                     CONSTRAINT valid_status CHECK (status IN (
                         'PENDING_APPROVAL', 'APPROVED', 'REJECTED',
-                        'CREATING_DOLIBARR', 'REGISTERED', 'REQUIRES_REVIEW', 'REQUIRES_CLEANUP'
+                        'CREATING_DOLIBARR', 'REGISTERED', 'REQUIRES_REVIEW', 'REQUIRES_CLEANUP',
+                        'PENDING_SUPPLIER'
                     ))
                 )
             """)
@@ -319,6 +320,7 @@ class InvoiceDraftService:
             "REGISTERED",
             "REQUIRES_REVIEW",
             "REQUIRES_CLEANUP",
+            "PENDING_SUPPLIER",
         }
         if status not in valid_statuses:
             raise ValueError(f"Invalid status: {status}")
