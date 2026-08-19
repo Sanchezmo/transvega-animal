@@ -28,6 +28,74 @@ from app.core.database import init_db
 from app.main import app
 
 
+class MockRedis:
+    """Mock Redis for testing."""
+
+    def __init__(self, *args, **kwargs):
+        # Accept and ignore connection parameters like real Redis
+        self._data = {}
+        self._ttl = {}
+
+    async def incr(self, key: str) -> int:
+        current = self._data.get(key, 0) + 1
+        self._data[key] = current
+        return current
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        self._ttl[key] = seconds
+        return True
+
+    async def ttl(self, key: str) -> int:
+        return self._ttl.get(key, -1)
+
+    async def get(self, key: str) -> str | None:
+        return self._data.get(key)
+
+    async def setex(self, key: str, seconds: int, value: str) -> bool:
+        self._data[key] = value
+        self._ttl[key] = seconds
+        return True
+
+    async def close(self):
+        pass
+
+    async def ping(self):
+        return True
+
+
+class FakeAgent:
+    """Fake agent for testing authentication."""
+
+    def __init__(self, agent_id, agent_name, roles):
+        self.agent_id = agent_id
+        self.agent_name = agent_name
+        self.roles = roles
+
+    def has_role(self, role):
+        return role in self.roles
+
+    def has_any_role(self, roles):
+        return any(r in self.roles for r in roles)
+
+
+# Clear any cached settings
+import sys
+if "app.core.config" in sys.modules:
+    import app.core.config as config_module
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+    config_module.settings = get_settings()
+
+# Now safe to import test dependencies
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
+from app.core.config import get_settings
+from app.core.database import init_db
+from app.main import app
+
+
 @pytest.fixture(scope="session")
 def settings():
     """Configuración de test."""
@@ -112,6 +180,24 @@ def mock_agent():
         "agent_name": "products",
         "roles": ["products", "read"],
     }
+
+
+# Mock Redis at module level for rate limiting
+@pytest.fixture(autouse=True)
+def mock_redis():
+    """Mock Redis for testing."""
+    async def mock_get_redis():
+        mock = MockRedis()
+        yield mock
+
+    # Patch get_redis where it's used (rate_limit imports it at module level)
+    # Also patch Redis class in database module where it's instantiated
+    with pytest.MonkeyPatch().context() as m:
+        m.setattr("app.dependencies.rate_limit.get_redis", mock_get_redis)
+        m.setattr("app.core.database.get_redis", mock_get_redis)
+        m.setattr("app.core.database.get_redis_client", mock_get_redis)
+        m.setattr("app.core.database.Redis", MockRedis)
+        yield
 
 
 # Configuración de pytest
