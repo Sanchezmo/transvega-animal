@@ -940,7 +940,6 @@ class TestRequiredE2E:
 
         webhook_secret = get_settings().TELEGRAM_WEBHOOK_SECRET
 
-        # Import and start the supervisor agent (lifespan doesn't run with ASGITransport)
         from unittest.mock import AsyncMock
 
         # Mock the DogIntakeAgent's process_message to simulate the intake flow
@@ -1073,14 +1072,6 @@ class TestRequiredE2E:
             },
         ]
 
-        # Mock the global supervisor_agent's dog_intake_agent to return our test responses
-        # TEST_MODE is automatically enabled in test environment, disabling background tasks
-        from app.routes.telegram import supervisor_agent as global_supervisor_agent
-
-        # Mock the dog_intake_agent's process_message to return our test responses
-        original_process_message = global_supervisor_agent.dog_intake_agent.process_message
-        global_supervisor_agent.dog_intake_agent.process_message = AsyncMock(side_effect=intake_responses)
-
         # Create test client with real ASGI transport (lifespan handles supervisor_agent)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             # Override auth to use dog_intake agent with write permission
@@ -1089,83 +1080,56 @@ class TestRequiredE2E:
             fake_agent = FakeAgent("agent_dog_intake", "dog_intake", ["dog_intake", "write"])
             app.dependency_overrides[get_current_agent] = lambda: fake_agent
 
-            try:
-                # First create a breed if needed (mock_breed fixture should handle this)
-                # Now send webhook with valid secret
-                headers = {
-                    "X-Telegram-Bot-Api-Secret-Token": webhook_secret,
-                    "Content-Type": "application/json",
-                }
+            # Mock the global supervisor_agent's dog_intake_agent to return our test responses
+            # TEST_MODE is automatically enabled in test environment, disabling background tasks
+            from app.routes.telegram import supervisor_agent as global_supervisor_agent
 
-                # Step 1: /start - shows menu
-                webhook_payload = {
-                    "update_id": 999001,
-                    "message": {
-                        "message_id": 1,
-                        "date": 1700000000,
-                        "chat": {"id": 111111111, "type": "private"},
-                        "from": {"id": 111111111, "is_bot": False, "first_name": "Test"},
-                        "text": "/start",
-                    },
-                }
+            # Mock the dog_intake_agent's process_message to return our test responses
+            # Using patch.object ensures proper cleanup even if test fails
+            with patch.object(
+                global_supervisor_agent.dog_intake_agent,
+                "process_message",
+                new=AsyncMock(side_effect=intake_responses),
+            ):
+                try:
+                    # First create a breed if needed (mock_breed fixture should handle this)
+                    # Now send webhook with valid secret
+                    headers = {
+                        "X-Telegram-Bot-Api-Secret-Token": webhook_secret,
+                        "Content-Type": "application/json",
+                    }
 
-                resp = await ac.post("/api/v1/webhook", json=webhook_payload, headers=headers)
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["success"] is True
-                assert data["workflow_type"] == "none"
-                assert data["workflow_step"] == "awaiting_workflow_selection"
-                assert data["awaiting_input"] is True
-                _ = data["session_id"]
-
-                # Step 2: Select dog_management via callback query
-                resp = await ac.post(
-                    "/api/v1/webhook",
-                    json={
-                        "update_id": 999002,
-                        "callback_query": {
-                            "id": "callback-123",
-                            "from": {"id": 111111111},
-                            "message": {"chat": {"id": 111111111}},
-                            "data": "workflow:dog_management",
+                    # Step 1: /start - shows menu
+                    webhook_payload = {
+                        "update_id": 999001,
+                        "message": {
+                            "message_id": 1,
+                            "date": 1700000000,
+                            "chat": {"id": 111111111, "type": "private"},
+                            "from": {"id": 111111111, "is_bot": False, "first_name": "Test"},
+                            "text": "/start",
                         },
-                    },
-                    headers=headers,
-                )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["success"] is True
-                assert data["workflow_type"] == "dog_management"
-                assert data["workflow_step"] == "dog_awaiting_name"
-                assert data["awaiting_input"] is True
+                    }
 
-                # Now send the complete dog data in sequence
-                # The workflow_id will be established on the first intake step
-                workflow_id = None
-                # 8 intake messages + callback triggers first call = 9 total process_message calls
-                # The 9th call returns completed dog, supervisor transforms to dog_awaiting_media step
-                intake_steps = [
-                    ("Thor", "dog_intake", False),
-                    ("Golden Retriever", "dog_intake", False),
-                    ("M", "dog_intake", False),
-                    ("2026-06-10", "dog_intake", False),
-                    ("Dorado", "dog_intake", False),
-                    ("123456789012345", "dog_intake", False),
-                    ("0", "dog_intake", False),
-                    ("1200", "dog_awaiting_media", True),  # Dog created, moves to media step
-                ]
+                    resp = await ac.post("/api/v1/webhook", json=webhook_payload, headers=headers)
+                    assert resp.status_code == 200
+                    data = resp.json()
+                    assert data["success"] is True
+                    assert data["workflow_type"] == "none"
+                    assert data["workflow_step"] == "awaiting_workflow_selection"
+                    assert data["awaiting_input"] is True
+                    _ = data["session_id"]
 
-                for i, (text, expected_step, expected_completed) in enumerate(intake_steps):
+                    # Step 2: Select dog_management via callback query
                     resp = await ac.post(
                         "/api/v1/webhook",
                         json={
-                            "update_id": 999003 + i,
-                            "message": {
-                                "message_id": i + 3,
-                                "date": 1700000000 + i + 1,
-                                "chat": {"id": 111111111, "type": "private"},
-                                "from": {"id": 111111111, "is_bot": False, "first_name": "Test"},
-                                "text": text,
+                            "update_id": 999002,
+                            "callback_query": {
+                                "id": "callback-123",
+                                "from": {"id": 111111111},
+                                "message": {"chat": {"id": 111111111}},
+                                "data": "workflow:dog_management",
                             },
                         },
                         headers=headers,
@@ -1173,31 +1137,68 @@ class TestRequiredE2E:
                     assert resp.status_code == 200
                     data = resp.json()
                     assert data["success"] is True
-
-                    # Capture workflow_id from first intake response
-                    if workflow_id is None:
-                        workflow_id = data["workflow_id"]
-                    assert data["workflow_id"] == workflow_id
-
-                    # Check step - during intake it's "dog_intake", after completion it's "dog_awaiting_media"
-                    assert data["step"] == expected_step
-                    assert data.get("completed", False) == expected_completed
-                    # During intake awaiting_input=True, after dog creation still True (waiting for media)
+                    assert data["workflow_type"] == "dog_management"
+                    assert data["workflow_step"] == "dog_awaiting_name"
                     assert data["awaiting_input"] is True
 
-                    # Last step should have the dog in response
-                    if expected_step == "dog_awaiting_media":
-                        assert "dog" in data
-                        assert data["dog"]["internal_id"] == "DOG-2026-000001"
-                        assert data["dog"]["name"] == "Thor"
-                        assert data["dog"]["id"] == 1
-                        # dog_id is returned in the response
-                        assert "id" in data["dog"]
+                    # Now send the complete dog data in sequence
+                    # The workflow_id will be established on the first intake step
+                    workflow_id = None
+                    # 8 intake messages + callback triggers first call = 9 total process_message calls
+                    # The 9th call returns completed dog, supervisor transforms to dog_awaiting_media step
+                    intake_steps = [
+                        ("Thor", "dog_intake", False),
+                        ("Golden Retriever", "dog_intake", False),
+                        ("M", "dog_intake", False),
+                        ("2026-06-10", "dog_intake", False),
+                        ("Dorado", "dog_intake", False),
+                        ("123456789012345", "dog_intake", False),
+                        ("0", "dog_intake", False),
+                        ("1200", "dog_awaiting_media", True),  # Dog created, moves to media step
+                    ]
 
-            finally:
-                app.dependency_overrides.clear()
-                # Restore original process_message
-                global_supervisor_agent.dog_intake_agent.process_message = original_process_message
+                    for i, (text, expected_step, expected_completed) in enumerate(intake_steps):
+                        resp = await ac.post(
+                            "/api/v1/webhook",
+                            json={
+                                "update_id": 999003 + i,
+                                "message": {
+                                    "message_id": i + 3,
+                                    "date": 1700000000 + i + 1,
+                                    "chat": {"id": 111111111, "type": "private"},
+                                    "from": {"id": 111111111, "is_bot": False, "first_name": "Test"},
+                                    "text": text,
+                                },
+                            },
+                            headers=headers,
+                        )
+                        assert resp.status_code == 200
+                        data = resp.json()
+                        assert data["success"] is True
+
+                        # Capture workflow_id from first intake response
+                        if workflow_id is None:
+                            workflow_id = data["workflow_id"]
+                        assert data["workflow_id"] == workflow_id
+
+                        # Check step - during intake it's "dog_intake", after completion it's "dog_awaiting_media"
+                        assert data["step"] == expected_step
+                        assert data.get("completed", False) == expected_completed
+                        # During intake awaiting_input=True, after dog creation still True (waiting for media)
+                        assert data["awaiting_input"] is True
+
+                        # Last step should have the dog in response
+                        if expected_step == "dog_awaiting_media":
+                            assert "dog" in data
+                            assert data["dog"]["internal_id"] == "DOG-2026-000001"
+                            assert data["dog"]["name"] == "Thor"
+                            assert data["dog"]["id"] == 1
+                            # dog_id is returned in the response
+                            assert "id" in data["dog"]
+
+                finally:
+                    app.dependency_overrides.clear()
+                    # patch.object automatically restores process_message
 
     @pytest.mark.asyncio
     async def test_B_missing_required_field_no_post_dogs(self, mock_breed):
@@ -1209,9 +1210,6 @@ class TestRequiredE2E:
         from app.core.config import get_settings
 
         webhook_secret = get_settings().TELEGRAM_WEBHOOK_SECRET
-
-        # Import and start the supervisor agent (lifespan doesn't run with ASGITransport)
-        from unittest.mock import AsyncMock
 
         from app.routes.telegram import supervisor_agent
 
@@ -1239,97 +1237,100 @@ class TestRequiredE2E:
             },
         ]
 
-        supervisor_agent.dog_intake_agent.process_message = AsyncMock(side_effect=intake_responses)
-        supervisor_agent.dog_intake_agent.start = AsyncMock()
-        supervisor_agent.dog_intake_agent.stop = AsyncMock()
-
-        await supervisor_agent.start()
-
         # This test verifies that if a required field is missing,
         # the dog is not created (no POST to /dogs)
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            from app.dependencies.auth import get_current_agent
+        # Mock only process_message using patch.object for proper cleanup
+        # Do NOT mock start/stop or call supervisor_agent.start()/stop()
+        # ASGITransport handles lifespan automatically
+        with patch.object(
+            supervisor_agent.dog_intake_agent,
+            "process_message",
+            new=AsyncMock(side_effect=intake_responses),
+        ):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                from app.dependencies.auth import get_current_agent
 
-            fake_agent = FakeAgent("agent_dog_intake", "dog_intake", ["dog_intake", "write"])
-            app.dependency_overrides[get_current_agent] = lambda: fake_agent
+                fake_agent = FakeAgent("agent_dog_intake", "dog_intake", ["dog_intake", "write"])
+                app.dependency_overrides[get_current_agent] = lambda: fake_agent
 
-            try:
-                headers = {
-                    "X-Telegram-Bot-Api-Secret-Token": webhook_secret,
-                    "Content-Type": "application/json",
-                }
+                try:
+                    headers = {
+                        "X-Telegram-Bot-Api-Secret-Token": webhook_secret,
+                        "Content-Type": "application/json",
+                    }
 
-                # Step 1: /start - shows menu
-                resp = await ac.post(
-                    "/api/v1/webhook",
-                    json={
-                        "update_id": 999100,
-                        "message": {
-                            "message_id": 1,
-                            "date": 1700000000,
-                            "chat": {"id": 222222222, "type": "private"},
-                            "from": {"id": 222222222, "is_bot": False, "first_name": "Test"},
-                            "text": "/start",
+                    # Step 1: /start - shows menu
+                    resp = await ac.post(
+                        "/api/v1/webhook",
+                        json={
+                            "update_id": 999100,
+                            "message": {
+                                "message_id": 1,
+                                "date": 1700000000,
+                                "chat": {"id": 222222222, "type": "private"},
+                                "from": {"id": 222222222, "is_bot": False, "first_name": "Test"},
+                                "text": "/start",
+                            },
                         },
-                    },
-                    headers=headers,
-                )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["success"] is True
-                assert data["workflow_type"] == "none"
-                assert data["workflow_step"] == "awaiting_workflow_selection"
-                assert data["awaiting_input"] is True
+                        headers=headers,
+                    )
+                    assert resp.status_code == 200
+                    data = resp.json()
+                    assert data["success"] is True
+                    assert data["workflow_type"] == "none"
+                    assert data["workflow_step"] == "awaiting_workflow_selection"
+                    assert data["awaiting_input"] is True
 
-                # Step 2: Select dog_management via callback query
-                resp = await ac.post(
-                    "/api/v1/webhook",
-                    json={
-                        "update_id": 999101,
-                        "callback_query": {
-                            "id": "callback-123",
-                            "from": {"id": 222222222},
-                            "message": {"chat": {"id": 222222222}},
-                            "data": "workflow:dog_management",
+                    # Step 2: Select dog_management via callback query
+                    resp = await ac.post(
+                        "/api/v1/webhook",
+                        json={
+                            "update_id": 999101,
+                            "callback_query": {
+                                "id": "callback-123",
+                                "from": {"id": 222222222},
+                                "message": {"chat": {"id": 222222222}},
+                                "data": "workflow:dog_management",
+                            },
                         },
-                    },
-                    headers=headers,
-                )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["success"] is True
-                assert data["workflow_type"] == "dog_management"
-                assert data["workflow_step"] == "dog_awaiting_name"
-                assert data["awaiting_input"] is True
+                        headers=headers,
+                    )
+                    assert resp.status_code == 200
+                    data = resp.json()
+                    assert data["success"] is True
+                    assert data["workflow_type"] == "dog_management"
+                    assert data["workflow_step"] == "dog_awaiting_name"
+                    assert data["awaiting_input"] is True
 
-                # Provide only name, then stop - missing breed, sex, birth_date, color, microchip
-                resp = await ac.post(
-                    "/api/v1/webhook",
-                    json={
-                        "update_id": 999102,
-                        "message": {
-                            "message_id": 2,
-                            "date": 1700000001,
-                            "chat": {"id": 222222222, "type": "private"},
-                            "from": {"id": 222222222, "is_bot": False, "first_name": "Test"},
-                            "text": "Incomplete Dog",
+                    # Provide only name, then stop - missing breed, sex, birth_date, color, microchip
+                    resp = await ac.post(
+                        "/api/v1/webhook",
+                        json={
+                            "update_id": 999102,
+                            "message": {
+                                "message_id": 2,
+                                "date": 1700000001,
+                                "chat": {"id": 222222222, "type": "private"},
+                                "from": {"id": 222222222, "is_bot": False, "first_name": "Test"},
+                                "text": "Incomplete Dog",
+                            },
                         },
-                    },
-                    headers=headers,
-                )
-                assert resp.status_code == 200
-                data = resp.json()
-                assert data["success"] is True
-                assert data.get("completed", False) is False
-                assert data["awaiting_input"] is True
-                # Should be waiting for breed, not completed
-                assert data["step"] == "dog_intake"
-                assert "dog" not in data
-                _ = data["workflow_id"]  # workflow_id tracked but not used further
+                        headers=headers,
+                    )
+                    assert resp.status_code == 200
+                    data = resp.json()
+                    assert data["success"] is True
+                    assert data.get("completed", False) is False
+                    assert data["awaiting_input"] is True
+                    # Should be waiting for breed, not completed
+                    assert data["step"] == "dog_intake"
+                    assert "dog" not in data
+                    _ = data["workflow_id"]  # workflow_id tracked but not used further
 
-            finally:
-                app.dependency_overrides.clear()
-                await supervisor_agent.stop()
+                finally:
+                    app.dependency_overrides.clear()
+                    # patch.object automatically restores process_message
+                    # ASGITransport handles lifespan (supervisor_agent start/stop)
 
     @pytest.mark.asyncio
     async def test_C_invalid_webhook_secret_returns_403(self):
