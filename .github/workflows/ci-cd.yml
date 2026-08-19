@@ -185,7 +185,6 @@ jobs:
       - name: Run integration tests
         env:
           # Infrastructure overrides for CI (these take precedence over .env.test)
-          ENVIRONMENT: "test"
           AUDIT_DB_HOST: localhost
           AUDIT_DB_PORT: "5432"
           AUDIT_DB_NAME: audit_test
@@ -201,6 +200,7 @@ jobs:
 
           PYTHONPATH: .:services/integration-api
         run: |
+          export ENVIRONMENT=test
           python scripts/load_env.py .env.test python -m pytest tests/integration -v --tb=short
 
       - name: Stop mock-dolibarr container
