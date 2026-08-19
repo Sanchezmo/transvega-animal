@@ -4,6 +4,7 @@ Sets up test environment BEFORE any test modules are imported.
 """
 
 import os
+import sys
 
 # Force test environment BEFORE any other imports
 os.environ["ENVIRONMENT"] = "test"
@@ -11,7 +12,6 @@ os.environ["MOCK_DOLIBARR_ENABLED"] = "true"
 os.environ["TEST_MODE"] = "true"
 
 # Clear any cached settings
-import sys
 if "app.core.config" in sys.modules:
     import app.core.config as config_module
     from app.core.config import get_settings
@@ -78,22 +78,22 @@ class FakeAgent:
         return any(r in self.roles for r in roles)
 
 
-# Clear any cached settings
-import sys
-if "app.core.config" in sys.modules:
-    import app.core.config as config_module
-    from app.core.config import get_settings
-    get_settings.cache_clear()
-    config_module.settings = get_settings()
+# Mock Redis at module level for rate limiting
+@pytest.fixture(autouse=True)
+def mock_redis():
+    """Mock Redis for testing."""
+    async def mock_get_redis():
+        mock = MockRedis()
+        yield mock
 
-# Now safe to import test dependencies
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
-from app.core.config import get_settings
-from app.core.database import init_db
-from app.main import app
+    # Patch get_redis where it's used (rate_limit imports it at module level)
+    # Also patch Redis class in database module where it's instantiated
+    with pytest.MonkeyPatch().context() as m:
+        m.setattr("app.dependencies.rate_limit.get_redis", mock_get_redis)
+        m.setattr("app.core.database.get_redis", mock_get_redis)
+        m.setattr("app.core.database.get_redis_client", mock_get_redis)
+        m.setattr("app.core.database.Redis", MockRedis)
+        yield
 
 
 @pytest.fixture(scope="session")
@@ -180,24 +180,6 @@ def mock_agent():
         "agent_name": "products",
         "roles": ["products", "read"],
     }
-
-
-# Mock Redis at module level for rate limiting
-@pytest.fixture(autouse=True)
-def mock_redis():
-    """Mock Redis for testing."""
-    async def mock_get_redis():
-        mock = MockRedis()
-        yield mock
-
-    # Patch get_redis where it's used (rate_limit imports it at module level)
-    # Also patch Redis class in database module where it's instantiated
-    with pytest.MonkeyPatch().context() as m:
-        m.setattr("app.dependencies.rate_limit.get_redis", mock_get_redis)
-        m.setattr("app.core.database.get_redis", mock_get_redis)
-        m.setattr("app.core.database.get_redis_client", mock_get_redis)
-        m.setattr("app.core.database.Redis", MockRedis)
-        yield
 
 
 # Configuración de pytest
