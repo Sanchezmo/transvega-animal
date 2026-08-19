@@ -55,6 +55,23 @@ from app.core.internal_api_client import InternalAPIClient  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+@pytest.fixture(scope="session", autouse=True)
+def ensure_test_mode():
+    """Ensure the global supervisor_agent has TEST_MODE=True before any tests run.
+    
+    The global supervisor_agent is created at module import time in app.routes.telegram.
+    If ENVIRONMENT is not 'test' at that moment, TEST_MODE will be False and background
+    tasks will start during lifespan, causing event loop errors in tests.
+    This fixture runs at session start (before any tests) and forces TEST_MODE=True.
+    """
+    from app.routes.telegram import supervisor_agent
+    supervisor_agent._test_mode = True
+    # Cancel any pre-existing background tasks that might have started
+    for task in (supervisor_agent._monitor_task, supervisor_agent._cleanup_task):
+        if task and not task.done():
+            task.cancel()
+
+
 class MockRedis:
     """Mock Redis for testing."""
 
