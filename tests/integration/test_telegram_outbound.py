@@ -5,49 +5,14 @@ Tests the complete flow:
 Telegram → Supervisor → DogIntake → Internal API → Dogs API → Telegram outbound
 """
 
-import os
 import uuid
 from unittest.mock import patch
 
 import pytest
 
-from app.core.config import get_settings
-from app.core.telegram_client import MockTelegramClient
 from app.main import app
 
-# Set up test environment variables BEFORE importing app modules that depend on settings
-os.environ.setdefault("AUDIT_DB_HOST", "127.0.0.1")
-os.environ.setdefault("AUDIT_DB_PORT", "55432")
-os.environ.setdefault("AUDIT_DB_NAME", "transvega_test")
-os.environ.setdefault("AUDIT_DB_USER", "transvega_test")
-os.environ.setdefault("AUDIT_DB_PASSWORD", "transvega_test")
-os.environ.setdefault("REDIS_HOST", "127.0.0.1")
-os.environ.setdefault("REDIS_PORT", "56379")
-os.environ.setdefault("REDIS_PASSWORD", "")
-os.environ.setdefault("DOLIBARR_API_URL", "http://localhost:8001")
-os.environ.setdefault("DOLIBARR_API_KEY", "test-key")
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
-os.environ.setdefault("FERNET_KEY", "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg=")
-os.environ.setdefault("ENVIRONMENT", "test")
-os.environ.setdefault("MOCK_DOLIBARR_ENABLED", "true")
-os.environ.setdefault("AGENT_API_KEY_SUPERVISOR", "test-supervisor")
-os.environ.setdefault("AGENT_API_KEY_PRODUCTS", "test-products")
-os.environ.setdefault("AGENT_API_KEY_COMPLIANCE", "test-compliance")
-os.environ.setdefault("AGENT_API_KEY_PUBLISHING", "test-publishing")
-os.environ.setdefault("AGENT_API_KEY_SALES", "test-sales")
-os.environ.setdefault("AGENT_API_KEY_INVOICING", "test-invoicing")
-os.environ.setdefault("AGENT_API_KEY_PURCHASES", "test-purchases")
-os.environ.setdefault("AGENT_API_KEY_BANKING", "test-banking")
-os.environ.setdefault("AGENT_API_KEY_ACCOUNTING", "test-accounting")
-os.environ.setdefault("AGENT_API_KEY_TAX", "test-tax")
-os.environ.setdefault("AGENT_API_KEY_MARKETING", "test-marketing")
-os.environ.setdefault("AGENT_API_KEY_TECHNICAL", "test-technical")
-os.environ.setdefault("AGENT_API_KEY_DOG_INTAKE", "test-dog-intake")
-os.environ.setdefault("AGENT_API_KEY_EXPEDIENTES", "test-expedientes")
-os.environ.setdefault("AGENT_API_KEY_FACTURACION", "test-facturacion")
-os.environ.setdefault("AGENT_API_KEY_LISTING", "test-listing")
-os.environ.setdefault("TELEGRAM_WEBHOOK_SECRET", "test-secret")
-os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-bot-token")
+# Environment variables are set in conftest.py before test collection
 os.environ.setdefault("OLLAMA_ENDPOINT", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_MODEL", "llama3.1:8b")
 os.environ.setdefault("OLLAMA_VISION_MODEL", "llava:7b")

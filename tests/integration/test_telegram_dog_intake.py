@@ -5,57 +5,16 @@ This test demonstrates the complete E2E flow without contacting real Telegram.
 """
 
 import asyncio
-import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-# Set up test environment variables BEFORE importing app
-os.environ.setdefault("AUDIT_DB_HOST", "localhost")
-os.environ.setdefault("AUDIT_DB_PORT", "5432")
-os.environ.setdefault("AUDIT_DB_NAME", "audit_test")
-os.environ.setdefault("AUDIT_DB_USER", "audit")
-os.environ.setdefault("AUDIT_DB_PASSWORD", "test")
-os.environ.setdefault("REDIS_HOST", "localhost")
-os.environ.setdefault("REDIS_PORT", "6379")
-os.environ.setdefault("REDIS_PASSWORD", "")
-os.environ.setdefault("DOLIBARR_API_URL", "http://localhost:8001")
-os.environ.setdefault("DOLIBARR_API_KEY", "test-key")
-os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
-os.environ.setdefault("FERNET_KEY", "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg=")
-os.environ["ENVIRONMENT"] = "test"  # Force test environment for TEST_MODE
-os.environ.setdefault("MOCK_DOLIBARR_ENABLED", "true")
-os.environ.setdefault("AGENT_API_KEY_SUPERVISOR", "test-supervisor")
-os.environ.setdefault("AGENT_API_KEY_PRODUCTS", "test-products")
-os.environ.setdefault("AGENT_API_KEY_COMPLIANCE", "test-compliance")
-os.environ.setdefault("AGENT_API_KEY_PUBLISHING", "test-publishing")
-os.environ.setdefault("AGENT_API_KEY_SALES", "test-sales")
-os.environ.setdefault("AGENT_API_KEY_INVOICING", "test-invoicing")
-os.environ.setdefault("AGENT_API_KEY_PURCHASES", "test-purchases")
-os.environ.setdefault("AGENT_API_KEY_BANKING", "test-banking")
-os.environ.setdefault("AGENT_API_KEY_ACCOUNTING", "test-accounting")
-os.environ.setdefault("AGENT_API_KEY_TAX", "test-tax")
-os.environ.setdefault("AGENT_API_KEY_MARKETING", "test-marketing")
-os.environ.setdefault("AGENT_API_KEY_TECHNICAL", "test-technical")
-os.environ.setdefault("AGENT_API_KEY_DOG_INTAKE", "test-dog-intake")
-os.environ.setdefault("AGENT_API_KEY_EXPEDIENTES", "test-expedientes")
-os.environ.setdefault("AGENT_API_KEY_FACTURACION", "test-facturacion")
-os.environ.setdefault("TELEGRAM_WEBHOOK_SECRET", "test-secret")
-
-# Clear settings cache to pick up new environment variables
-import app.core.config as config_module  # noqa: E402
-from app.core.config import get_settings  # noqa: E402
-
-get_settings.cache_clear()
-# Clear the module-level settings instance that was created at import time
-config_module.settings = get_settings()
-
-from agents.dog_intake.agent import DogIntakeAgent  # noqa: E402
-from agents.supervisor.agent import SupervisorAgent  # noqa: E402
-from app.core.internal_api_client import InternalAPIClient  # noqa: E402
-from app.main import app  # noqa: E402
+from agents.dog_intake.agent import DogIntakeAgent
+from agents.supervisor.agent import SupervisorAgent
+from app.core.internal_api_client import InternalAPIClient
+from app.main import app
 
 
 class MockRedis:
