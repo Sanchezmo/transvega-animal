@@ -25,7 +25,7 @@ os.environ.setdefault("DOLIBARR_API_URL", "http://localhost:8001")
 os.environ.setdefault("DOLIBARR_API_KEY", "test-key")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-testing-only")
 os.environ.setdefault("FERNET_KEY", "ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Rg=")
-os.environ.setdefault("ENVIRONMENT", "test")
+os.environ["ENVIRONMENT"] = "test"  # Force test environment for TEST_MODE
 os.environ.setdefault("MOCK_DOLIBARR_ENABLED", "true")
 os.environ.setdefault("AGENT_API_KEY_SUPERVISOR", "test-supervisor")
 os.environ.setdefault("AGENT_API_KEY_PRODUCTS", "test-products")
