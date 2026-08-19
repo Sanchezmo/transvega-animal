@@ -99,7 +99,7 @@ def settings():
     get_settings.cache_clear()
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def init_database():
     """Inicializar base de datos para tests de integración."""
     from app.core.database import close_db, init_db
