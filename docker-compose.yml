@@ -66,24 +66,23 @@ services:
       - hermes_net
 
   # -------------------------------------------------
-  # Worker de procesamiento de facturas (ejemplo)
+  # Worker Celery para procesamiento de facturas y otras tareas
   # -------------------------------------------------
   invoice_worker:
-    # Reutiliza la misma imagen que Hermes (o crea una específica si lo prefieres)
     build: .
     container_name: invoice_worker
     restart: unless-stopped
     env_file:
       - .env
-    # El worker necesita leer/escribir los mismos datos que Hermes
     volumes:
-      - ./hermes_data:/app/data          # acceso a los archivos de facturas, etc.
-      - ./invoice_worker_logs:/app/logs  # logs propios del worker
+      - ./hermes_data:/app/data
+      - ./invoice_worker_logs:/app/logs
     depends_on:
-      - hermes
+      - redis
     networks:
       - hermes_net
-    command: ["python", "-m", "agents.invoice_processing.worker"]  # ajusta según tu entrypoint
+    working_dir: /app/services/task-queue
+    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=INFO", "-Q", "high,default,low,approvals,notifications"]
 
   # -------------------------------------------------
   # (Opcional) Dolibarr – ERP fuente de verdad para contabilidad

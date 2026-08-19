@@ -20,6 +20,7 @@ from agents.invoice_processing.agent import create_invoice_processing_agent
 from agents.listing.agent import create_listing_agent
 from agents.media_pipeline.agent import create_media_pipeline_agent
 from agents.publishing.agent import create_publishing_agent
+from app.core.telegram_client import TelegramMessage
 from app.schemas.conversation import (
     WorkflowStep,
     WorkflowType,
@@ -399,7 +400,7 @@ class SupervisorAgent:
             return await self._handle_callback_query(user_id, chat_id, session, text, callback_query)
 
         # =========================================================================
-        # PRIORITY 3: Active workflow awaiting response
+        # PRIORITY 3: Active workflow awaiting TEXT response (approval/correction/supplier)
         # =========================================================================
         if workflow_type == WorkflowType.SUPPLIER_INVOICE:
             if workflow_step in [WorkflowStep.INVOICE_AWAITING_APPROVAL, WorkflowStep.INVOICE_AWAITING_CORRECTION]:
@@ -408,8 +409,7 @@ class SupervisorAgent:
                 return await self._handle_supplier_confirmation(user_id, chat_id, session, text)
             elif workflow_step == WorkflowStep.INVOICE_AWAITING_CORRECTION:
                 return await self._handle_invoice_correction_text(user_id, chat_id, session, text)
-            elif workflow_step == WorkflowStep.INVOICE_AWAITING_DOCUMENT:
-                return await self._handle_invoice_document(user_id, chat_id, session, tg_message, update_id)
+            # NOTE: INVOICE_AWAITING_DOCUMENT is handled in Priority 5 (media messages only)
 
         elif workflow_type == WorkflowType.DOG_MANAGEMENT:
             # Delegate to DogIntakeAgent for dog management workflow
@@ -491,15 +491,18 @@ class SupervisorAgent:
                 is_likely_invoice = True
 
             if is_likely_invoice:
-                # Auto-start invoice workflow for invoice-like documents
+                # Auto-start invoice workflow AND process the CURRENT document immediately
                 logger.info("auto_starting_invoice_workflow_for_media", user_id=user_id, chat_id=chat_id)
-                return await self._start_invoice_workflow(user_id, chat_id, session)
+                # Ensure invoice session exists (sets workflow_type/step in Redis)
+                session = await self._ensure_invoice_session(user_id, chat_id, session)
+                # Process the current document immediately - don't wait for user to resend
+                return await self._handle_invoice_document(user_id, chat_id, session, tg_message, update_id)
 
-            # Store pending media in session context
+            # Store pending media in session context (non-invoice files)
             pending_media = self._extract_pending_media(tg_message)
             await self.conversation_manager.update_context(user_id, chat_id, {"pending_media": pending_media})
 
-            # Ask user what to do
+            # Ask user what to do (only for non-invoice files)
             keyboard = get_main_menu_keyboard()
             await self._send_telegram_message(
                 chat_id, "He recibido un archivo.\n¿Qué quieres hacer con él?", reply_markup=keyboard
@@ -1352,8 +1355,12 @@ class SupervisorAgent:
 
     async def _send_telegram_message(
         self, chat_id: int, text: str, reply_markup=None, parse_mode: str = "HTML"
-    ) -> bool:
-        """Send message via Telegram client with optional inline keyboard."""
+    ) -> TelegramMessage | None:
+        """Send message via Telegram client with optional inline keyboard.
+
+        Returns TelegramMessage with message_id, chat_id, date on success.
+        Returns None on failure.
+        """
         try:
             from app.core.telegram_client import create_telegram_client
 
@@ -1364,12 +1371,12 @@ class SupervisorAgent:
                 reply_markup = reply_markup.dict(exclude_none=True)
 
             client = await create_telegram_client()
-            await client.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
+            result = await client.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
             await client.close()
-            return True
+            return result
         except Exception as e:
             logger.error("telegram_send_failed", chat_id=chat_id, error=str(e))
-            return False
+            return None
 
     async def _answer_callback_query(self, callback_query_id: str, text: str | None = None) -> bool:
         """Answer callback query to stop Telegram spinner."""
@@ -1638,9 +1645,11 @@ class SupervisorAgent:
         # Unknown callback
         return {"success": True, "message": "Acción no reconocida", "awaiting_input": True}
 
-    async def _start_invoice_workflow(self, user_id: int, chat_id: int, session: dict) -> dict:
-        """Start invoice processing workflow."""
-        # Clear any pending media from previous fallback
+    async def _ensure_invoice_session(self, user_id: int, chat_id: int, session: dict) -> dict:
+        """
+        Ensure invoice workflow session exists in Redis.
+        Does NOT send any user-facing message - use for internal setup before processing document.
+        """
         pending_media = session.get("context", {}).get("pending_media")
 
         await self.conversation_manager.update_session(
@@ -1650,6 +1659,14 @@ class SupervisorAgent:
             workflow_step=WorkflowStep.INVOICE_AWAITING_DOCUMENT,
             context={"pending_media": pending_media} if pending_media else {},
         )
+
+        # Return updated session by fetching from Redis
+        return await self.conversation_manager.get_session(user_id, chat_id)
+
+    async def _start_invoice_workflow(self, user_id: int, chat_id: int, session: dict) -> dict:
+        """Start invoice processing workflow (user-facing - sends prompt to send invoice)."""
+        # Ensure session exists
+        await self._ensure_invoice_session(user_id, chat_id, session)
 
         text = (
             "📄 <b>Introducir factura de proveedor</b>\n\n"
@@ -1670,7 +1687,6 @@ class SupervisorAgent:
             "workflow_step": WorkflowStep.INVOICE_AWAITING_DOCUMENT,
             "message": text,
             "awaiting_input": True,
-            "pending_media_recovered": pending_media is not None,
         }
 
     async def _handle_invoice_document(
@@ -2633,18 +2649,30 @@ class SupervisorAgent:
         else:
             await self._send_telegram_message(chat_id, text)
 
-    async def _edit_telegram_message(self, chat_id: int, message_id: int, text: str,
-                                      parse_mode: str = "HTML", reply_markup: dict | None = None):
-        """Edit a Telegram message."""
+    async def _edit_telegram_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        parse_mode: str = "HTML",
+        reply_markup: dict | None = None,
+    ) -> TelegramMessage | None:
+        """Edit a Telegram message.
+
+        Returns TelegramMessage with message_id, chat_id, date on success.
+        Returns None on failure (and sends fallback message via _send_telegram_message).
+        """
         try:
             from app.core.telegram_client import create_telegram_client
             client = await create_telegram_client()
-            await client.edit_message_text(chat_id, message_id, text, parse_mode, reply_markup)
+            result = await client.edit_message_text(chat_id, message_id, text, parse_mode, reply_markup)
             await client.close()
+            return result
         except Exception as e:
             logger.error("edit_telegram_message_failed", chat_id=chat_id, message_id=message_id, error=str(e))
             # Fallback: send new message
             await self._send_telegram_message(chat_id, text, reply_markup=reply_markup)
+            return None
 
     def get_workflow_status(self, workflow_id: str) -> dict | None:
         """Get current workflow status."""
