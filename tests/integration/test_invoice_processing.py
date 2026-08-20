@@ -413,24 +413,29 @@ class TestInvoiceDeterministicValidations:
 
     @pytest.mark.asyncio
     async def test_invoice_total_validation(self, invoice_agent):
-        """Test that invoice total must match subtotal + taxes."""
-        from pydantic import ValidationError
-
+        """Test that invoice total must match subtotal + tax_total (via deterministic checks)."""
         from agents.invoice_processing.agent import InvoiceData, InvoiceLine, SupplierInfo
 
-        with pytest.raises(ValidationError) as exc_info:
-            InvoiceData(
-                supplier=SupplierInfo(name="Test", tax_id="B12345678"),
-                invoice={"number": "1", "date": "2024-01-01"},
-                lines=[InvoiceLine(description="Test", quantity=1, unit_price=10, total=10)],
-                taxes=[{"type": "IVA", "rate": 21, "amount": 2.1}],
-                subtotal=10,
-                tax_total=2.1,
-                total=15,  # Should be 12.1
-                currency="EUR",
-            )
-
-        assert "Subtotal + taxes" in str(exc_info.value) and "does not match total" in str(exc_info.value)
+        # This should now pass Pydantic validation (structural only)
+        invoice = InvoiceData(
+            supplier=SupplierInfo(name="Test", tax_id="B12345678"),
+            invoice={"number": "1", "date": "2024-01-01"},
+            lines=[InvoiceLine(description="Test", quantity=1, unit_price=10, total=10)],
+            taxes=[{"type": "IVA", "rate": 21, "amount": 2.1}],
+            subtotal=10,
+            tax_total=2.1,
+            total=15,  # Should be 12.1 - mismatch
+            currency="EUR",
+        )
+        
+        # But deterministic checks should catch the mismatch
+        errors = await invoice_agent._deterministic_checks(invoice)
+        assert len(errors) == 1
+        # New format: dict with code, check, expected, actual
+        assert errors[0]["code"] == "invoice_total_mismatch"
+        assert errors[0]["check"] == "invoice_total"
+        assert errors[0]["expected"] == 12.1
+        assert errors[0]["actual"] == 15.0
 
     @pytest.mark.asyncio
     async def test_vat_rate_optional(self, invoice_agent):

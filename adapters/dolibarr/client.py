@@ -431,22 +431,34 @@ class DolibarrClient:
         sortfield: str = "rowid",
         sortorder: str = "ASC",
         sqlfilters: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Listar solo proveedores (filtro fournisseur=1)."""
+) -> list[dict[str, Any]]:
+        """List suppliers by fetching thirdparties and filtering in memory.
+
+        Note: Dolibarr's sqlfilters syntax for fournisseur is problematic.
+        We fetch all and filter in memory to avoid API syntax issues.
+        """
+        # Fetch a larger set to filter in memory
+        fetch_limit = max(limit * 5, 500)
         params: dict[str, Any] = {
-            "limit": limit,
+            "limit": fetch_limit,
             "offset": offset,
             "sortfield": sortfield,
             "sortorder": sortorder,
         }
-        # Añadir filtro para solo proveedores (Dolibarr usa 'fournisseur')
-        filter_parts = ["fournisseur:=1"]
         if sqlfilters:
-            filter_parts.append(sqlfilters)
-        params["sqlfilters"] = ";".join(filter_parts)
+            params["sqlfilters"] = sqlfilters
 
         result = await self._request("GET", "thirdparties", params=params)
-        return result.get("data", []) if isinstance(result, dict) else result  # type: ignore[no-any-return]
+        all_parties = result.get("data", []) if isinstance(result, dict) else result
+
+        # Filter for suppliers (fournisseur=1 or supplier=1)
+        suppliers = [
+            p for p in all_parties
+            if p.get("fournisseur") == 1 or p.get("supplier") == 1
+        ]
+
+        # Apply pagination after filtering
+        return suppliers[:limit]
 
     async def get_supplier(self, supplier_id: int) -> dict[str, Any]:
         return await self._request("GET", f"thirdparties/{supplier_id}")  # type: ignore[no-any-return]

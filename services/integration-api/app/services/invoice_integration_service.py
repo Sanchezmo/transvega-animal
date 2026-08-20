@@ -46,23 +46,107 @@ class InvoiceIntegrationService:
     ) -> None:
         await self.client.__aexit__(exc_type, exc_val, exc_tb)
 
+    @staticmethod
+    def _normalize_tax_id(tax_id: str) -> str:
+        """Normalize tax ID for comparison."""
+        if not tax_id:
+            return ""
+        # Remove spaces, dashes, dots, make uppercase
+        return tax_id.replace(" ", "").replace("-", "").replace(".", "").upper()
+
+    async def _find_supplier_by_tax_id(self, tax_id: str) -> dict[str, Any] | None:
+        """Find a supplier by normalized tax_id (CIF/NIF)."""
+        normalized_tax_id = self._normalize_tax_id(tax_id)
+        if not normalized_tax_id:
+            return None
+
+        try:
+            # Fetch all thirdparties and filter in memory to avoid sqlfilters syntax issues
+            # Dolibarr's sqlfilters syntax varies by version and can be problematic
+            all_parties = await self.client.list_thirdparties(limit=500)
+
+            for party in all_parties:
+                party_vat = self._normalize_tax_id(party.get("vat_number", "") or party.get("vatnumber", ""))
+                if party_vat == normalized_tax_id:
+                    # Check if it's a supplier (fournisseur=1 or supplier=1)
+                    if party.get("fournisseur") == 1 or party.get("supplier") == 1:
+                        return party
+
+            # If found but not marked as supplier, return it anyway (caller will enable)
+            for party in all_parties:
+                party_vat = self._normalize_tax_id(party.get("vat_number", "") or party.get("vatnumber", ""))
+                if party_vat == normalized_tax_id:
+                    return party
+
+            return None
+        except Exception as e:
+            logger.error("supplier_lookup_failed", tax_id=tax_id, error=str(e))
+            return None
+
     async def get_supplier_by_tax_id(self, tax_id: str) -> dict[str, Any] | None:
         """
         Find a supplier by tax_id (CIF/NIF).
-        Searches through all suppliers and matches the vat_number field.
+        Returns the supplier if found and is a supplier (fournisseur=1).
         """
-        try:
-            suppliers = await self.client.list_suppliers(limit=500)
-            for supplier in suppliers:
-                if supplier.get("vat_number", "").upper() == tax_id.upper().replace("-", ""):
-                    return supplier  # type: ignore[no-any-return]
-                # Also check other possible fields
-                if supplier.get("vatnumber", "").upper() == tax_id.upper().replace("-", ""):
-                    return supplier  # type: ignore[no-any-return]
-            return None
-        except Exception as e:
-            logger.error("get_supplier_by_tax_id_failed", tax_id=tax_id, error=str(e))
-            return None
+        logger.info("supplier_lookup_started", tax_id_present=bool(tax_id))
+        supplier = await self._find_supplier_by_tax_id(tax_id)
+        if supplier:
+            logger.info("supplier_found", supplier_id=supplier.get("id"))
+        else:
+            logger.info("supplier_not_found", tax_id_present=bool(tax_id))
+        return supplier
+
+    async def _ensure_supplier(self, tax_id: str, name: str, address: str | None = None,
+                               email: str | None = None, phone: str | None = None) -> dict[str, Any]:
+        """
+        Ensure a supplier exists in Dolibarr.
+        - If exists as supplier, return it
+        - If exists as client/other, enable as supplier
+        - If not exists, create new supplier
+        """
+        # First check if exists as supplier
+        existing = await self._find_supplier_by_tax_id(tax_id)
+        if existing and (existing.get("fournisseur") == 1 or existing.get("supplier") == 1):
+            logger.info("supplier_already_exists", supplier_id=existing.get("id"))
+            return existing
+
+        # Check if exists as thirdparty but not supplier
+        all_parties = await self.client.list_thirdparties(limit=500)
+        for party in all_parties:
+            party_vat = self._normalize_tax_id(party.get("vat_number", "") or party.get("vatnumber", ""))
+            if party_vat == self._normalize_tax_id(tax_id):
+                # Exists but not a supplier - enable it
+                logger.info("supplier_enable_started", thirdparty_id=party.get("id"))
+                await self.client.update_thirdparty(party["id"], {
+                    "fournisseur": 1,
+                    "client": party.get("client", 1),  # Keep client status if it was a client
+                })
+                logger.info("supplier_enable_completed", thirdparty_id=party["id"])
+                return await self.client.get_thirdparty(party["id"])
+
+        # Not found - create new supplier
+        logger.info("supplier_create_started", name=name, tax_id_present=bool(tax_id))
+        supplier_data = {
+            "name": name,
+            "vat_number": tax_id,
+            "fournisseur": 1,
+            "client": 0,
+        }
+        if address:
+            supplier_data["address"] = address
+        if email:
+            supplier_data["email"] = email
+        if phone:
+            supplier_data["phone"] = phone
+
+        result = await self.client.create_supplier(supplier_data)
+        supplier_id = result.get("id") if isinstance(result, dict) else result
+
+        if not supplier_id:
+            raise ValueError("Failed to create supplier - no ID returned")
+
+        logger.info("supplier_create_completed", supplier_id=supplier_id)
+        return await self.client.get_supplier(supplier_id)
 
     async def get_supplier_by_name(self, name: str) -> dict[str, Any] | None:
         """Find supplier by name (fuzzy match)."""
@@ -123,13 +207,16 @@ class InvoiceIntegrationService:
         Create a supplier invoice in Dolibarr with proper VAT per line.
         Each line must have its own VAT rate (tva_tx) sent to Dolibarr.
         """
-        try:
-            # Find supplier
-            supplier = await self.get_supplier_by_tax_id(supplier_tax_id)
-            if not supplier:
-                raise ValueError(f"Supplier with tax_id {supplier_tax_id} not found in Dolibarr")
+        logger.info("supplier_invoice_create_started", supplier_tax_id=supplier_tax_id, invoice_number=invoice_number)
 
+        try:
+            # Find or create supplier
+            supplier = await self._ensure_supplier(supplier_tax_id, invoice_number)
             supplier_id = supplier.get("id")
+
+            # Check duplicate
+            if await self.invoice_exists(supplier_tax_id, invoice_number):
+                raise ValueError(f"Supplier invoice {invoice_number} already exists for this supplier")
 
             # Prepare invoice data
             invoice_data = {
@@ -184,6 +271,7 @@ class InvoiceIntegrationService:
                         file_data = f.read()
                     filename = attached_file.split("/")[-1]
                     await self.client.upload_document("supplierinvoices", invoice_id, file_data, filename)
+                    logger.info("supplier_invoice_attachment_uploaded", invoice_id=invoice_id)
                 except Exception as e:
                     logger.error("document_attachment_failed", invoice_id=invoice_id, file=attached_file, error=str(e))
                     # Attachment failed but invoice exists - return special error with invoice_id for cleanup
@@ -191,6 +279,7 @@ class InvoiceIntegrationService:
 
             # Return full invoice
             full_invoice = await self.client.get_supplier_invoice(invoice_id)
+            logger.info("supplier_invoice_created", invoice_id=invoice_id, supplier_id=supplier_id)
             return full_invoice  # type: ignore[no-any-return]
 
         except Exception as e:
@@ -217,33 +306,7 @@ class InvoiceIntegrationService:
         Create a new supplier in Dolibarr.
         Only creates with known/reliable data - no invented fields.
         """
-        try:
-            supplier_data = {
-                "name": name,
-                "vat_number": tax_id,
-                "fournisseur": 1,
-                "client": 0,
-            }
-            if address:
-                supplier_data["address"] = address
-            if email:
-                supplier_data["email"] = email
-            if phone:
-                supplier_data["phone"] = phone
-
-            result = await self.client.create_supplier(supplier_data)
-            supplier_id = result.get("id") if isinstance(result, dict) else result
-
-            if not supplier_id:
-                raise ValueError("Failed to create supplier - no ID returned")
-
-            # Return full supplier
-            full_supplier = await self.client.get_supplier(supplier_id)
-            return full_supplier  # type: ignore[no-any-return]
-
-        except Exception as e:
-            logger.error("create_supplier_failed", name=name, tax_id=tax_id, error=str(e))
-            raise
+        return await self._ensure_supplier(tax_id, name, address, email, phone)
 
 
 async def get_invoice_integration_service() -> InvoiceIntegrationService:

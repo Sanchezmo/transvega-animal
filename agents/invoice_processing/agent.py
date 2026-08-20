@@ -129,16 +129,9 @@ class InvoiceData(BaseModel):
     currency: str = "EUR"
 
     @model_validator(mode="after")
-    def validate_totals(self) -> "InvoiceData":
-        # Check line totals sum to subtotal (use net_amount if available, else total as net)
-        line_sum = sum(line.net_amount if line.net_amount is not None else line.total for line in self.lines)
-        if abs(line_sum - self.subtotal) > 0.01:
-            raise ValueError(f"Line totals sum {line_sum} does not match subtotal {self.subtotal}")
-
-        # Check subtotal + taxes = total
-        tax_sum = sum(t.get("amount", 0.0) for t in self.taxes)
-        if abs((self.subtotal + tax_sum) - self.total) > 0.01:
-            raise ValueError(f"Subtotal + taxes ({self.subtotal + tax_sum}) does not match total {self.total}")
+    def validate_structure(self) -> "InvoiceData":
+        # Only structural validation here - no accounting rules
+        # Accounting rules live in _deterministic_checks()
 
         # Check currency
         if self.currency.upper() != "EUR":
@@ -507,26 +500,100 @@ Return ONLY the JSON, no extra text.
         """Validate extracted data against InvoiceData model."""
         return InvoiceData(**data)
 
-    async def _deterministic_checks(self, invoice: InvoiceData) -> list[str]:
-        """Perform deterministic validations; return list of error messages."""
+    async def _deterministic_checks(self, invoice: InvoiceData) -> list[dict[str, Any]]:
+        """Perform deterministic validations; return list of structured error messages."""
         errors = []
-        # Check line totals sum to subtotal
-        line_sum = sum(line.total for line in invoice.lines)
-        if abs(line_sum - invoice.subtotal) > 0.01:
-            errors.append(f"Line totals sum {line_sum} does not match subtotal {invoice.subtotal}")
-        # Check subtotal + taxes = total
-        tax_sum = sum(t.get("amount", 0.0) for t in invoice.taxes)
-        if abs((invoice.subtotal + tax_sum) - invoice.total) > 0.01:
-            errors.append(f"Subtotal + taxes ({invoice.subtotal + tax_sum}) does not match total {invoice.total}")
-        # Check currency
+
+        # --- A) Check line net amounts sum to subtotal ---
+        # Use net_amount if available, otherwise compute from quantity * unit_price - discount
+        line_net_sum = 0.0
+        for line in invoice.lines:
+            if line.net_amount is not None:
+                line_net_sum += line.net_amount
+            else:
+                # Compute net from quantity * unit_price - discount
+                qty = line.quantity
+                unit_price = line.unit_price
+                discount = line.discount or 0.0
+                if discount <= 1.0 and discount > 0:
+                    discount = qty * unit_price * discount
+                net = qty * unit_price - discount
+                line_net_sum += net
+
+        if abs(line_net_sum - invoice.subtotal) > 0.01:
+            errors.append({
+                "code": "line_subtotal_mismatch",
+                "check": "line_subtotal",
+                "expected": round(invoice.subtotal, 2),
+                "actual": round(line_net_sum, 2),
+            })
+
+        # --- B) Check global total: subtotal + tax_total - withholding = total ---
+        withholding_total = 0.0
+        if hasattr(invoice, "withholding_total") and invoice.withholding_total:
+            withholding_total = invoice.withholding_total
+
+        expected_total = invoice.subtotal + invoice.tax_total - withholding_total
+        if abs(expected_total - invoice.total) > 0.01:
+            errors.append({
+                "code": "invoice_total_mismatch",
+                "check": "invoice_total",
+                "subtotal": round(invoice.subtotal, 2),
+                "tax_total": round(invoice.tax_total, 2),
+                "withholding_total": round(withholding_total, 2),
+                "expected": round(expected_total, 2),
+                "actual": round(invoice.total, 2),
+            })
+
+        # --- C) Check tax breakdown consistency (if taxes[] has amounts) ---
+        if invoice.taxes:
+            tax_breakdown_sum = sum(t.get("amount", 0.0) for t in invoice.taxes)
+            if abs(tax_breakdown_sum - invoice.tax_total) > 0.01:
+                errors.append({
+                    "code": "tax_breakdown_incomplete",
+                    "check": "tax_breakdown",
+                    "tax_total": round(invoice.tax_total, 2),
+                    "breakdown_total": round(tax_breakdown_sum, 2),
+                })
+
+            # Check for invalid/missing tax rates when tax_total > 0
+            if invoice.tax_total > 0:
+                invalid_rates = [t for t in invoice.taxes if t.get("rate", 0) <= 0]
+                if invalid_rates:
+                    errors.append({
+                        "code": "tax_rate_missing",
+                        "check": "tax_breakdown",
+                        "tax_total": round(invoice.tax_total, 2),
+                        "invalid_count": len(invalid_rates),
+                    })
+        else:
+            # No taxes breakdown at all - but global total is OK
+            if invoice.tax_total > 0:
+                errors.append({
+                    "code": "tax_breakdown_missing",
+                    "check": "tax_breakdown",
+                    "tax_total": round(invoice.tax_total, 2),
+                    "breakdown_total": 0.0,
+                })
+
+        # --- D) Check currency ---
         if invoice.currency.upper() != "EUR":
-            errors.append(f"Currency {invoice.currency} not supported (expected EUR)")
-        # Check date format (simple)
+            errors.append({
+                "code": "currency_unsupported",
+                "check": "currency",
+                "expected": "EUR",
+                "actual": invoice.currency,
+            })
+
+        # --- E) Check date ---
         inv = invoice.invoice
         date_str = inv.get("date", "")
-        # Expect YYYY-MM-DD or DD/MM/YYYY etc. We'll just check not empty.
         if not date_str:
-            errors.append("Invoice date missing")
+            errors.append({
+                "code": "date_missing",
+                "check": "date",
+            })
+
         return errors
 
     def _normalize_tax_data(self, extracted: dict[str, Any]) -> dict[str, Any]:
@@ -547,13 +614,21 @@ Return ONLY the JSON, no extra text.
         tax_by_rate: dict[float, float] = defaultdict(float)  # rate -> total tax amount
         base_by_rate: dict[float, float] = defaultdict(float)  # rate -> total tax base
 
+        def _get_line_tax_rate(line: dict[str, Any]) -> float | None:
+            """Extract tax rate from line, supporting all known aliases."""
+            # Support vat_rate, tax_rate, rate aliases
+            rate = line.get("vat_rate") or line.get("tax_rate") or line.get("rate")
+            if rate is not None and rate > 0:
+                return float(rate)
+            return None
+
         if "lines" in extracted:
             for line in extracted.get("lines", []):
                 # Compute net amount for this line (quantity * unit_price - discount)
                 qty = line.get("quantity", 1.0)
                 unit_price = line.get("unit_price", 0.0)
                 discount = line.get("discount", 0.0)
-                vat_rate = line.get("vat_rate")
+                vat_rate = _get_line_tax_rate(line)
 
                 net_amount = qty * unit_price
                 if discount is not None:
@@ -583,8 +658,8 @@ Return ONLY the JSON, no extra text.
                 if rate is not None:
                     rate = float(rate)
 
-                # If tax has rate but no amount, try to compute from line data
-                if rate is not None and rate > 0 and ("amount" not in tax or tax["amount"] is None):
+                # If tax has rate but no amount (or amount is 0), try to compute from line data
+                if rate is not None and rate > 0 and ("amount" not in tax or tax.get("amount") in (None, 0, 0.0)):
                     # Prefer base from tax item, then from aggregated line data
                     base = tax.get("base") or tax.get("base_amount") or tax.get("net_amount")
                     if base is None and rate in base_by_rate:
@@ -817,17 +892,46 @@ Return ONLY the JSON, no extra text.
                     "needs_review": True,
                 }
 
-            # Step 5: Deterministic checks
+            # Step 5: Deterministic checks - separate hard errors from review warnings
             check_errors = await self._deterministic_checks(invoice)
-            if check_errors:
+
+            # Classify errors: hard errors vs review warnings
+            hard_error_codes = {
+                "invoice_total_mismatch",
+                "line_subtotal_mismatch",
+                "currency_unsupported",
+                "date_missing",
+            }
+            review_warning_codes = {
+                "tax_breakdown_incomplete",
+                "tax_breakdown_missing",
+                "tax_rate_missing",
+            }
+
+            hard_errors = [e for e in check_errors if e.get("code") in hard_error_codes]
+            review_warnings = [e for e in check_errors if e.get("code") in review_warning_codes]
+
+            # Log all check results
+            for err in check_errors:
+                self.logger.warning("invoice_deterministic_check_failed", **err)
+
+            # If hard errors exist, fail
+            if hard_errors:
                 return {
                     "success": False,
                     "error": "deterministic_checks_failed",
-                    "details": check_errors,
-                    "message": "La factura se ha interpretado pero las validaciones contables no cuadran.",
+                    "details": hard_errors,
+                    "message": "La factura tiene discrepancias contables que impiden continuar.",
                     "requires_review": True,
                     "needs_review": True,
                 }
+
+            # If only review warnings, continue but mark needs_review
+            needs_review_flag = False
+            if review_warnings:
+                self.logger.info("invoice_validation_needs_review", warnings=[w.get("code") for w in review_warnings])
+                needs_review_flag = True
+                # Continue to approval flow, but will return needs_review=True
 
             # Step 6: Lookup supplier in Dolibarr
             supplier_tax_id = invoice.supplier.tax_id
@@ -874,7 +978,7 @@ Return ONLY the JSON, no extra text.
         # Step 10: Return success with pending file path for approval
         final_path = self._get_processed_path(supplier_tax_id, filename)
 
-        return {
+        result = {
             "success": True,
             "message": "Invoice processed successfully, awaiting approval",
             "privacy_scope": privacy_scope,
@@ -903,6 +1007,13 @@ Return ONLY the JSON, no extra text.
                 "input_type": "pdf" if filename.lower().endswith(".pdf") else "image",
             },
         }
+
+        if needs_review_flag:
+            result["needs_review"] = True
+            result["requires_review"] = True
+            result["message"] = "Invoice processed, but requires review due to incomplete tax breakdown"
+
+        return result
 
     async def approve_invoice(
         self, pending_file_path: str, final_path: str, invoice_data: dict[str, Any], uploaded_by: int = 0
