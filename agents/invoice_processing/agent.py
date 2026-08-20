@@ -567,13 +567,16 @@ Return ONLY the JSON, no extra text.
                         "invalid_count": len(invalid_rates),
                     })
         else:
-            # No taxes breakdown at all - but global total is OK
+            # No taxes breakdown at all - this is NOT a hard error if global total is consistent
+            # The invoice can be mathematically valid (subtotal + tax_total = total) without breakdown
+            # Mark as review warning but don't fail
             if invoice.tax_total > 0:
                 errors.append({
                     "code": "tax_breakdown_missing",
                     "check": "tax_breakdown",
                     "tax_total": round(invoice.tax_total, 2),
                     "breakdown_total": 0.0,
+                    "severity": "warning",  # Not a hard error - can be reviewed
                 })
 
         # --- D) Check currency ---
@@ -720,41 +723,59 @@ Return ONLY the JSON, no extra text.
 
         return extracted
 
-    async def _lookup_or_create_supplier(self, tax_id: str, name: str | None = None, address: str | None = None) -> dict[str, Any] | None:
+    async def _lookup_or_create_supplier(
+        self, tax_id: str, name: str | None = None, address: str | None = None
+    ) -> dict[str, Any] | None:
         """Find or create supplier by tax_id using _ensure_supplier logic.
-        
+
         This handles all cases:
         1. If exists as supplier -> returns it
         2. If exists as client/other -> enables as supplier
         3. If not exists -> creates new supplier
+
+        Returns None only if supplier genuinely not found and cannot be created.
+        Raises/returns error for integration failures.
         """
         try:
-            from app.services.invoice_integration_service import InvoiceIntegrationService
+            from app.services.invoice_integration_service import (
+                InvoiceIntegrationService,
+                SupplierLookupError,
+            )
 
             # Use name from extraction if not provided
             supplier_name = name or "Proveedor desconocido"
-            
+
             service = InvoiceIntegrationService()
             async with service as s:
-                supplier = await s._ensure_supplier(tax_id, name=supplier_name)
+                supplier = await s._ensure_supplier(
+                    tax_id, name=supplier_name, address=address
+                )
             return supplier
+        except SupplierLookupError as e:
+            # Integration error - don't silently fail, propagate
+            self.logger.error(
+                "dolibarr_supplier_lookup_integration_error", error=str(e)
+            )
+            raise
         except Exception as e:
-            self.logger.warning("dolibarr_supplier_lookup_failed", error=str(e))
-            return None
+            self.logger.error(
+                "dolibarr_supplier_lookup_unexpected_error", error=str(e)
+            )
+            raise
 
-    async def _check_duplicate(self, supplier_tax_id: str, invoice_number: str) -> bool:
-        """Check if invoice already exists in Dolibarr."""
-        try:
-            from app.services.invoice_integration_service import InvoiceIntegrationService
+    async def _check_duplicate(
+        self, supplier_tax_id: str, invoice_number: str
+    ) -> bool:
+        """Check if invoice already exists in Dolibarr.
 
-            service = InvoiceIntegrationService()
-            async with service as s:
-                result: bool = await s.invoice_exists(supplier_tax_id, invoice_number)
-                return result
-        except Exception as e:
-            self.logger.warning("duplicate_check_failed", error=str(e))
-            # Fail closed: assume duplicate to avoid creating duplicate
-            return True
+        Returns True if duplicate found, False if not found.
+        Raises SupplierLookupError on integration errors.
+        """
+        from app.services.invoice_integration_service import InvoiceIntegrationService
+
+        service = InvoiceIntegrationService()
+        async with service as s:
+            return await s.invoice_exists(supplier_tax_id, invoice_number)
 
     async def process_invoice(self, file_content: bytes, filename: str, uploaded_by: int = 0) -> dict[str, Any]:
         """
@@ -946,8 +967,22 @@ Return ONLY the JSON, no extra text.
             supplier_tax_id = invoice.supplier.tax_id
             supplier_name = invoice.supplier.name
             supplier_address = getattr(invoice.supplier, "address", None)
-            supplier_info = await self._lookup_or_create_supplier(supplier_tax_id, name=supplier_name, address=supplier_address)
+            try:
+                supplier_info = await self._lookup_or_create_supplier(
+                    supplier_tax_id, name=supplier_name, address=supplier_address
+                )
+            except Exception as e:
+                # Integration error - cannot proceed safely
+                self.logger.error("supplier_lookup_integration_error", error=str(e))
+                return {
+                    "success": False,
+                    "error": "supplier_lookup_failed",
+                    "message": "No se ha podido consultar Dolibarr para resolver el proveedor.",
+                    "requires_review": True,
+                }
+
             if not supplier_info:
+                # Supplier genuinely not found and cannot be created (shouldn't happen with _ensure_supplier)
                 return {
                     "success": False,
                     "error": "supplier_not_found",
@@ -957,7 +992,17 @@ Return ONLY the JSON, no extra text.
 
             # Step 7: Check duplicate
             invoice_number = invoice.invoice.get("number", "")
-            is_dup = await self._check_duplicate(supplier_tax_id, invoice_number)
+            try:
+                is_dup = await self._check_duplicate(supplier_tax_id, invoice_number)
+            except Exception as e:
+                self.logger.error("duplicate_check_integration_error", error=str(e))
+                return {
+                    "success": False,
+                    "error": "duplicate_check_failed",
+                    "message": "No se ha podido verificar duplicados en Dolibarr.",
+                    "requires_review": True,
+                }
+
             if is_dup:
                 return {
                     "success": False,

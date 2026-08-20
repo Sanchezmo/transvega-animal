@@ -117,6 +117,7 @@ class SupervisorAgent:
         # Background tasks for monitoring/cleanup (disabled in test mode)
         self._monitor_task: asyncio.Task | None = None
         self._cleanup_task: asyncio.Task | None = None
+        self._invoice_result_task: asyncio.Task | None = None
 
     async def start(self):
         """Start the supervisor and sub-agents."""

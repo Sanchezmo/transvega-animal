@@ -76,32 +76,15 @@ async def mock_dolibarr_service():
         service_instance = AsyncMock()
         mock.return_value.__aenter__.return_value = service_instance
 
-        # Mock supplier lookup - _find_supplier_by_tax_id (called by _ensure_supplier)
-        service_instance._find_supplier_by_tax_id.return_value = None  # Not found initially
-
-        # Mock list_thirdparties for checking existing thirdparties
-        service_instance.list_thirdparties.return_value = []
-
-        # Mock supplier creation
-        service_instance.create_supplier.return_value = {
+        # Mock _ensure_supplier (called directly by InvoiceProcessingAgent)
+        # Returns a supplier dict as if supplier was created/found
+        service_instance._ensure_supplier.return_value = {
             "id": 42,
             "name": "Distribuciones Caninas S.L.",
             "vat_number": "B12345678",
             "fournisseur": 1,
             "client": 0,
         }
-
-        # Mock get_supplier (called after create_supplier)
-        service_instance.get_supplier.return_value = {
-            "id": 42,
-            "name": "Distribuciones Caninas S.L.",
-            "vat_number": "B12345678",
-            "fournisseur": 1,
-            "client": 0,
-        }
-
-        # Mock list_thirdparties (for checking existing thirdparties)
-        service_instance.list_thirdparties.return_value = []
 
         # Mock duplicate check - no duplicate
         service_instance.invoice_exists.return_value = False
@@ -119,18 +102,6 @@ async def mock_dolibarr_service():
             "ref": "FAC-2024-001",
             "total_ttc": 442.26,
         }
-
-        # Mock get_supplier (for _ensure_supplier after create)
-        service_instance.get_supplier.return_value = {
-            "id": 42,
-            "name": "Distribuciones Caninas S.L.",
-            "vat_number": "B12345678",
-            "fournisseur": 1,
-            "client": 0,
-        }
-
-        # Mock list_thirdparties for supplier lookup
-        service_instance.list_thirdparties.return_value = []
 
         yield service_instance
 
@@ -275,9 +246,8 @@ class TestInvoiceProcessingAgent:
         assert invoice["total"] == 442.26
         assert len(invoice["lines"]) == 3
 
-        # Verify Dolibarr calls - supplier is created/looked up
-        mock_dolibarr_service.create_supplier.assert_called_once()
-        mock_dolibarr_service.get_supplier.assert_called()
+        # Verify Dolibarr calls - supplier is created/looked up via _ensure_supplier
+        mock_dolibarr_service._ensure_supplier.assert_called_once()
         mock_dolibarr_service.invoice_exists.assert_called_once_with("B12345678", "FAC-2024-001")
 
         # Verify file stored in pending
@@ -326,9 +296,8 @@ class TestInvoiceProcessingAgent:
         assert invoice["total"] == 442.26
         assert len(invoice["lines"]) == 3
 
-        # Verify Dolibarr calls - supplier should be created
-        mock_dolibarr_service.create_supplier.assert_called_once()
-        mock_dolibarr_service.get_supplier.assert_called()
+        # Verify Dolibarr calls - supplier should be created via _ensure_supplier
+        mock_dolibarr_service._ensure_supplier.assert_called_once()
         mock_dolibarr_service.invoice_exists.assert_called_once_with("B12345678", "FAC-2024-001")
 
         # Verify file stored in pending
@@ -507,6 +476,132 @@ class TestInvoiceDeterministicValidations:
 
         line = InvoiceLine(description="Test", quantity=1, unit_price=10, total=10, vat_rate=None)
         assert line.vat_rate is None
+
+    @pytest.mark.asyncio
+    async def test_invoice_math_subtotal_tax_total_matches_total(self, invoice_agent):
+        """
+        Test the core invoice math: subtotal=100, tax_total=21, total=121 should be valid.
+        This is the canonical example from requirements.
+        """
+        from agents.invoice_processing.agent import InvoiceData, InvoiceLine, SupplierInfo
+
+        invoice = InvoiceData(
+            supplier=SupplierInfo(name="Test Supplier", tax_id="B12345678"),
+            invoice={"number": "FAC-001", "date": "2024-01-15"},
+            lines=[
+                InvoiceLine(
+                    description="Product A",
+                    quantity=1,
+                    unit_price=100,
+                    total=100,
+                    vat_rate=21.0,
+                    net_amount=100.0,
+                )
+            ],
+            taxes=[],  # Empty taxes array - should NOT be a hard error
+            subtotal=100.0,
+            tax_total=21.0,
+            total=121.0,
+            currency="EUR",
+        )
+
+        errors = await invoice_agent._deterministic_checks(invoice)
+        
+        # Should have NO hard errors (invoice_total_mismatch, line_subtotal_mismatch, etc.)
+        hard_error_codes = {"invoice_total_mismatch", "line_subtotal_mismatch", "currency_unsupported", "date_missing"}
+        hard_errors = [e for e in errors if e.get("code") in hard_error_codes]
+        assert len(hard_errors) == 0, f"Unexpected hard errors: {hard_errors}"
+        
+        # Should have review warning for missing tax breakdown
+        review_warnings = [e for e in errors if e.get("code") == "tax_breakdown_missing"]
+        assert len(review_warnings) == 1
+        assert review_warnings[0].get("severity") == "warning"
+
+    @pytest.mark.asyncio
+    async def test_invoice_math_with_tax_breakdown(self, invoice_agent):
+        """Test invoice with complete tax breakdown."""
+        from agents.invoice_processing.agent import InvoiceData, InvoiceLine, SupplierInfo
+
+        invoice = InvoiceData(
+            supplier=SupplierInfo(name="Test Supplier", tax_id="B12345678"),
+            invoice={"number": "FAC-002", "date": "2024-01-15"},
+            lines=[
+                InvoiceLine(
+                    description="Product A",
+                    quantity=2,
+                    unit_price=50,
+                    total=100,
+                    vat_rate=21.0,
+                    net_amount=100.0,
+                )
+            ],
+            taxes=[{"type": "IVA", "rate": 21.0, "amount": 21.0, "base": 100.0}],
+            subtotal=100.0,
+            tax_total=21.0,
+            total=121.0,
+            currency="EUR",
+        )
+
+        errors = await invoice_agent._deterministic_checks(invoice)
+        # Should have NO errors at all
+        assert len(errors) == 0
+
+    @pytest.mark.asyncio
+    async def test_invoice_math_line_net_amounts_sum_to_subtotal(self, invoice_agent):
+        """Test that line net amounts correctly sum to subtotal."""
+        from agents.invoice_processing.agent import InvoiceData, InvoiceLine, SupplierInfo
+
+        invoice = InvoiceData(
+            supplier=SupplierInfo(name="Test Supplier", tax_id="B12345678"),
+            invoice={"number": "FAC-003", "date": "2024-01-15"},
+            lines=[
+                InvoiceLine(description="Item 1", quantity=1, unit_price=60, total=60, vat_rate=21.0, net_amount=60.0),
+                InvoiceLine(description="Item 2", quantity=1, unit_price=40, total=40, vat_rate=21.0, net_amount=40.0),
+            ],
+            taxes=[{"type": "IVA", "rate": 21.0, "amount": 21.0}],
+            subtotal=100.0,
+            tax_total=21.0,
+            total=121.0,
+            currency="EUR",
+        )
+
+        errors = await invoice_agent._deterministic_checks(invoice)
+        # Should have NO hard errors
+        hard_error_codes = {"invoice_total_mismatch", "line_subtotal_mismatch", "currency_unsupported", "date_missing"}
+        hard_errors = [e for e in errors if e.get("code") in hard_error_codes]
+        assert len(hard_errors) == 0
+
+    @pytest.mark.asyncio
+    async def test_invoice_math_line_total_is_gross_not_net(self, invoice_agent):
+        """Test that line.total can be gross amount (net + tax) and validation still works."""
+        from agents.invoice_processing.agent import InvoiceData, InvoiceLine, SupplierInfo
+
+        # Line total = 121 (gross: 100 net + 21 tax)
+        invoice = InvoiceData(
+            supplier=SupplierInfo(name="Test Supplier", tax_id="B12345678"),
+            invoice={"number": "FAC-004", "date": "2024-01-15"},
+            lines=[
+                InvoiceLine(
+                    description="Item with VAT included",
+                    quantity=1,
+                    unit_price=121,  # Gross unit price
+                    total=121,       # Gross total
+                    vat_rate=21.0,
+                    net_amount=100.0,  # Explicit net amount
+                )
+            ],
+            taxes=[{"type": "IVA", "rate": 21.0, "amount": 21.0}],
+            subtotal=100.0,
+            tax_total=21.0,
+            total=121.0,
+            currency="EUR",
+        )
+
+        errors = await invoice_agent._deterministic_checks(invoice)
+        # Should have NO hard errors - net_amount is explicitly provided
+        hard_error_codes = {"invoice_total_mismatch", "line_subtotal_mismatch", "currency_unsupported", "date_missing"}
+        hard_errors = [e for e in errors if e.get("code") in hard_error_codes]
+        assert len(hard_errors) == 0
 
 
 class TestInvoiceFileHash:
@@ -797,6 +892,53 @@ class TestInvoiceProcessingTelegramFlow:
         assert hasattr(SupervisorAgent, '_handle_invoice_error')
         assert hasattr(SupervisorAgent, '_send_long_processing_warning')
         assert hasattr(SupervisorAgent, '_edit_telegram_message')
+
+    @pytest.mark.asyncio
+    async def test_supervisor_stop_before_invoice_task_exists(self):
+        """Test that SupervisorAgent.stop() doesn't raise AttributeError if _invoice_result_task doesn't exist."""
+        from agents.supervisor.agent import SupervisorAgent
+
+        # Create supervisor with minimal config (test mode)
+        config = {
+            "TEST_MODE": True,
+            "INTERNAL_API_URL": "http://localhost:8000/api/v1",
+            "AGENT_API_KEY_SUPERVISOR": "test-key",
+            "OLLAMA_ENDPOINT": "http://ollama:11434",
+            "OLLAMA_MODEL": "transvega-local",
+        }
+
+        # Mock the sub-agents to avoid complex setup
+        with patch("agents.supervisor.agent.DogIntakeAgent") as mock_dog, \
+             patch("agents.supervisor.agent.create_invoice_processing_agent") as mock_invoice, \
+             patch("agents.supervisor.agent.create_media_pipeline_agent") as mock_media, \
+             patch("agents.supervisor.agent.create_content_marketing_agent") as mock_content, \
+             patch("agents.supervisor.agent.create_publishing_agent") as mock_pub, \
+             patch("agents.supervisor.agent.create_listing_agent") as mock_listing:
+
+            # Configure mocks
+            for mock in [mock_dog, mock_invoice, mock_media, mock_content, mock_pub, mock_listing]:
+                instance = AsyncMock()
+                instance.start = AsyncMock()
+                instance.stop = AsyncMock()
+                mock.return_value = instance
+
+            supervisor = SupervisorAgent(config)
+            await supervisor.start()
+
+            # Verify _invoice_result_task is initialized to None
+            assert hasattr(supervisor, '_invoice_result_task')
+            assert supervisor._invoice_result_task is None
+
+            # Call stop() - should not raise AttributeError
+            await supervisor.stop()
+
+            # Verify all sub-agents were stopped
+            mock_dog.return_value.stop.assert_called_once()
+            mock_invoice.return_value.stop.assert_called_once()
+            mock_media.return_value.stop.assert_called_once()
+            mock_content.return_value.stop.assert_called_once()
+            mock_pub.return_value.stop.assert_called_once()
+            mock_listing.return_value.stop.assert_called_once()
 
 
 class TestInvoiceProcessingModelRouter:

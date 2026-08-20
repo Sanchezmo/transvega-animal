@@ -21,6 +21,19 @@ class DocumentAttachmentError(Exception):
         self.invoice_id = invoice_id
 
 
+class SupplierLookupError(Exception):
+    """Exception raised when supplier lookup fails due to integration error (not not found)."""
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class SupplierNotFoundError(Exception):
+    """Exception raised when supplier is genuinely not found (404/empty result)."""
+    pass
+
+
 class InvoiceIntegrationService:
     """Service for invoice-related Dolibarr operations."""
 
@@ -46,42 +59,40 @@ class InvoiceIntegrationService:
     ) -> None:
         await self.client.__aexit__(exc_type, exc_val, exc_tb)
 
-    @staticmethod
-    def _normalize_tax_id(tax_id: str) -> str:
-        """Normalize tax ID for comparison."""
-        if not tax_id:
-            return ""
-        # Remove spaces, dashes, dots, make uppercase
-        return tax_id.replace(" ", "").replace("-", "").replace(".", "").upper()
-
     async def _find_supplier_by_tax_id(self, tax_id: str) -> dict[str, Any] | None:
-        """Find a supplier by normalized tax_id (CIF/NIF)."""
-        normalized_tax_id = self._normalize_tax_id(tax_id)
-        if not normalized_tax_id:
+        """
+        Find a supplier by normalized tax_id (CIF/NIF) using paginated search.
+        Returns the thirdparty if found (whether supplier or not), None if not found.
+        Raises SupplierLookupError on integration errors.
+        """
+        if not tax_id:
             return None
 
         try:
-            # Fetch all thirdparties and filter in memory to avoid sqlfilters syntax issues
-            # Dolibarr's sqlfilters syntax varies by version and can be problematic
-            all_parties = await self.client.list_thirdparties(limit=500)
-
-            for party in all_parties:
-                party_vat = self._normalize_tax_id(party.get("vat_number", "") or party.get("vatnumber", ""))
-                if party_vat == normalized_tax_id:
-                    # Check if it's a supplier (fournisseur=1 or supplier=1)
-                    if party.get("fournisseur") == 1 or party.get("supplier") == 1:
-                        return party
-
-            # If found but not marked as supplier, return it anyway (caller will enable)
-            for party in all_parties:
-                party_vat = self._normalize_tax_id(party.get("vat_number", "") or party.get("vatnumber", ""))
-                if party_vat == normalized_tax_id:
-                    return party
-
-            return None
+            # Use paginated search to find thirdparty by tax_id
+            party = await self.client.find_thirdparty_by_tax_id(tax_id)
+            return party
         except Exception as e:
-            logger.error("supplier_lookup_failed", tax_id=tax_id, error=str(e))
-            return None
+            # Distinguish integration errors from not found
+            # DolibarrException with 404/empty would be not found, others are integration errors
+            logger.error("supplier_lookup_failed", tax_id_present=bool(tax_id), error=str(e))
+            # Re-raise as SupplierLookupError for integration errors
+            raise SupplierLookupError(f"Failed to lookup supplier: {e}") from e
+
+    async def find_supplier_or_thirdparty(self, tax_id: str) -> tuple[dict[str, Any] | None, bool]:
+        """
+        Find supplier/thirdparty by tax_id.
+        Returns (party, is_supplier) tuple.
+        - party: the thirdparty dict if found, None if not found
+        - is_supplier: True if party exists and is marked as supplier (fournisseur=1)
+        Raises SupplierLookupError on integration errors.
+        """
+        party = await self._find_supplier_by_tax_id(tax_id)
+        if party is None:
+            return None, False
+
+        is_supplier = party.get("fournisseur") == 1 or party.get("supplier") == 1
+        return party, is_supplier
 
     async def get_supplier_by_tax_id(self, tax_id: str) -> dict[str, Any] | None:
         """
@@ -101,28 +112,26 @@ class InvoiceIntegrationService:
         """
         Ensure a supplier exists in Dolibarr.
         - If exists as supplier, return it
-        - If exists as client/other, enable as supplier
+        - If exists as client/other, enable as supplier (preserving client status)
         - If not exists, create new supplier
+        Raises SupplierLookupError on integration errors.
         """
-        # First check if exists as supplier
-        existing = await self._find_supplier_by_tax_id(tax_id)
-        if existing and (existing.get("fournisseur") == 1 or existing.get("supplier") == 1):
-            logger.info("supplier_already_exists", supplier_id=existing.get("id"))
-            return existing
+        # Find supplier/thirdparty using paginated search
+        party, is_supplier = await self.find_supplier_or_thirdparty(tax_id)
 
-        # Check if exists as thirdparty but not supplier
-        all_parties = await self.client.list_thirdparties(limit=500)
-        for party in all_parties:
-            party_vat = self._normalize_tax_id(party.get("vat_number", "") or party.get("vatnumber", ""))
-            if party_vat == self._normalize_tax_id(tax_id):
-                # Exists but not a supplier - enable it
-                logger.info("supplier_enable_started", thirdparty_id=party.get("id"))
-                await self.client.update_thirdparty(party["id"], {
-                    "fournisseur": 1,
-                    "client": party.get("client", 1),  # Keep client status if it was a client
-                })
-                logger.info("supplier_enable_completed", thirdparty_id=party["id"])
-                return await self.client.get_thirdparty(party["id"])
+        if party and is_supplier:
+            logger.info("supplier_already_exists", supplier_id=party.get("id"))
+            return party
+
+        if party and not is_supplier:
+            # Exists but not a supplier - enable it, preserving client status
+            logger.info("supplier_enable_started", thirdparty_id=party.get("id"))
+            await self.client.update_thirdparty(party["id"], {
+                "fournisseur": 1,
+                "client": party.get("client", 1),  # Keep client status if it was a client
+            })
+            logger.info("supplier_enable_completed", thirdparty_id=party["id"])
+            return await self.client.get_thirdparty(party["id"])
 
         # Not found - create new supplier
         logger.info("supplier_create_started", name=name, tax_id_present=bool(tax_id))
@@ -164,17 +173,20 @@ class InvoiceIntegrationService:
     async def invoice_exists(self, supplier_tax_id: str, invoice_number: str) -> bool:
         """
         Check if a supplier invoice already exists.
+        Returns True if duplicate found, False if not found.
+        Raises SupplierLookupError on integration errors (don't fail closed).
         """
+        # First find supplier - this will raise SupplierLookupError on integration errors
+        supplier = await self.get_supplier_by_tax_id(supplier_tax_id)
+        if not supplier:
+            # Supplier not found - not a duplicate
+            return False
+
+        supplier_id = supplier.get("id")
+        if not supplier_id:
+            return False
+
         try:
-            # First find supplier
-            supplier = await self.get_supplier_by_tax_id(supplier_tax_id)
-            if not supplier:
-                return False
-
-            supplier_id = supplier.get("id")
-            if not supplier_id:
-                return False
-
             # List supplier invoices and check for duplicate number
             invoices = await self.client.list_supplier_invoices(thirdparty_id=supplier_id, limit=500)
             for invoice in invoices:
@@ -186,12 +198,12 @@ class InvoiceIntegrationService:
         except Exception as e:
             logger.error(
                 "invoice_exists_check_failed",
-                tax_id=supplier_tax_id,
+                tax_id_present=bool(supplier_tax_id),
                 invoice_number=invoice_number,
                 error=str(e),
             )
-            # Fail closed: assume duplicate to avoid creating duplicate
-            return True
+            # Integration error - don't fail closed, raise to prevent accidental creation
+            raise SupplierLookupError(f"Failed to check duplicate invoice: {e}") from e
 
     async def create_supplier_invoice(
         self,

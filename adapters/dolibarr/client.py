@@ -9,6 +9,7 @@ import structlog
 
 from app.core.config import get_settings
 from app.core.exceptions import DolibarrException
+from app.utils.tax_id import normalize_tax_id
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -147,6 +148,68 @@ class DolibarrClient:
 
         result = await self._request("GET", "thirdparties", params=params)
         return result.get("data", []) if isinstance(result, dict) else result
+
+    async def iter_all_thirdparties(
+        self,
+        page_size: int = 100,
+        sqlfilters: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Iterate through ALL thirdparties using pagination.
+        Returns complete list - use with caution for large datasets.
+        For targeted searches, prefer find_thirdparty_by_tax_id.
+        """
+        all_parties = []
+        offset = 0
+        while True:
+            parties = await self.list_thirdparties(
+                limit=page_size,
+                offset=offset,
+                sqlfilters=sqlfilters,
+            )
+            if not parties:
+                break
+            all_parties.extend(parties)
+            if len(parties) < page_size:
+                break
+            offset += page_size
+        return all_parties
+
+    async def find_thirdparty_by_tax_id(
+        self,
+        tax_id: str,
+        page_size: int = 100,
+        max_pages: int = 50,
+    ) -> dict[str, Any] | None:
+        """
+        Find a thirdparty by normalized tax_id (CIF/NIF) using pagination.
+        Searches through pages until found or max_pages reached.
+        """
+        if not tax_id:
+            return None
+        normalized_search = normalize_tax_id(tax_id)
+
+        offset = 0
+        pages_checked = 0
+        while pages_checked < max_pages:
+            parties = await self.list_thirdparties(
+                limit=page_size,
+                offset=offset,
+            )
+            if not parties:
+                break
+
+            for party in parties:
+                party_vat = normalize_tax_id(party.get("vat_number", "") or party.get("vatnumber", ""))
+                if party_vat == normalized_search:
+                    return party
+
+            if len(parties) < page_size:
+                break
+            offset += page_size
+            pages_checked += 1
+
+        return None
 
     async def get_thirdparty(self, thirdparty_id: int) -> dict[str, Any]:
         return await self._request("GET", f"thirdparties/{thirdparty_id}")
