@@ -598,6 +598,9 @@ Return ONLY the JSON, no extra text.
                     elif extracted.get("tax_total", 0) > 0 and len(taxes_list) == 1:
                         # Single tax item and we have tax_total: use it
                         tax["amount"] = extracted["tax_total"]
+                    elif len(taxes_list) == 1 and extracted.get("subtotal", 0) > 0:
+                        # Single tax rate and we have subtotal: use subtotal as base
+                        tax["amount"] = round(extracted["subtotal"] * rate / 100, 2)
 
                 # Ensure amount field exists (default to 0.0 if still missing)
                 if "amount" not in tax or tax["amount"] is None:
