@@ -534,51 +534,111 @@ Return ONLY the JSON, no extra text.
         Normalize tax data before validation.
 
         Ensures that:
-        1. If tax items have rate but no amount, compute amount from rate and base
-        2. If line-level vat_rate exists but taxes array is empty/missing, create tax entries
-        3. Ensure tax items have 'amount' field for validation
+        1. If tax items have rate but no amount, compute amount from line-level data
+        2. If line-level vat_rate exists but taxes array is empty/missing, create tax entries from lines
+        3. Ensure tax items have 'amount' and 'rate' fields for validation
+        4. Validate tax_total consistency with computed tax amounts
 
         This runs BEFORE Pydantic validation to normalize the data structure.
         """
-        # Normalize line-level taxes
+        from collections import defaultdict
+
+        # --- Step 1: Compute tax amounts from line items (group by vat_rate) ---
+        tax_by_rate: dict[float, float] = defaultdict(float)  # rate -> total tax amount
+        base_by_rate: dict[float, float] = defaultdict(float)  # rate -> total tax base
+
         if "lines" in extracted:
             for line in extracted.get("lines", []):
-                # If line has vat_rate but no tax_amount, compute it
-                if line.get("vat_rate") is not None and line.get("vat_rate", 0) > 0:
-                    if "net_amount" in line and line["net_amount"] is not None:
-                        # Ensure tax_amount is computed
-                        pass  # The line model validator will handle this
+                # Compute net amount for this line (quantity * unit_price - discount)
+                qty = line.get("quantity", 1.0)
+                unit_price = line.get("unit_price", 0.0)
+                discount = line.get("discount", 0.0)
+                vat_rate = line.get("vat_rate")
 
-        # Normalize invoice-level taxes
-        if "taxes" in extracted and isinstance(extracted["taxes"], list):
+                net_amount = qty * unit_price
+                if discount is not None:
+                    if discount <= 1.0 and discount > 0:
+                        # Percentage discount
+                        net_amount -= net_amount * discount
+                    else:
+                        # Absolute discount amount
+                        net_amount -= discount
+
+                if vat_rate is not None and vat_rate > 0:
+                    tax_amount = round(net_amount * vat_rate / 100, 2)
+                    tax_by_rate[vat_rate] += tax_amount
+                    base_by_rate[vat_rate] += net_amount
+
+        # --- Step 2: Normalize invoice-level taxes array ---
+        taxes_list: list[dict[str, Any]] = extracted.get("taxes") or []
+        has_taxes_array = len(taxes_list) > 0
+
+        if has_taxes_array:
             normalized_taxes = []
-            for tax in extracted["taxes"]:
-                if isinstance(tax, dict):
-                    # If tax has rate but no amount, try to compute
-                    if "rate" in tax and "amount" not in tax:
-                        # Try to find base amount
-                        base = tax.get("base") or tax.get("base_amount") or tax.get("net_amount")
-                        rate = tax.get("rate")
-                        if base is not None and rate is not None and rate > 0:
-                            tax["amount"] = round(base * rate / 100, 2)
+            for tax in taxes_list:
+                if not isinstance(tax, dict):
+                    continue
 
-                    # Ensure amount field exists
-                    if "amount" not in tax:
-                        tax["amount"] = tax.get("amount", tax.get("tax_amount", tax.get("cuota", 0.0)))
+                rate = tax.get("rate") or tax.get("tax_rate") or tax.get("vat_rate")
+                if rate is not None:
+                    rate = float(rate)
 
-                    # Ensure rate field exists
-                    if "rate" not in tax:
-                        tax["rate"] = tax.get("rate", tax.get("tax_rate", tax.get("vat_rate", 0.0)))
+                # If tax has rate but no amount, try to compute from line data
+                if rate is not None and rate > 0 and ("amount" not in tax or tax["amount"] is None):
+                    # Prefer base from tax item, then from aggregated line data
+                    base = tax.get("base") or tax.get("base_amount") or tax.get("net_amount")
+                    if base is None and rate in base_by_rate:
+                        base = base_by_rate[rate]
 
-                    normalized_taxes.append(tax)
+                    if base is not None:
+                        tax["amount"] = round(base * rate / 100, 2)
+                    elif rate in tax_by_rate:
+                        # Fallback: use aggregated tax amount from lines
+                        tax["amount"] = tax_by_rate[rate]
+                    elif extracted.get("tax_total", 0) > 0 and len(taxes_list) == 1:
+                        # Single tax item and we have tax_total: use it
+                        tax["amount"] = extracted["tax_total"]
 
-            if normalized_taxes:
-                extracted["taxes"] = normalized_taxes
+                # Ensure amount field exists (default to 0.0 if still missing)
+                if "amount" not in tax or tax["amount"] is None:
+                    tax["amount"] = tax.get("tax_amount", tax.get("cuota", 0.0))
 
-        # If no taxes array but we have tax_total, create a default tax entry
-        if ("taxes" not in extracted or not extracted.get("taxes")) and extracted.get("tax_total", 0) > 0:
-            # Create a default tax entry from tax_total
-            extracted["taxes"] = [{"rate": 21.0, "amount": extracted.get("tax_total", 0)}]
+                # Ensure rate field exists
+                if "rate" not in tax:
+                    tax["rate"] = rate if rate is not None else 0.0
+
+                normalized_taxes.append(tax)
+
+            extracted["taxes"] = normalized_taxes
+
+        # --- Step 3: If taxes array is empty/missing but we have line-level tax data, create from lines ---
+        elif "lines" in extracted and tax_by_rate:
+            # Build taxes array from line data
+            extracted["taxes"] = [
+                {"rate": rate, "base": base_by_rate[rate], "amount": amount}
+                for rate, amount in tax_by_rate.items()
+            ]
+
+        # --- Step 4: If still no taxes array but tax_total exists, create from tax_total ---
+        elif extracted.get("tax_total", 0) > 0:
+            # Try to infer rate from lines if possible
+            inferred_rate = 0.0
+            if "lines" in extracted:
+                rates = {line.get("vat_rate") for line in extracted["lines"] if line.get("vat_rate")}
+                if len(rates) == 1:
+                    inferred_rate = float(rates.pop())
+
+            extracted["taxes"] = [{"rate": inferred_rate, "amount": extracted["tax_total"]}]
+
+        # --- Step 5: Ensure tax_total field is consistent with taxes array ---
+        if "taxes" in extracted and isinstance(extracted["taxes"], list):
+            computed_tax_total = sum(t.get("amount", 0.0) for t in extracted["taxes"])
+            # Only update tax_total if it was missing or zero, or if it matches closely
+            tax_total_missing = "tax_total" not in extracted
+            tax_total_zero = extracted.get("tax_total", 0) == 0
+            tax_total_matches = abs(extracted.get("tax_total", 0) - computed_tax_total) < 0.02
+            if tax_total_missing or tax_total_zero or tax_total_matches:
+                extracted["tax_total"] = round(computed_tax_total, 2)
 
         return extracted
 
