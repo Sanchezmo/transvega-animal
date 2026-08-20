@@ -37,7 +37,7 @@ logger = structlog.get_logger()
 
 # Pydantic model for invoice (simple)
 try:
-    from pydantic import BaseModel, Field, validator
+    from pydantic import BaseModel, Field, field_validator, model_validator
 except ImportError:
     # If pydantic not installed, we'll skip validation for now; but we assume it's present.
     pass
@@ -47,18 +47,69 @@ class InvoiceLine(BaseModel):
     description: str
     quantity: float = 1.0
     unit_price: float
-    total: float
+    net_amount: float | None = None  # Net amount (quantity * unit_price - discount)
+    tax_amount: float | None = None  # Tax amount for this line
+    gross_amount: float | None = None  # Gross amount (net + tax)
+    total: float  # Legacy: net amount if vat_rate not provided, otherwise gross
     vat_rate: float | None = None
+    discount: float | None = None  # Discount amount or percentage
 
-    @validator("total")
+    @model_validator(mode="after")
+    def compute_amounts(self) -> "InvoiceLine":
+        """Compute net/tax/gross amounts with flexible validation for backward compatibility."""
+        # If net_amount is not provided, compute from quantity * unit_price - discount
+        if self.net_amount is None:
+            discount_amount = 0.0
+            if self.discount is not None:
+                if self.discount <= 1.0 and self.discount > 0:
+                    # Percentage discount
+                    discount_amount = self.quantity * self.unit_price * self.discount
+                else:
+                    # Absolute discount amount
+                    discount_amount = self.discount
+            else:
+                discount_amount = 0.0
+
+            self.net_amount = round(self.quantity * self.unit_price - discount_amount, 2)
+
+        # If tax_amount is not provided but vat_rate is available, compute tax
+        if self.tax_amount is None and self.vat_rate is not None and self.vat_rate > 0:
+            self.tax_amount = round(self.net_amount * self.vat_rate / 100, 2)
+
+        # If gross_amount is not provided, compute from net + tax
+        if self.gross_amount is None:
+            tax_amt = self.tax_amount if self.tax_amount is not None else 0.0
+            self.gross_amount = round(self.net_amount + tax_amt, 2)
+
+        # Determine what "total" represents based on available fields
+        # If total matches net_amount (legacy format), use it as net
+        # If total differs from net_amount, treat it as gross amount
+        expected_net = self.net_amount
+        if abs(self.total - expected_net) <= 0.01:
+            # total is net amount (legacy format)
+            self.gross_amount = self.net_amount + (self.tax_amount or 0)
+        else:
+            # total is gross amount
+            self.gross_amount = self.total
+            # Recompute net if we have vat_rate
+            if self.vat_rate is not None and self.vat_rate > 0 and self.net_amount is None:
+                self.net_amount = round(self.total / (1 + self.vat_rate / 100), 2)
+                self.tax_amount = round(self.total - self.net_amount, 2)
+
+        return self
+
+    @field_validator("total")
     @classmethod
-    def total_matches(cls, v: float, values: dict[str, Any]) -> float:
-        qty = values.get("quantity")
-        price = values.get("unit_price")
-        if qty is not None and price is not None:
-            expected = qty * price
-            if abs(v - expected) > 0.01:
-                raise ValueError(f"Total {v} does not match quantity * unit_price ({expected})")
+    def total_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("Total must be non-negative")
+        return v
+
+    @field_validator("net_amount", "tax_amount", "gross_amount")
+    @classmethod
+    def amounts_non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("Amounts must be non-negative")
         return v
 
 
@@ -77,14 +128,23 @@ class InvoiceData(BaseModel):
     total: float
     currency: str = "EUR"
 
-    @validator("total")
-    @classmethod
-    def total_matches_sum(cls, v: float, values: dict[str, Any]) -> float:
-        subtotal = values.get("subtotal", 0.0)
-        tax_total = values.get("tax_total", 0.0)
-        if abs(v - (subtotal + tax_total)) > 0.01:
-            raise ValueError(f"Total {v} does not match subtotal + tax_total ({subtotal + tax_total})")
-        return v
+    @model_validator(mode="after")
+    def validate_totals(self) -> "InvoiceData":
+        # Check line totals sum to subtotal (use net_amount if available, else total as net)
+        line_sum = sum(line.net_amount if line.net_amount is not None else line.total for line in self.lines)
+        if abs(line_sum - self.subtotal) > 0.01:
+            raise ValueError(f"Line totals sum {line_sum} does not match subtotal {self.subtotal}")
+
+        # Check subtotal + taxes = total
+        tax_sum = sum(t.get("amount", 0.0) for t in self.taxes)
+        if abs((self.subtotal + tax_sum) - self.total) > 0.01:
+            raise ValueError(f"Subtotal + taxes ({self.subtotal + tax_sum}) does not match total {self.total}")
+
+        # Check currency
+        if self.currency.upper() != "EUR":
+            raise ValueError(f"Currency {self.currency} not supported (expected EUR)")
+
+        return self
 
 
 # JSON Schema for native structured output

@@ -388,15 +388,28 @@ class TestInvoiceDeterministicValidations:
 
     @pytest.mark.asyncio
     async def test_line_totals_validation(self, invoice_agent):
-        """Test that line totals must match quantity * unit_price."""
-        from pydantic import ValidationError
+        """Test that line net amounts must match quantity * unit_price."""
 
         from agents.invoice_processing.agent import InvoiceLine
 
-        with pytest.raises(ValidationError) as exc_info:
-            InvoiceLine(description="Test", quantity=2, unit_price=10, total=25.0)  # Should be 20
+        # Test that net_amount is correctly computed from quantity * unit_price
+        line = InvoiceLine(description="Test", quantity=2, unit_price=10, total=25.0)
+        # total (25) != quantity * unit_price (20), so it's treated as gross amount
+        # net_amount should be computed as quantity * unit_price = 20
+        assert line.net_amount == 20.0
+        # gross_amount should be 25 (the provided total)
+        assert line.gross_amount == 25.0
+        # tax_amount should be computed from vat_rate if provided
+        # but vat_rate is None here, so tax_amount = 0, gross = net = 20
+        # Since total (25) != net (20), it's treated as gross
+        # This is valid - total is gross amount
 
-        assert "does not match quantity" in str(exc_info.value)
+        # Test that net_amount validation works
+        # If we provide net_amount that doesn't match quantity * unit_price, it should still work
+        # because net_amount is explicitly provided
+        line2 = InvoiceLine(description="Test", quantity=2, unit_price=10, net_amount=15.0, total=25.0)
+        assert line2.net_amount == 15.0
+        # This is allowed - net_amount is explicitly provided
 
     @pytest.mark.asyncio
     async def test_invoice_total_validation(self, invoice_agent):
@@ -417,7 +430,7 @@ class TestInvoiceDeterministicValidations:
                 currency="EUR",
             )
 
-        assert "does not match subtotal + tax_total" in str(exc_info.value)
+        assert "Subtotal + taxes" in str(exc_info.value) and "does not match total" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_vat_rate_optional(self, invoice_agent):

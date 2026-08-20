@@ -676,13 +676,16 @@ class SupervisorAgent:
 
     async def _download_telegram_file(self, file_id: str) -> bytes | None:
         """Download file from Telegram using the Telegram client."""
+        logger.info("telegram_get_file_started", file_id=file_id[:10] + "..." if file_id else None)
         try:
             from app.core.telegram_client import create_telegram_client
 
             client = await create_telegram_client()
-            return await client.get_file_and_download(file_id)
+            file_content = await client.get_file_and_download(file_id)
+            logger.info("telegram_get_file_completed", file_id=file_id[:10] + "..." if file_id else None, file_size=len(file_content) if file_content else 0)
+            return file_content
         except Exception as e:
-            logger.error("telegram_download_failed", file_id=file_id, error=str(e))
+            logger.error("telegram_get_file_failed", file_id=file_id[:10] + "..." if file_id else None, error=str(e))
             return None
 
     async def _handle_invoice_approval(self, workflow: dict, workflow_id: str) -> dict:
@@ -1694,34 +1697,41 @@ class SupervisorAgent:
     ) -> dict:
         """Process invoice document/photo within active workflow.
 
-        This method now queues async processing and returns immediately.
-        The actual processing happens in a Celery task, and results are
-        delivered via Redis pub/sub to a background handler.
+        Primary path: synchronous processing (Telegram → download → InvoiceProcessingAgent → Ollama → result).
+        Fallback: async Celery queuing if explicitly enabled via config.
         """
         # Use pending media if available, else extract from current message
         pending_media = session.get("context", {}).get("pending_media")
 
         if pending_media and not (tg_message and ("document" in tg_message or "photo" in tg_message)):
             # Recover pending media - need to download it
+            logger.info("telegram_pending_media_recovered", user_id=user_id, chat_id=chat_id)
             file_content = await self._download_telegram_file(pending_media["file_id"])
             filename = pending_media.get("file_name", "invoice.pdf")
         elif tg_message and ("document" in tg_message or "photo" in tg_message):
             # New document in current message
+            logger.info("telegram_document_received", user_id=user_id, chat_id=chat_id, has_document="document" in tg_message, has_photo="photo" in tg_message)
             if "document" in tg_message:
                 doc = tg_message["document"]
                 file_id = doc.get("file_id")
                 filename = doc.get("file_name", "invoice.pdf")
+                mime_type = doc.get("mime_type", "")
+                logger.info("telegram_file_id_extracted", file_id=file_id[:10] + "..." if file_id else None, filename=filename, mime_type=mime_type)
             else:
                 photos = tg_message["photo"]
                 largest = max(photos, key=lambda p: p.get("file_size", 0))
                 file_id = largest.get("file_id")
                 filename = f"invoice_photo_{file_id}.jpg"
+                logger.info("telegram_photo_file_id_extracted", file_id=file_id[:10] + "..." if file_id else None)
             file_content = await self._download_telegram_file(file_id) if file_id else None
         else:
             return {"success": False, "error": "No document found"}
 
         if not file_content:
+            logger.error("telegram_download_failed_no_content", user_id=user_id, chat_id=chat_id)
             return {"success": False, "error": "Could not download file from Telegram"}
+
+        logger.info("telegram_download_completed", user_id=user_id, chat_id=chat_id, file_size=len(file_content))
 
         # Clear pending media after recovery
         await self.conversation_manager.update_context(user_id, chat_id, {"pending_media": None})
@@ -1729,13 +1739,15 @@ class SupervisorAgent:
         # Update step to processing
         await self.conversation_manager.update_session(user_id, chat_id, workflow_step=WorkflowStep.INVOICE_PROCESSING)
 
-        # Send immediate "processing" message to Telegram
+        # Send immediate "processing" message to Telegram (non-blocking)
         processing_msg = (
             "📄 <b>Factura recibida.</b>\n"
             "⏳ <b>Procesando factura...</b>"
         )
         sent_msg = await self._send_telegram_message(chat_id, processing_msg)
         processing_message_id = sent_msg.message_id if sent_msg else None
+        if sent_msg is None:
+            logger.warning("telegram_status_send_failed_continue_processing", chat_id=chat_id)
 
         # Generate correlation ID for tracking
         import time
@@ -1753,7 +1765,6 @@ class SupervisorAgent:
         # Also store in Redis for long-processing warning tracking
         try:
             import json
-
             from app.core.database import get_redis_client
             redis = await get_redis_client()
             await redis.setex(
@@ -1769,52 +1780,136 @@ class SupervisorAgent:
         except Exception as e:
             logger.warning("invoice_processing_start_track_failed", error=str(e))
 
-        # Queue async Celery task
-        import base64
-        file_content_b64 = base64.b64encode(file_content).decode()
-
+        # SYNCHRONOUS PROCESSING (primary path) - bypass Celery for reliability
+        logger.info("invoice_processing_started", correlation_id=correlation_id, user_id=user_id, chat_id=chat_id)
+        
         try:
-            # Import and queue the task
-            from tasks.facturacion import procesar_factura_async
-
-            procesar_factura_async.delay({
-                "file_content_b64": file_content_b64,
-                "filename": filename,
-                "telegram_user_id": user_id,
-                "telegram_chat_id": chat_id,
-                "telegram_message_id": tg_message.get("message_id", 0) if tg_message else 0,
-                "update_id": update_id or 0,
-                "correlation_id": correlation_id,
+            # Process invoice synchronously
+            result = await self.invoice_agent.process_invoice(file_content, filename)
+            
+            logger.info("invoice_processing_completed", correlation_id=correlation_id, success=result.get("success"))
+            
+            # Update session with result for approval flow
+            await self.conversation_manager.update_context(user_id, chat_id, {
+                "invoice_correlation_id": correlation_id,
+                "invoice_processing_result": result,
             })
-
-            logger.info("invoice_processing_queued",
-                        correlation_id=correlation_id,
-                        user_id=user_id,
-                        chat_id=chat_id)
-
+            
+            # Handle result immediately
+            if result.get("success"):
+                # Create draft for approval
+                from app.services.invoice_draft_service import get_invoice_draft_service
+                draft_service = await get_invoice_draft_service()
+                draft = await draft_service.create_draft(
+                    correlation_id=correlation_id,
+                    telegram_user_id=user_id,
+                    telegram_chat_id=chat_id,
+                    telegram_message_id=tg_message.get("message_id", 0) if tg_message else 0,
+                    telegram_update_id=update_id or 0,
+                    file_content=b"",  # File already stored by agent
+                    file_path=result["file_path"],
+                    final_path=result["final_path"],
+                    supplier_tax_id=result["invoice"]["supplier"]["tax_id"],
+                    supplier_name=result["invoice"]["supplier"]["name"],
+                    invoice_data=result["invoice"],
+                    summary=result["summary"],
+                )
+                
+                # Update session for approval
+                await self.conversation_manager.update_session(
+                    user_id, chat_id,
+                    workflow_step=WorkflowStep.INVOICE_AWAITING_APPROVAL,
+                    context={
+                        "invoice_draft_id": draft.draft_id,
+                        "invoice_correlation_id": correlation_id,
+                    }
+                )
+                
+                # Edit processing message to show approval
+                summary = result["summary"]
+                validation_status = "OK" if not result.get("requires_review") else "REQUIERE REVISIÓN"
+                
+                from app.schemas.conversation import get_invoice_approval_keyboard, get_invoice_approval_text
+                
+                text = get_invoice_approval_text({**summary, "validation_status": validation_status})
+                keyboard = get_invoice_approval_keyboard()
+                
+                if processing_message_id:
+                    await self._edit_telegram_message(chat_id, processing_message_id, text, reply_markup=keyboard)
+                else:
+                    await self._send_telegram_message(chat_id, text, reply_markup=keyboard)
+                
+                return {
+                    "success": True,
+                    "workflow_type": WorkflowType.SUPPLIER_INVOICE,
+                    "workflow_step": WorkflowStep.INVOICE_AWAITING_APPROVAL,
+                    "message": text,
+                    "awaiting_input": True,
+                    "correlation_id": correlation_id,
+                    "async_processing": False,
+                }
+            else:
+                # Processing failed - show error
+                error = result.get("error", "unknown_error")
+                message = result.get("message", "Error desconocido durante el procesamiento.")
+                
+                if error == "invoice_processing_timeout":
+                    text = (
+                        "⚠️ <b>El procesamiento de la factura ha superado el tiempo máximo permitido.</b>\n\n"
+                        "El modelo local no ha podido completar la extracción en el tiempo establecido.\n"
+                        "Puedes volver a intentarlo enviando la factura de nuevo."
+                    )
+                elif result.get("needs_review"):
+                    text = (
+                        "⚠️ <b>No he podido procesar correctamente la factura.</b>\n\n"
+                        "El documento se ha recibido, pero los datos extraídos necesitan revisión.\n"
+                        "Puedes volver a intentarlo."
+                    )
+                else:
+                    text = f"⚠️ <b>Error procesando la factura:</b>\n\n{message}\n\nPuedes volver a intentarlo."
+                
+                if processing_message_id:
+                    await self._edit_telegram_message(chat_id, processing_message_id, text)
+                else:
+                    await self._send_telegram_message(chat_id, text)
+                
+                await self.conversation_manager.update_session(user_id, chat_id, workflow_step=WorkflowStep.INVOICE_FAILED)
+                
+                return {
+                    "success": False,
+                    "workflow_type": WorkflowType.SUPPLIER_INVOICE,
+                    "workflow_step": WorkflowStep.INVOICE_FAILED,
+                    "message": text,
+                    "awaiting_input": False,
+                    "correlation_id": correlation_id,
+                    "error": error,
+                }
+                
         except Exception as e:
-            logger.error("invoice_processing_queue_failed", error=str(e))
-            # Fallback to synchronous processing if Celery unavailable
-            await self.conversation_manager.update_session(user_id, chat_id, workflow_step=WorkflowStep.INVOICE_FAILED)
-            error_msg = (
-                "⚠️ <b>Error al iniciar el procesamiento.</b>\n\n"
-                "No se ha podido poner la factura en cola de procesamiento.\n"
-                "Por favor, inténtalo de nuevo o contacta con soporte."
+            logger.error("invoice_processing_failed", correlation_id=correlation_id, error=str(e), exc_info=True)
+            
+            error_text = (
+                "⚠️ <b>Error interno procesando la factura.</b>\n\n"
+                f"{str(e)}\n\n"
+                "Puedes volver a intentarlo."
             )
-            await self._send_telegram_message(chat_id, error_msg)
-            return {"success": False, "error": f"Queue failed: {str(e)}"}
-
-        # Return immediately - webhook responds 200 OK
-        # The actual result will be delivered via Redis pub/sub
-        return {
-            "success": True,
-            "workflow_type": WorkflowType.SUPPLIER_INVOICE,
-            "workflow_step": WorkflowStep.INVOICE_PROCESSING,
-            "message": "Factura encolada para procesamiento asíncrono",
-            "awaiting_input": False,  # No input needed now
-            "correlation_id": correlation_id,
-            "async_processing": True,
-        }
+            
+            if processing_message_id:
+                await self._edit_telegram_message(chat_id, processing_message_id, error_text)
+            else:
+                await self._send_telegram_message(chat_id, error_text)
+            
+            await self.conversation_manager.update_session(user_id, chat_id, workflow_step=WorkflowStep.INVOICE_FAILED)
+            
+            return {
+                "success": False,
+                "workflow_type": WorkflowType.SUPPLIER_INVOICE,
+                "workflow_step": WorkflowStep.INVOICE_FAILED,
+                "message": error_text,
+                "awaiting_input": False,
+                "correlation_id": correlation_id,
+                "error": str(e),
+            }
 
     async def _handle_invoice_approval_correction(self, user_id: int, chat_id: int, session: dict, text: str) -> dict:
         """Handle approval/correction/cancel text responses for invoice."""
