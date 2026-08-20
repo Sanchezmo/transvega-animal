@@ -76,12 +76,32 @@ async def mock_dolibarr_service():
         service_instance = AsyncMock()
         mock.return_value.__aenter__.return_value = service_instance
 
-        # Mock supplier lookup
-        service_instance.get_supplier_by_tax_id.return_value = {
+        # Mock supplier lookup - _find_supplier_by_tax_id (called by _ensure_supplier)
+        service_instance._find_supplier_by_tax_id.return_value = None  # Not found initially
+
+        # Mock list_thirdparties for checking existing thirdparties
+        service_instance.list_thirdparties.return_value = []
+
+        # Mock supplier creation
+        service_instance.create_supplier.return_value = {
             "id": 42,
             "name": "Distribuciones Caninas S.L.",
             "vat_number": "B12345678",
+            "fournisseur": 1,
+            "client": 0,
         }
+
+        # Mock get_supplier (called after create_supplier)
+        service_instance.get_supplier.return_value = {
+            "id": 42,
+            "name": "Distribuciones Caninas S.L.",
+            "vat_number": "B12345678",
+            "fournisseur": 1,
+            "client": 0,
+        }
+
+        # Mock list_thirdparties (for checking existing thirdparties)
+        service_instance.list_thirdparties.return_value = []
 
         # Mock duplicate check - no duplicate
         service_instance.invoice_exists.return_value = False
@@ -92,6 +112,25 @@ async def mock_dolibarr_service():
             "ref": "FAC-2024-001",
             "total_ttc": 442.26,
         }
+
+        # Mock get_supplier_invoice (called after creation)
+        service_instance.get_supplier_invoice.return_value = {
+            "id": 1001,
+            "ref": "FAC-2024-001",
+            "total_ttc": 442.26,
+        }
+
+        # Mock get_supplier (for _ensure_supplier after create)
+        service_instance.get_supplier.return_value = {
+            "id": 42,
+            "name": "Distribuciones Caninas S.L.",
+            "vat_number": "B12345678",
+            "fournisseur": 1,
+            "client": 0,
+        }
+
+        # Mock list_thirdparties for supplier lookup
+        service_instance.list_thirdparties.return_value = []
 
         yield service_instance
 
@@ -236,8 +275,9 @@ class TestInvoiceProcessingAgent:
         assert invoice["total"] == 442.26
         assert len(invoice["lines"]) == 3
 
-        # Verify Dolibarr calls
-        mock_dolibarr_service.get_supplier_by_tax_id.assert_called_once_with("B12345678")
+        # Verify Dolibarr calls - supplier is created/looked up
+        mock_dolibarr_service.create_supplier.assert_called_once()
+        mock_dolibarr_service.get_supplier.assert_called()
         mock_dolibarr_service.invoice_exists.assert_called_once_with("B12345678", "FAC-2024-001")
 
         # Verify file stored in pending
@@ -260,18 +300,41 @@ class TestInvoiceProcessingAgent:
         assert result["requires_review"] is True
 
     @pytest.mark.asyncio
-    async def test_process_unknown_supplier_rejected(self, invoice_agent, mock_dolibarr_service, sample_invoice_text):
-        """Test that unknown suppliers are rejected."""
-        mock_dolibarr_service.get_supplier_by_tax_id.return_value = None
+    async def test_process_unknown_supplier_created(
+        self, invoice_agent, mock_dolibarr_service, sample_invoice_text
+    ):
+        """Test that unknown suppliers are created automatically."""
+        # Mock supplier not found initially (will be created)
+        # The mock is already configured to return None for _find_supplier_by_tax_id
+        # and create_supplier will be called to create the supplier
 
         file_content = sample_invoice_text.encode("utf-8")
         filename = "test_invoice.pdf"
 
         result = await invoice_agent.process_invoice(file_content, filename)
 
-        assert result["success"] is False
-        assert result["error"] == "supplier_not_found"
-        assert result["requires_review"] is True
+        assert result["success"] is True
+        assert result["privacy_scope"] == "LOCAL_ONLY"
+        assert result["requires_approval"] is True
+        assert "file_path" in result
+        assert "final_path" in result
+        assert "invoice" in result
+
+        invoice = result["invoice"]
+        assert invoice["supplier"]["tax_id"] == "B12345678"
+        assert invoice["invoice"]["number"] == "FAC-2024-001"
+        assert invoice["total"] == 442.26
+        assert len(invoice["lines"]) == 3
+
+        # Verify Dolibarr calls - supplier should be created
+        mock_dolibarr_service.create_supplier.assert_called_once()
+        mock_dolibarr_service.get_supplier.assert_called()
+        mock_dolibarr_service.invoice_exists.assert_called_once_with("B12345678", "FAC-2024-001")
+
+        # Verify file stored in pending
+        assert os.path.exists(result["file_path"])
+        assert "pending" in result["file_path"]
+        assert "B12345678" in result["file_path"]
 
     @pytest.mark.asyncio
     async def test_approve_invoice_success(

@@ -720,15 +720,24 @@ Return ONLY the JSON, no extra text.
 
         return extracted
 
-    async def _lookup_supplier(self, tax_id: str) -> dict[str, Any] | None:
-        """Call InvoiceIntegrationService to find supplier by tax_id."""
+    async def _lookup_or_create_supplier(self, tax_id: str, name: str | None = None, address: str | None = None) -> dict[str, Any] | None:
+        """Find or create supplier by tax_id using _ensure_supplier logic.
+        
+        This handles all cases:
+        1. If exists as supplier -> returns it
+        2. If exists as client/other -> enables as supplier
+        3. If not exists -> creates new supplier
+        """
         try:
             from app.services.invoice_integration_service import InvoiceIntegrationService
 
+            # Use name from extraction if not provided
+            supplier_name = name or "Proveedor desconocido"
+            
             service = InvoiceIntegrationService()
             async with service as s:
-                result = await s.get_supplier_by_tax_id(tax_id)
-            return result if result is not None else None
+                supplier = await s._ensure_supplier(tax_id, name=supplier_name)
+            return supplier
         except Exception as e:
             self.logger.warning("dolibarr_supplier_lookup_failed", error=str(e))
             return None
@@ -933,9 +942,11 @@ Return ONLY the JSON, no extra text.
                 needs_review_flag = True
                 # Continue to approval flow, but will return needs_review=True
 
-            # Step 6: Lookup supplier in Dolibarr
+            # Step 6: Lookup or create supplier in Dolibarr
             supplier_tax_id = invoice.supplier.tax_id
-            supplier_info = await self._lookup_supplier(supplier_tax_id)
+            supplier_name = invoice.supplier.name
+            supplier_address = getattr(invoice.supplier, "address", None)
+            supplier_info = await self._lookup_or_create_supplier(supplier_tax_id, name=supplier_name, address=supplier_address)
             if not supplier_info:
                 return {
                     "success": False,
