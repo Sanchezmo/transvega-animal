@@ -804,6 +804,19 @@ class TestInvoiceProcessingDiagnostics:
 
         invoice_agent._ocr_via_ollama = mock_ocr_via_ollama
 
+        # Mock LLM classification to return SINGLE_INVOICE for scanned invoices
+        from agents.invoice_processing.agent import DocumentClassification, DocumentType
+        async def mock_classify_document_llm(page_images, page_count):
+            return DocumentClassification(
+                document_type=DocumentType.SINGLE_INVOICE,
+                invoice_count=1,
+                confidence=0.9,
+                signals=["invoice keyword", "invoice number", "subtotal", "tax", "total"],
+                page_count=page_count,
+                classification_strategy="llm",
+            )
+        invoice_agent._classify_document_llm = mock_classify_document_llm
+
         file_content = b"fake pdf content"
         filename = "scanned_invoice.pdf"
 

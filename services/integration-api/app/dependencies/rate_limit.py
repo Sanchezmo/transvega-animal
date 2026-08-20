@@ -5,6 +5,7 @@ Dependencias de rate limiting e idempotencia.
 import json
 import time
 
+import structlog
 from fastapi import Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 
@@ -13,6 +14,7 @@ from app.core.database import get_redis
 from app.core.exceptions import IdempotencyException, RateLimitException
 
 settings = get_settings()
+logger = structlog.get_logger()
 
 
 async def rate_limit_dependency(
@@ -105,8 +107,9 @@ async def telegram_idempotency_dependency(
     TTL configurable via TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS (default 24h).
 
     Behavior:
-    - On SUCCESS: Block future same update_id (return 409)
-    - On FAILURE: Allow retry (don't block)
+    - Atomic SET NX: only first request wins
+    - "processing" state blocks retries (prevents Telegram retry loops)
+    - Only "failed" state allows retry after TTL
     """
     # Extract update_id from request body
     body = await request.body()
@@ -127,26 +130,82 @@ async def telegram_idempotency_dependency(
     ttl_hours = getattr(settings, "TELEGRAM_UPDATE_IDEMPOTENCY_TTL_HOURS", 24)
     ttl_seconds = ttl_hours * 3600
 
-    # Check existing state
-    existing = await redis.get(cache_key)
-    if existing:
-        try:
-            data = json_lib.loads(existing)
-            status = data.get("status")
-            if status == "completed":
-                # Already successfully processed - block
+    # ATOMIC check-and-set using SET NX
+    # Only proceed if key doesn't exist (first request wins)
+    acquired = await redis.set(
+        cache_key,
+        json_lib.dumps({"status": "processing"}),
+        nx=True,
+        ex=ttl_seconds,
+    )
+
+    if not acquired:
+        # Key already exists - check its status
+        existing = await redis.get(cache_key)
+        if existing:
+            try:
+                data = json_lib.loads(existing)
+                status = data.get("status")
+                if status == "completed":
+                    # Already successfully processed - block with 200 OK (idempotent)
+                    logger.info(
+                        "telegram_update_duplicate_suppressed",
+                        update_id=update_id,
+                        status=status,
+                    )
+                    raise IdempotencyException(
+                        key=idempotency_key,
+                        existing_id=update_id,
+                    )
+                elif status == "failed":
+                    # Previous attempt failed - allow ONE retry by deleting the key
+                    # This implements a single-retry policy for failed attempts
+                    logger.info(
+                        "telegram_update_retry_allowed",
+                        update_id=update_id,
+                        previous_status=status,
+                    )
+                    await redis.delete(cache_key)
+                    # Fall through to acquire the lock
+                    acquired = await redis.set(
+                        cache_key,
+                        json_lib.dumps({"status": "processing"}),
+                        nx=True,
+                        ex=ttl_seconds,
+                    )
+                    if not acquired:
+                        # Race condition - another request got the retry
+                        logger.info(
+                            "telegram_update_retry_race",
+                            update_id=update_id,
+                        )
+                        raise IdempotencyException(
+                            key=idempotency_key,
+                            existing_id=update_id,
+                        )
+                else:
+                    # Status is "processing" - BLOCK retry (prevents Telegram retry loops)
+                    logger.info(
+                        "telegram_update_retry_blocked",
+                        update_id=update_id,
+                        status=status,
+                    )
+                    raise IdempotencyException(
+                        key=idempotency_key,
+                        existing_id=update_id,
+                    )
+            except IdempotencyException:
+                raise
+            except Exception:
+                # If JSON parsing fails, treat as processing
+                logger.warning(
+                    "telegram_update_idempotency_parse_failed",
+                    update_id=update_id,
+                )
                 raise IdempotencyException(
                     key=idempotency_key,
                     existing_id=update_id,
                 )
-            # If "processing" or "failed" - allow retry
-            pass
-        except Exception:
-            # If JSON parsing fails, allow retry
-            pass
-    else:
-        # First time - set to "processing"
-        await redis.setex(cache_key, ttl_seconds, json_lib.dumps({"status": "processing"}))
 
     # Store the parsed update in request.state so the endpoint can use it
     # without re-reading the consumed body stream

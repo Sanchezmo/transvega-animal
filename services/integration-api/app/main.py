@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.database import close_db, init_db
-from app.core.exceptions import TransvegaException
+from app.core.exceptions import AuthorizationException, IdempotencyException, TransvegaException
 from app.routes import (
     aprobaciones,
     comercial,
@@ -165,9 +165,63 @@ async def logging_middleware(request: Request, call_next):
         raise
 
 
-# Manejador global de excepciones
-@app.exception_handler(TransvegaException)
-async def transvega_exception_handler(request: Request, exc: TransvegaException):
+# Manejador específico para AuthorizationException (permisos)
+@app.exception_handler(AuthorizationException)
+async def authorization_exception_handler(request: Request, exc: AuthorizationException):
+    logger.warning(
+        "authorization_failed",
+        error_code=exc.error_code,
+        message=exc.message,
+        details=exc.details,
+        path=request.url.path,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.error_code,
+                "message": exc.message,
+                "details": exc.details,
+            }
+        },
+    )
+
+
+# Manejador específico para IdempotencyException (duplicados de Telegram webhook)
+@app.exception_handler(IdempotencyException)
+async def idempotency_exception_handler(request: Request, exc: IdempotencyException):
+    # Para duplicados de Telegram webhook, devolver 200 OK con resultado original cacheado
+    if exc.details and exc.details.get("idempotency_key", "").startswith("telegram:update:"):
+        update_id = exc.details.get("existing_resource_id", "unknown")
+        logger.info("telegram_update_duplicate_idempotent_200", update_id=update_id)
+        # Intentar recuperar el resultado original cacheado
+        try:
+            redis = request.app.state.redis_client
+            if redis:
+                cache_key = f"idempotency:telegram:update:{exc.details.get('existing_resource_id', 'unknown')}"
+                cached = await redis.get(cache_key)
+                if cached:
+                    import json as json_lib
+                    cached_data = json_lib.loads(cached)
+                    if cached_data.get("status") == "completed" and "response" in cached_data:
+                        logger.info("telegram_update_duplicate_returning_cached", update_id=exc.details.get("existing_resource_id"))
+                        return JSONResponse(status_code=200, content=cached_data["response"])
+        except Exception as e:
+            logger.warning("failed_to_retrieve_cached_result", error=str(e))
+
+        # Fallback: devolver respuesta de duplicado genérica
+        update_id = exc.details.get("existing_resource_id", "unknown")
+        logger.info("telegram_update_duplicate_idempotent_200", update_id=update_id)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "duplicate": True,
+                "message": "Update already processed",
+                "update_id": exc.details.get("existing_resource_id", "unknown"),
+            },
+        )
+    # Para otros casos de idempotencia, mantener el comportamiento original (409)
     logger.warning(
         "business_exception",
         error_code=exc.error_code,
@@ -187,7 +241,7 @@ async def transvega_exception_handler(request: Request, exc: TransvegaException)
     )
 
 
-@app.exception_handler(Exception)
+@app.exception_handler(TransvegaException)
 async def generic_exception_handler(request: Request, exc: Exception):
     logger.error(
         "unhandled_exception",

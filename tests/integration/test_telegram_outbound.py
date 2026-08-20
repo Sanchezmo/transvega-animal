@@ -39,6 +39,32 @@ class MockRedis:
         self._ttl[key] = seconds
         return True
 
+    async def set(self, key: str, value: str, nx: bool = False, ex: int | None = None) -> bool:
+        """Mock Redis SET with NX and EX options."""
+        if nx and key in self._data:
+            return False
+        self._data[key] = value
+        if ex:
+            self._ttl[key] = ex
+        return True
+
+    def pubsub(self):
+        """Mock Redis pubsub - returns a mock pubsub object."""
+        class MockPubSub:
+            async def subscribe(self, channel):
+                pass
+            async def unsubscribe(self, channel):
+                pass
+            async def close(self):
+                pass
+            def listen(self):
+                # Return an empty async iterator
+                async def empty_iter():
+                    return
+                    yield
+                return empty_iter()
+        return MockPubSub()
+
     async def close(self):
         pass
 
@@ -66,15 +92,27 @@ def test_user_id():
     """Generate unique user_id per test for isolation."""
     return 100000 + int(uuid.uuid4().int % 100000)
 
-
 @pytest_asyncio.fixture
 async def telegram_test_setup(monkeypatch):
     """Set up test environment with mocked Telegram client and Redis."""
     from app.core.telegram_client import MockTelegramClient
 
     mock_telegram = MockTelegramClient()
+    mock_redis = MockRedis()
 
-    # Patch telegram client factory BEFORE creating supervisor
+    async def mock_get_redis():
+        yield mock_redis
+
+    async def mock_get_redis_client():
+        return mock_redis
+
+    # Patch BEFORE any imports that might use get_redis
+    import app.dependencies.rate_limit as rate_limit_module
+    monkeypatch.setattr(rate_limit_module, "get_redis", mock_get_redis)
+    monkeypatch.setattr("app.core.database.get_redis", mock_get_redis)
+    monkeypatch.setattr("app.core.database.get_redis_client", mock_get_redis_client)
+    monkeypatch.setattr("app.core.database.Redis", lambda *a, **kw: mock_redis)
+
     with patch("app.core.telegram_client.create_telegram_client", return_value=mock_telegram):
         from agents.supervisor.agent import create_supervisor_agent
 
@@ -95,7 +133,7 @@ async def telegram_test_setup(monkeypatch):
         # Set up mock Redis client in app state for idempotency
         import app.main as main_module
 
-        main_module.app.state.redis_client = MockRedis()
+        main_module.app.state.redis_client = mock_redis
 
         # Start supervisor
         await supervisor.start()

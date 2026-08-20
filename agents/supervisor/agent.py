@@ -1701,6 +1701,62 @@ class SupervisorAgent:
         Primary path: synchronous processing (Telegram → download → InvoiceProcessingAgent → Ollama → result).
         Fallback: async Celery queuing if explicitly enabled via config.
         """
+        # SESSION STATE CHECK: Prevent re-processing if already in INVOICE_PROCESSING or later
+        workflow_step = session.get("workflow_step")
+        if workflow_step in [
+            WorkflowStep.INVOICE_PROCESSING,
+            WorkflowStep.INVOICE_AWAITING_APPROVAL,
+            WorkflowStep.INVOICE_AWAITING_CORRECTION,
+            WorkflowStep.INVOICE_AWAITING_SUPPLIER_CONFIRMATION,
+            WorkflowStep.INVOICE_CREATING_DOLIBARR,
+            WorkflowStep.INVOICE_REGISTERED,
+        ]:
+            logger.info(
+                "invoice_processing_already_in_progress_suppressed",
+                user_id=user_id,
+                chat_id=chat_id,
+                current_step=workflow_step,
+            )
+            return {
+                "success": True,
+                "message": "Factura ya se está procesando o procesada. Ignorando duplicado.",
+                "suppressed": True,
+                "workflow_step": workflow_step,
+            }
+
+        # DOCUMENT IDEMPOTENCY: Check file_unique_id to prevent reprocessing same document
+        file_unique_id = None
+        if tg_message and "document" in tg_message:
+            file_unique_id = tg_message["document"].get("file_unique_id")
+        elif tg_message and "photo" in tg_message:
+            photos = tg_message["photo"]
+            largest = max(photos, key=lambda p: p.get("file_size", 0))
+            file_unique_id = largest.get("file_unique_id")
+
+        if file_unique_id:
+            try:
+                from app.core.database import get_redis_client
+                redis = await get_redis_client()
+                file_idempotency_key = f"invoice:file:{file_unique_id}"
+                # Atomic SET NX with 2 hour TTL (covers max processing time + buffer)
+                acquired = await redis.set(file_idempotency_key, "processing", nx=True, ex=7200)
+                if not acquired:
+                    logger.info(
+                        "invoice_file_duplicate_suppressed",
+                        user_id=user_id,
+                        chat_id=chat_id,
+                        file_unique_id=file_unique_id[:20] + "..." if len(file_unique_id) > 20 else file_unique_id,
+                    )
+                    return {
+                        "success": True,
+                        "message": "Este documento ya se procesó recientemente. Ignorando duplicado.",
+                        "suppressed": True,
+                        "duplicate_file": True,
+                    }
+            except Exception as e:
+                logger.warning("file_idempotency_check_failed", error=str(e))
+                # Non-blocking - continue processing if Redis check fails
+
         # Use pending media if available, else extract from current message
         pending_media = session.get("context", {}).get("pending_media")
 
@@ -1766,6 +1822,7 @@ class SupervisorAgent:
         # Also store in Redis for long-processing warning tracking
         try:
             import json
+
             from app.core.database import get_redis_client
             redis = await get_redis_client()
             await redis.setex(
@@ -1783,21 +1840,25 @@ class SupervisorAgent:
 
         # SYNCHRONOUS PROCESSING (primary path) - bypass Celery for reliability
         logger.info("invoice_processing_started", correlation_id=correlation_id, user_id=user_id, chat_id=chat_id)
-        
+
         try:
             # Process invoice synchronously
             result = await self.invoice_agent.process_invoice(file_content, filename)
-            
+
             logger.info("invoice_processing_completed", correlation_id=correlation_id, success=result.get("success"))
-            
+
             # Update session with result for approval flow
             await self.conversation_manager.update_context(user_id, chat_id, {
                 "invoice_correlation_id": correlation_id,
                 "invoice_processing_result": result,
             })
-            
+
             # Handle result immediately
             if result.get("success"):
+                # Clean up file idempotency key on success (keep for TTL to prevent immediate re-upload)
+                # The key will expire naturally after 2 hours
+                pass
+
                 # Create draft for approval
                 from app.services.invoice_draft_service import get_invoice_draft_service
                 draft_service = await get_invoice_draft_service()
@@ -1815,7 +1876,7 @@ class SupervisorAgent:
                     invoice_data=result["invoice"],
                     summary=result["summary"],
                 )
-                
+
                 # Update session for approval
                 await self.conversation_manager.update_session(
                     user_id, chat_id,
@@ -1825,21 +1886,21 @@ class SupervisorAgent:
                         "invoice_correlation_id": correlation_id,
                     }
                 )
-                
+
                 # Edit processing message to show approval
                 summary = result["summary"]
                 validation_status = "OK" if not result.get("requires_review") else "REQUIERE REVISIÓN"
-                
+
                 from app.schemas.conversation import get_invoice_approval_keyboard, get_invoice_approval_text
-                
+
                 text = get_invoice_approval_text({**summary, "validation_status": validation_status})
                 keyboard = get_invoice_approval_keyboard()
-                
+
                 if processing_message_id:
                     await self._edit_telegram_message(chat_id, processing_message_id, text, reply_markup=keyboard)
                 else:
                     await self._send_telegram_message(chat_id, text, reply_markup=keyboard)
-                
+
                 return {
                     "success": True,
                     "workflow_type": WorkflowType.SUPPLIER_INVOICE,
@@ -1853,8 +1914,15 @@ class SupervisorAgent:
                 # Processing failed - show error
                 error = result.get("error", "unknown_error")
                 message = result.get("message", "Error desconocido durante el procesamiento.")
-                
-                if error == "invoice_processing_timeout":
+
+                # Handle document classification rejections
+                if error == "not_invoice":
+                    text = message  # Already formatted by classifier
+                elif error == "multiple_invoices":
+                    text = message  # Already formatted by classifier
+                elif error == "document_unknown":
+                    text = message  # Already formatted by classifier
+                elif error == "invoice_processing_timeout":
                     text = (
                         "⚠️ <b>El procesamiento de la factura ha superado el tiempo máximo permitido.</b>\n\n"
                         "El modelo local no ha podido completar la extracción en el tiempo establecido.\n"
@@ -1868,14 +1936,14 @@ class SupervisorAgent:
                     )
                 else:
                     text = f"⚠️ <b>Error procesando la factura:</b>\n\n{message}\n\nPuedes volver a intentarlo."
-                
+
                 if processing_message_id:
                     await self._edit_telegram_message(chat_id, processing_message_id, text)
                 else:
                     await self._send_telegram_message(chat_id, text)
-                
+
                 await self.conversation_manager.update_session(user_id, chat_id, workflow_step=WorkflowStep.INVOICE_FAILED)
-                
+
                 return {
                     "success": False,
                     "workflow_type": WorkflowType.SUPPLIER_INVOICE,
@@ -1885,23 +1953,32 @@ class SupervisorAgent:
                     "correlation_id": correlation_id,
                     "error": error,
                 }
-                
+
         except Exception as e:
             logger.error("invoice_processing_failed", correlation_id=correlation_id, error=str(e), exc_info=True)
-            
+
+            # Clean up file idempotency key on failure to allow retry
+            if file_unique_id:
+                try:
+                    from app.core.database import get_redis_client
+                    redis = await get_redis_client()
+                    await redis.delete(f"invoice:file:{file_unique_id}")
+                except Exception:
+                    pass
+
             error_text = (
                 "⚠️ <b>Error interno procesando la factura.</b>\n\n"
                 f"{str(e)}\n\n"
                 "Puedes volver a intentarlo."
             )
-            
+
             if processing_message_id:
                 await self._edit_telegram_message(chat_id, processing_message_id, error_text)
             else:
                 await self._send_telegram_message(chat_id, error_text)
-            
+
             await self.conversation_manager.update_session(user_id, chat_id, workflow_step=WorkflowStep.INVOICE_FAILED)
-            
+
             return {
                 "success": False,
                 "workflow_type": WorkflowType.SUPPLIER_INVOICE,

@@ -146,49 +146,67 @@ async def telegram_webhook(
     The SupervisorAgent handles all outbound Telegram messages (including inline keyboards)
     via its internal TelegramClient. This endpoint just processes and returns 200 OK.
     """
-    # Get parsed update from idempotency dependency (body already consumed there)
-    update = getattr(request.state, "telegram_update", None)
-    if update is None:
-        # Fallback: try to parse JSON (for cases where idempotency was skipped)
-        try:
-            update = await request.json()
-        except Exception as e:
-            logger.error("Failed to parse JSON: %s", e)
-            raise HTTPException(status_code=400, detail="Invalid JSON")
+    from app.core.exceptions import IdempotencyException
 
-    update_id = update.get("update_id")
-    logger.info("telegram_update_received update_id=%s", update_id)
-
-    # Idempotency is handled by telegram_idempotency_dependency using Redis
-    # The update_id is available in request.state.telegram_update_id
-
-    # Process the update with the supervisor agent
-    # The supervisor handles ALL outbound Telegram communication
-    result = await supervisor_agent.handle_telegram_message(update)
-
-    # Always return 200 OK to Telegram to avoid retries
-    if not result.get("success"):
-        logger.warning("Update processing failed: %s", result.get("error"))
-    else:
-        logger.info("telegram_update_processed message=%s", result.get("message"))
-
-    # Save idempotency result (success/failure) for retry handling
     try:
-        # Get Redis from app state (set during startup)
-        redis = request.app.state.redis_client
-        if redis:
-            await save_telegram_idempotency_result(
-                request=request,
-                redis=redis,
-                resource_id=update_id,
-                response_data=result,
-                status_code=200,
-                success=result.get("success", False),
-            )
-    except Exception as e:
-        logger.warning("Failed to save idempotency result: %s", e)
+        # Get parsed update from idempotency dependency (body already consumed there)
+        update = getattr(request.state, "telegram_update", None)
+        if update is None:
+            # Fallback: try to parse JSON (for cases where idempotency was skipped)
+            try:
+                update = await request.json()
+            except Exception as e:
+                logger.error("Failed to parse JSON: %s", e)
+                raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    return JSONResponse(status_code=200, content=result)
+        update_id = update.get("update_id")
+        logger.info("telegram_update_received update_id=%s", update_id)
+
+        # Idempotency is handled by telegram_idempotency_dependency using Redis
+        # The update_id is available in request.state.telegram_update_id
+
+        # Process the update with the supervisor agent
+        # The supervisor handles ALL outbound Telegram messages (including inline keyboards)
+        # via its internal TelegramClient. This endpoint just processes and returns 200 OK.
+        result = await supervisor_agent.handle_telegram_message(update)
+
+        # Always return 200 OK to Telegram to avoid retries
+        if not result.get("success"):
+            logger.warning("Update processing failed: %s", result.get("error"))
+        else:
+            logger.info("telegram_update_processed message=%s", result.get("message"))
+
+        # Save idempotency result (success/failure) for retry handling
+        try:
+            # Get Redis from app state (set during startup)
+            redis = request.app.state.redis_client
+            if redis:
+                await save_telegram_idempotency_result(
+                    request=request,
+                    redis=redis,
+                    resource_id=update_id,
+                    response_data=result,
+                    status_code=200,
+                    success=result.get("success", False),
+                )
+        except Exception as e:
+            logger.warning("Failed to save idempotency result: %s", e)
+
+        return JSONResponse(status_code=200, content=result)
+
+    except IdempotencyException as e:
+        # Duplicate update - return 200 OK (idempotent) to avoid Telegram retries
+        update_id = getattr(request.state, "telegram_update_id", None) or e.details.get("existing_resource_id", "unknown")
+        logger.info("telegram_update_duplicate_idempotent_200", update_id=update_id)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "duplicate": True,
+                "message": "Update already processed",
+                "update_id": update_id,
+            },
+        )
 
 
 @router.post("/media")

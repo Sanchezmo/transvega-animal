@@ -8,6 +8,7 @@ import mimetypes
 import os
 import shutil
 import time
+from enum import Enum
 from typing import Any
 
 import structlog
@@ -138,6 +139,25 @@ class InvoiceData(BaseModel):
             raise ValueError(f"Currency {self.currency} not supported (expected EUR)")
 
         return self
+
+
+class DocumentType(str, Enum):
+    """Document classification types."""
+    SINGLE_INVOICE = "SINGLE_INVOICE"
+    MULTIPLE_INVOICES = "MULTIPLE_INVOICES"
+    INVOICE_WITH_ATTACHMENTS = "INVOICE_WITH_ATTACHMENTS"
+    NOT_INVOICE = "NOT_INVOICE"
+    UNKNOWN = "UNKNOWN"
+
+
+class DocumentClassification(BaseModel):
+    """Result of document classification."""
+    document_type: DocumentType
+    invoice_count: int = 0
+    confidence: float = 0.0
+    signals: list[str] = Field(default_factory=list)
+    page_count: int = 0
+    classification_strategy: str = "heuristic"  # "heuristic" | "llm"
 
 
 # JSON Schema for native structured output
@@ -723,6 +743,253 @@ Return ONLY the JSON, no extra text.
 
         return extracted
 
+    # =========================================================================
+    # DOCUMENT CLASSIFICATION
+    # =========================================================================
+
+    def _classify_document_heuristic(
+        self, raw_text: str, page_count: int
+    ) -> DocumentClassification:
+        """
+        Heuristic-based document classification for native text PDFs.
+        Fast, no LLM needed. Returns DocumentClassification.
+        """
+        text_lower = raw_text.lower()
+        signals = []
+
+        # Strong invoice signals
+        strong_signals = [
+            ("factura", "factura keyword"),
+            ("invoice", "invoice keyword"),
+            ("número de factura", "invoice number ES"),
+            ("invoice number", "invoice number EN"),
+            ("nº factura", "invoice number short ES"),
+            ("cif", "CIF tax ID"),
+            ("nif", "NIF tax ID"),
+            ("vat", "VAT tax"),
+            ("iva", "IVA tax"),
+            ("base imponible", "taxable base"),
+            ("subtotal", "subtotal"),
+            ("total", "total amount"),
+            ("vencimiento", "due date"),
+            ("forma de pago", "payment terms"),
+            ("proveedor", "supplier"),
+            ("cliente", "customer"),
+            ("fecha de factura", "invoice date"),
+        ]
+
+        # Supporting signals
+        supporting_signals = [
+            ("dirección", "address"),
+            ("teléfono", "phone"),
+            ("email", "email"),
+            ("iban", "IBAN"),
+            ("cuenta bancaria", "bank account"),
+        ]
+
+        # Count signals
+        strong_count = 0
+        for keyword, signal_name in strong_signals:
+            if keyword in text_lower:
+                signals.append(signal_name)
+                strong_count += 1
+
+        supporting_count = 0
+        for keyword, signal_name in supporting_signals:
+            if keyword in text_lower:
+                signals.append(signal_name)
+                supporting_count += 1
+
+        # Count invoice-like patterns (multiple invoice numbers)
+        import re
+        invoice_numbers = re.findall(
+            r'(?:factura|invoice)\s*[#:nº]\s*[\w\-/]+', raw_text, re.IGNORECASE
+        )
+        invoice_number_count = len(set(invoice_numbers))
+
+        # Look for multiple invoice headers
+        invoice_headers = re.findall(
+            r'(?:^|\n)\s*(?:factura|invoice)\s*[#:nº]', raw_text, re.IGNORECASE
+        )
+        header_count = len(invoice_headers)
+
+        # Classification logic
+        if strong_count >= 3:
+            if header_count >= 2 or invoice_number_count >= 2:
+                return DocumentClassification(
+                    document_type=DocumentType.MULTIPLE_INVOICES,
+                    invoice_count=max(header_count, invoice_number_count, 2),
+                    confidence=0.85,
+                    signals=signals,
+                    page_count=0,  # Will be updated by caller
+                    classification_strategy="heuristic",
+                )
+
+            # Check for attachment-like content (single invoice with lots of extra text)
+            # Heuristic: if we have strong invoice signals but also lots of non-invoice content
+            # This is a simplified heuristic - could be enhanced
+            if strong_count >= 4:
+                return DocumentClassification(
+                    document_type=DocumentType.INVOICE_WITH_ATTACHMENTS,
+                    invoice_count=1,
+                    confidence=0.80,
+                    signals=signals,
+                    page_count=0,
+                    classification_strategy="heuristic",
+                )
+
+            return DocumentClassification(
+                document_type=DocumentType.SINGLE_INVOICE,
+                invoice_count=1,
+                confidence=min(0.70 + strong_count * 0.05, 0.95),
+                signals=signals,
+                page_count=0,
+                classification_strategy="heuristic",
+            )
+
+        elif strong_count >= 1 and supporting_count >= 2:
+            return DocumentClassification(
+                document_type=DocumentType.SINGLE_INVOICE,
+                invoice_count=1,
+                confidence=0.60,
+                signals=signals,
+                page_count=0,
+                classification_strategy="heuristic",
+            )
+
+        elif strong_count == 0 and supporting_count == 0:
+            return DocumentClassification(
+                document_type=DocumentType.NOT_INVOICE,
+                invoice_count=0,
+                confidence=0.70,
+                signals=signals,
+                page_count=0,
+                classification_strategy="heuristic",
+            )
+
+        else:
+            return DocumentClassification(
+                document_type=DocumentType.UNKNOWN,
+                invoice_count=0,
+                confidence=0.40,
+                signals=signals,
+                page_count=0,
+                classification_strategy="heuristic",
+            )
+
+    async def _classify_document_llm(
+        self, page_images: list[bytes], page_count: int
+    ) -> DocumentClassification:
+        """
+        LLM-based document classification for scanned/image-only PDFs.
+        Uses the same Ollama model with structured output.
+        """
+        if not page_images:
+            return DocumentClassification(
+                document_type=DocumentType.UNKNOWN,
+                invoice_count=0,
+                confidence=0.0,
+                signals=[],
+                page_count=page_count,
+                classification_strategy="llm",
+            )
+
+        # Use first 2 pages for classification to save time
+        classification_images = page_images[:min(2, len(page_images))]
+
+        # Create a temporary file with first page for vision
+        import tempfile
+        temp_paths = []
+        try:
+            for i, img_bytes in enumerate(classification_images):
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                    tmp.write(img_bytes)
+                    temp_paths.append(tmp.name)
+
+            # Classification prompt
+            prompt = """
+            Classify this document. Return ONLY a JSON object with:
+            {
+              "document_type": "SINGLE_INVOICE" | "MULTIPLE_INVOICES" | "INVOICE_WITH_ATTACHMENTS" | "NOT_INVOICE" | "UNKNOWN",
+              "invoice_count": 0 | 1 | 2+,
+              "confidence": 0.0-1.0,
+              "signals": ["signal1", "signal2", ...]
+            }
+            
+            Look for: invoice headers, invoice numbers, tax IDs (CIF/NIF/VAT), 
+            subtotal/base, tax/VAT/IVA, total, supplier/client info, payment terms.
+            Multiple invoices = multiple distinct invoice numbers/headers.
+            Invoice with attachments = one clear invoice + additional pages (delivery notes, terms, etc).
+            """
+
+            # Use vision model for classification
+            result = await self.router.vision(
+                privacy_scope="LOCAL_ONLY",
+                image_path=temp_paths[0] if temp_paths else None,
+                prompt=prompt,
+                request_timeout=60,
+                format=DocumentClassification.model_json_schema(),
+                think=False,
+                num_predict=512,
+            )
+
+            json_str = result.get("text", "").strip()
+            import json
+            data = json.loads(json_str)
+            data["page_count"] = 0  # Will be updated by caller
+            data["classification_strategy"] = "llm"
+            return DocumentClassification(**data)
+
+        except Exception as e:
+            self.logger.warning("llm_classification_failed", error=str(e))
+            return DocumentClassification(
+                document_type=DocumentType.UNKNOWN,
+                invoice_count=0,
+                confidence=0.0,
+                signals=[],
+                page_count=page_count,
+                classification_strategy="llm",
+            )
+        finally:
+            # Cleanup temp files
+            for path in temp_paths:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
+    async def _classify_document(
+        self, raw_text: str, page_images: list[bytes], page_count: int, has_native_text: bool
+    ) -> DocumentClassification:
+        """
+        Main classification entry point.
+        Uses heuristic for native text, LLM for scanned documents.
+        """
+        self.logger.info("document_classification_started",
+                        has_native_text=has_native_text,
+                        page_count=page_count,
+                        text_chars=len(raw_text) if raw_text else 0)
+
+        if has_native_text and raw_text and len(raw_text.strip()) >= 50:
+            # Use heuristic for native text PDFs
+            classification = self._classify_document_heuristic(raw_text, page_count)
+            classification.page_count = page_count
+        else:
+            # Use LLM for scanned/image-only PDFs
+            classification = await self._classify_document_llm(
+                page_images, page_count
+            )
+            classification.page_count = page_count
+
+        self.logger.info("document_classification_completed",
+                        document_type=classification.document_type.value,
+                        invoice_count=classification.invoice_count,
+                        confidence=classification.confidence,
+                        signals=classification.signals,
+                        strategy=classification.classification_strategy)
+
+        return classification
+
     async def _lookup_or_create_supplier(
         self, tax_id: str, name: str | None = None, address: str | None = None
     ) -> dict[str, Any] | None:
@@ -890,6 +1157,87 @@ Return ONLY the JSON, no extra text.
 
             if not raw_text:
                 return {"success": False, "error": "Failed to extract text from file"}
+
+            # Determine page count for classification
+            page_count = 1
+            page_images = []
+            if mime_type == "application/pdf" or filename.lower().endswith(".pdf"):
+                try:
+                    import fitz
+                    doc = fitz.open(temp_file_path)
+                    page_count = len(doc)
+                    doc.close()
+                except Exception:
+                    page_count = 1
+
+            # For scanned PDFs, we already have page_images from OCR
+            if 'page_images' in locals() and page_images:
+                pass  # page_images already available from OCR step
+
+            # DOCUMENT CLASSIFICATION GATE
+            # Classify document before expensive structured extraction
+            classification = await self._classify_document(
+                raw_text=raw_text,
+                page_images=page_images if 'page_images' in locals() else [],
+                page_count=page_count,
+                has_native_text=has_native_text,
+            )
+
+            # Handle classification results
+            if classification.document_type == DocumentType.NOT_INVOICE:
+                self.logger.info("document_rejected_not_invoice",
+                                filename=filename,
+                                confidence=classification.confidence,
+                                signals=classification.signals)
+                return {
+                    "success": False,
+                    "error": "not_invoice",
+                    "message": "📄 He recibido el documento, pero no parece una factura.\nNo lo voy a procesar como tal.",
+                    "requires_review": False,
+                    "classification": {
+                        "document_type": classification.document_type.value,
+                        "confidence": classification.confidence,
+                        "signals": classification.signals,
+                    },
+                }
+
+            elif classification.document_type == DocumentType.MULTIPLE_INVOICES:
+                self.logger.info("document_rejected_multiple_invoices",
+                                filename=filename,
+                                invoice_count=classification.invoice_count,
+                                confidence=classification.confidence)
+                return {
+                    "success": False,
+                    "error": "multiple_invoices",
+                    "message": "📄 El documento parece contener varias facturas.\nPara evitar errores, envíalas por separado.",
+                    "requires_review": True,
+                    "classification": {
+                        "document_type": classification.document_type.value,
+                        "invoice_count": classification.invoice_count,
+                        "confidence": classification.confidence,
+                        "signals": classification.signals,
+                    },
+                }
+
+            elif classification.document_type == DocumentType.UNKNOWN:
+                self.logger.info("document_classification_unknown",
+                                filename=filename,
+                                confidence=classification.confidence)
+                return {
+                    "success": False,
+                    "error": "document_unknown",
+                    "message": "📄 No puedo determinar con suficiente seguridad que este documento sea una factura.",
+                    "requires_review": True,
+                    "classification": {
+                        "document_type": classification.document_type.value,
+                        "confidence": classification.confidence,
+                        "signals": classification.signals,
+                    },
+                }
+
+            # For SINGLE_INVOICE and INVOICE_WITH_ATTACHMENTS, continue processing
+            # INVOICE_WITH_ATTACHMENTS will be processed as a single invoice (first part)
+            # The full PDF is preserved as original document
 
             # Step 3: Extract structured data via Ollama
             try:

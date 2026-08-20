@@ -45,6 +45,32 @@ class MockRedis:
         self._ttl[key] = seconds
         return True
 
+    async def set(self, key: str, value: str, nx: bool = False, ex: int | None = None) -> bool:
+        """Mock Redis SET with NX and EX options."""
+        if nx and key in self._data:
+            return False
+        self._data[key] = value
+        if ex:
+            self._ttl[key] = ex
+        return True
+
+    def pubsub(self):
+        """Mock Redis pubsub - returns a mock pubsub object."""
+        class MockPubSub:
+            async def subscribe(self, channel):
+                pass
+            async def unsubscribe(self, channel):
+                pass
+            async def close(self):
+                pass
+            def listen(self):
+                # Return an empty async iterator
+                async def empty_iter():
+                    return
+                    yield
+                return empty_iter()
+        return MockPubSub()
+
     async def close(self):
         pass
 
@@ -68,7 +94,7 @@ class FakeAgent:
 
 
 # Mock Redis at module level
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def mock_redis():
     async def mock_get_redis():
         mock = MockRedis()
@@ -136,6 +162,7 @@ async def mock_breed():
 class TestTelegramDogIntakeE2E:
     """E2E tests for the Telegram → Supervisor → DogIntakeAgent → InternalAPIClient → Integration API → DB flow."""
 
+    @pytest.mark.usefixtures("mock_redis")
     @pytest.mark.asyncio
     async def test_supervisor_routes_telegram_to_dog_intake(self, mock_telegram_update):
         """Test that SupervisorAgent routes Telegram messages to DogIntakeAgent via callback."""
@@ -884,6 +911,7 @@ class TestTelegramDogIntakeE2E:
 # =============================================================================
 
 
+@pytest.mark.usefixtures("mock_redis")
 class TestRequiredE2E:
     """Required E2E tests for the Telegram → Supervisor → DogIntake → InternalAPIClient → /api/v1/dogs flow."""
 
