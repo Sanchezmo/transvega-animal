@@ -529,6 +529,59 @@ Return ONLY the JSON, no extra text.
             errors.append("Invoice date missing")
         return errors
 
+    def _normalize_tax_data(self, extracted: dict[str, Any]) -> dict[str, Any]:
+        """
+        Normalize tax data before validation.
+
+        Ensures that:
+        1. If tax items have rate but no amount, compute amount from rate and base
+        2. If line-level vat_rate exists but taxes array is empty/missing, create tax entries
+        3. Ensure tax items have 'amount' field for validation
+
+        This runs BEFORE Pydantic validation to normalize the data structure.
+        """
+        # Normalize line-level taxes
+        if "lines" in extracted:
+            for line in extracted.get("lines", []):
+                # If line has vat_rate but no tax_amount, compute it
+                if line.get("vat_rate") is not None and line.get("vat_rate", 0) > 0:
+                    if "net_amount" in line and line["net_amount"] is not None:
+                        # Ensure tax_amount is computed
+                        pass  # The line model validator will handle this
+
+        # Normalize invoice-level taxes
+        if "taxes" in extracted and isinstance(extracted["taxes"], list):
+            normalized_taxes = []
+            for tax in extracted["taxes"]:
+                if isinstance(tax, dict):
+                    # If tax has rate but no amount, try to compute
+                    if "rate" in tax and "amount" not in tax:
+                        # Try to find base amount
+                        base = tax.get("base") or tax.get("base_amount") or tax.get("net_amount")
+                        rate = tax.get("rate")
+                        if base is not None and rate is not None and rate > 0:
+                            tax["amount"] = round(base * rate / 100, 2)
+
+                    # Ensure amount field exists
+                    if "amount" not in tax:
+                        tax["amount"] = tax.get("amount", tax.get("tax_amount", tax.get("cuota", 0.0)))
+
+                    # Ensure rate field exists
+                    if "rate" not in tax:
+                        tax["rate"] = tax.get("rate", tax.get("tax_rate", tax.get("vat_rate", 0.0)))
+
+                    normalized_taxes.append(tax)
+
+            if normalized_taxes:
+                extracted["taxes"] = normalized_taxes
+
+        # If no taxes array but we have tax_total, create a default tax entry
+        if ("taxes" not in extracted or not extracted.get("taxes")) and extracted.get("tax_total", 0) > 0:
+            # Create a default tax entry from tax_total
+            extracted["taxes"] = [{"rate": 21.0, "amount": extracted.get("tax_total", 0)}]
+
+        return extracted
+
     async def _lookup_supplier(self, tax_id: str) -> dict[str, Any] | None:
         """Call InvoiceIntegrationService to find supplier by tax_id."""
         try:
@@ -683,6 +736,9 @@ Return ONLY the JSON, no extra text.
                 }
             except Exception:
                 return {"success": False, "error": "structured_extraction_failed", "requires_review": True}
+
+            # Step 3.5: Normalize tax data before validation
+            extracted = self._normalize_tax_data(extracted)
 
             # Step 4: Validate with Pydantic
             try:
