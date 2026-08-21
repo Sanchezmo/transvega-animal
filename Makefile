@@ -1,7 +1,7 @@
 # Makefile - Transvega Animal
 # Comandos de desarrollo, testing, despliegue y mantenimiento
 
-.PHONY: help up down restart logs status shell-api shell-worker shell-db shell-redis shell-mock shell-approvals test test-unit test-integration test-security test-e2e test-cov lint format type-check security-scan pre-commit seed seed-clean reset-db backup backup-full restore verify-backup staging-up staging-down staging-restart staging-status staging-config staging-logs staging-logs-api staging-logs-cloudflare staging-logs-dolibarr staging-logs-redis staging-logs-db staging-health staging-ollama-models telegram-webhook-configure telegram-webhook-status staging-first-run deploy-staging deploy-prod rotate-secrets verify-secrets audit-permissions clean clean-all docs-serve docs-build metrics grafana alerts
+.PHONY: help up down restart logs status shell-api shell-worker shell-db shell-redis shell-mock shell-approvals test test-unit test-integration test-security test-e2e test-cov lint format type-check security-scan pre-commit seed seed-clean reset-db backup backup-full restore verify-backup staging-up staging-down staging-restart staging-status staging-config staging-logs staging-logs-api staging-logs-cloudflare staging-logs-dolibarr staging-logs-redis staging-logs-db staging-health staging-ollama-models telegram-webhook-configure telegram-webhook-status staging-first-run deploy-staging deploy-prod rotate-secrets verify-secrets audit-permissions clean clean-all docs-serve docs-build metrics grafana alerts dolibarr-install dolibarr-configure dolibarr-backup dolibarr-restore dolibarr-health dolibarr-health-apache dolibarr-health-db dolibarr-health-api dolibarr-health-docs apache-check apache-reload apache-logs
 
 # Variables
 COMPOSE_FILE = docker-compose.dev.yml
@@ -250,6 +250,47 @@ verify-backup: ## Verificar integridad de backups
 	@echo "$(GREEN)Verificando backups...$(NC)"
 	@ls -la backups/
 	@for f in backups/*.sql.gz; do echo "Verificando $$f..."; gunzip -t $$f && echo "OK" || echo "CORRUPTO"; done
+
+# =============================================================================
+# DOLIBARR NATIVO (Host)
+# =============================================================================
+
+dolibarr-install: ## Instalar Dolibarr nativo en host (descarga, extrae, configura, permisos)
+	@./scripts/install-dolibarr.sh
+
+dolibarr-configure: ## Configurar Apache VirtualHost para Dolibarr (puerto 8080)
+	@sudo ./scripts/configure-apache-dolibarr.sh
+
+dolibarr-backup: ## Backup Dolibarr Docker para migración (uso: make dolibarr-backup ENV=staging)
+	@./scripts/backup-dolibarr.sh $(or $(ENV),staging)
+
+dolibarr-restore: ## Restaurar backup Dolibarr en host nativo (uso: make dolibarr-restore BACKUP=backups/...)
+	@if [ -z "$(BACKUP)" ]; then echo "$(RED)Especificar BACKUP=directorio$(NC)"; exit 1; fi
+	@./scripts/restore-dolibarr.sh $(BACKUP)
+
+dolibarr-health: ## Healthcheck completo Dolibarr nativo (Apache, Dolibarr, MariaDB, REST API, Documents)
+	@./scripts/dolibarr-health.sh
+
+dolibarr-health-apache: ## Healthcheck solo Apache
+	@./scripts/dolibarr-health.sh apache
+
+dolibarr-health-db: ## Healthcheck solo MariaDB
+	@./scripts/dolibarr-health.sh db
+
+dolibarr-health-api: ## Healthcheck solo REST API
+	@./scripts/dolibarr-health.sh api
+
+dolibarr-health-docs: ## Healthcheck solo Documents
+	@./scripts/dolibarr-health.sh docs
+
+apache-check: ## Verificar configuración Apache (configtest)
+	@sudo apache2ctl configtest
+
+apache-reload: ## Recargar Apache
+	@sudo systemctl reload apache2
+
+apache-logs: ## Ver logs Apache Dolibarr
+	@sudo tail -f /var/log/apache2/transvega-dolibarr-error.log /var/log/apache2/transvega-dolibarr-access.log
 
 # =============================================================================
 # STAGING LOCAL

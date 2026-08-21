@@ -83,8 +83,8 @@ services:
       - API_PORT=8000
       - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-      - DOLIBARR_API_URL=http://dolibarr:80
-      - DOLIBARR_API_KEY=dolibarr_admin_api_key_123456
+      - DOLIBARR_API_URL=http://host.docker.internal:8080
+      - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - FERNET_KEY=${FERNET_KEY}
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
@@ -117,8 +117,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mock-dolibarr:
-        condition: service_started
       ollama:
         condition: service_started
     networks:
@@ -127,6 +125,9 @@ services:
     volumes:
       - invoice-data:/data/invoices
       - dog-media:/data/dogs
+    # Acceso a Dolibarr nativo en host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # =============================================================================
   # WORKER CELERY (Procesamiento de tareas en background)
@@ -141,7 +142,7 @@ services:
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD}@redis:6379/2
       - AUDIT_DB_URL=postgresql+asyncpg://audit:${AUDIT_DB_PASSWORD}@audit-db:5432/audit
-      - DOLIBARR_API_URL=http://mock-dolibarr:8001
+      - DOLIBARR_API_URL=http://host.docker.internal:8080
       - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       # Individual fields required by Settings
@@ -186,6 +187,9 @@ services:
     volumes:
       - invoice-data:/data/invoices
       - dog-media:/data/dogs
+    # Acceso a Dolibarr nativo en host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # =============================================================================
   # SERVICIO APROBACIONES
@@ -216,61 +220,6 @@ services:
     networks:
       - transvega-internal
     restart: unless-stopped
-
-  # =============================================================================
-  # DOLIBARR (ERP/CRM oficial)
-  # =============================================================================
-  dolibarr:
-    image: dolibarr/dolibarr:18
-    container_name: dolibarr
-    restart: unless-stopped
-    depends_on:
-      - db-dolibarr
-    environment:
-      # Variables estándar de Dolibarr (DOLI_*)
-      - DOLI_DB_HOST=db-dolibarr
-      - DOLI_DB_PORT=3306
-      - DOLI_DB_NAME=dolibarr
-      - DOLI_DB_USER=dolibuser
-      - DOLI_DB_PASSWORD=dolibarr_password
-      - DOLI_DB_TYPE=mysqli
-      - DOLI_DB_HOST_PORT=3306
-      - DOLI_URL_ROOT=http://localhost:8080
-      - DOLI_ADMIN_LOGIN=admin
-      - DOLI_ADMIN_PASSWORD=admin_password
-      - TZ=Europe/Madrid
-      # Variables legacy DOLIBARR_* (por compatibilidad)
-      - DOLIBARR_DB_HOST=db-dolibarr
-      - DOLIBARR_DB_PORT=3306
-      - DOLIBARR_DB_NAME=dolibarr
-      - DOLIBARR_DB_USER=dolibuser
-      - DOLIBARR_DB_PASSWORD=dolibarr_password
-      - DOLIBARR_ADMIN_LOGIN=admin
-      - DOLIBARR_ADMIN_PASSWORD=admin_password
-    ports:
-      - "8080:80"
-    volumes:
-      - dolibarr_data:/var/www/html/documents
-      - dolibarr_custom:/var/www/html/custom
-    networks:
-      - transvega-internal
-
-  # =============================================================================
-  # BASE DE DATOS DEDICADA PARA DOLIBARR (MariaDB)
-  # =============================================================================
-  db-dolibarr:
-    image: mariadb:10.11
-    container_name: db-dolibarr
-    restart: unless-stopped
-    environment:
-      - MYSQL_ROOT_PASSWORD=root_password
-      - MYSQL_DATABASE=dolibarr
-      - MYSQL_USER=dolibuser
-      - MYSQL_PASSWORD=dolibarr_password
-    volumes:
-      - dolibarr_db:/var/lib/mysql
-    networks:
-      - transvega-internal
 
   # =============================================================================
   # OLLAMA (Modelos IA locales para tareas privadas/sensibles)
@@ -311,9 +260,6 @@ networks:
 volumes:
   audit-db-data:
   redis-data:
-  dolibarr_data:
-  dolibarr_custom:
-  dolibarr_db:
   ollama-data:
   invoice-data:
   dog-media:

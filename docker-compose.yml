@@ -64,6 +64,9 @@ services:
       - ollama
     networks:
       - hermes_net
+    # Acceso a Dolibarr nativo en host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # -------------------------------------------------
   # Worker Celery para procesamiento de facturas y otras tareas
@@ -83,6 +86,9 @@ services:
       - hermes_net
     working_dir: /app/services/task-queue
     command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=INFO", "-Q", "high,default,low,approvals,notifications"]
+    # Acceso a Dolibarr nativo en host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # -------------------------------------------------
   # (Opcional) Dolibarr – ERP fuente de verdad para contabilidad

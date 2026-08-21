@@ -59,93 +59,6 @@ services:
           memory: 256M
 
   # =============================================================================
-  # DOLIBARR ERP (Real Dolibarr for staging)
-  # =============================================================================
-  dolibarr-db:
-    image: mariadb:11
-    container_name: transvega-dolibarr-db-staging
-    environment:
-      MARIADB_DATABASE: dolibarr
-      MARIADB_USER: dolibarr
-      MARIADB_PASSWORD: ${DOLIBARR_DB_PASSWORD}
-      MARIADB_ROOT_PASSWORD: ${DOLIBARR_DB_ROOT_PASSWORD}
-    volumes:
-      - dolibarr-db-data-staging:/var/lib/mysql
-    networks:
-      - transvega-backend
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "dolibarr", "-p${DOLIBARR_DB_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-        reservations:
-          memory: 512M
-
-  dolibarr:
-    image: dolibarr/dolibarr:20
-    container_name: transvega-dolibarr-staging
-    environment:
-      - DOLI_DB_HOST=dolibarr-db
-      - DOLI_DB_NAME=dolibarr
-      - DOLI_DB_USER=dolibarr
-      - DOLI_DB_PASSWORD=${DOLIBARR_DB_PASSWORD}
-      - WWW_HOME=/var/www/html
-      - PHP_INI_MEMORY_LIMIT=256M
-      - PHP_INI_MAX_EXECUTION_TIME=300
-      - PHP_INI_UPLOAD_MAX_FILESIZE=20M
-      - PHP_INI_POST_MAX_SIZE=20M
-    volumes:
-      - dolibarr-data-staging:/var/www/html
-      - dolibarr-documents-staging:/var/www/documents
-    ports:
-      - "127.0.0.1:8013:80"
-    depends_on:
-      dolibarr-db:
-        condition: service_healthy
-    networks:
-      - transvega-backend
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost/health || curl -sf http://localhost"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-        reservations:
-          memory: 512M
-
-  # =============================================================================
-  # MOCK DOLIBARR (Staging usa mock para pruebas de integración)
-  # =============================================================================
-  mock-dolibarr:
-    build:
-      context: .
-      dockerfile: infrastructure/docker/Dockerfile.mock-dolibarr
-    image: ghcr.io/sanchezmo/transvega-animal/mock-dolibarr:${IMAGE_TAG:-latest}
-    container_name: transvega-mock-dolibarr-staging
-    environment:
-      - ENVIRONMENT=staging
-      - MOCK_DOLIBARR_API_KEY=mock-admin-key-123
-      - MOCK_DOLIBARR_AGENT_KEY=mock-agent-key-456
-      - MOCK_DOLIBARR_READONLY_KEY=mock-readonly-key-789
-    ports:
-      - "127.0.0.1:8011:8001"
-    volumes:
-      - ./tests/fixtures/dolibarr:/app/fixtures:ro
-    networks:
-      - transvega-backend
-    restart: unless-stopped
-
-  # =============================================================================
   # API INTEGRACIÓN (FastAPI - Acceso via Cloudflare Tunnel en staging)
   # =============================================================================
   api:
@@ -171,8 +84,8 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       # Internal API URL for service-to-service communication
       - INTERNAL_API_URL=http://api:8000/api/v1
-      # Dolibarr (REAL staging)
-      - DOLIBARR_API_URL=http://dolibarr:80
+      # Dolibarr (REAL - host nativo)
+      - DOLIBARR_API_URL=http://host.docker.internal:8080
       - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
       - DOLIBARR_TIMEOUT=30
       - MOCK_DOLIBARR_ENABLED=false
@@ -247,8 +160,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      dolibarr:
-        condition: service_healthy
       ollama:
         condition: service_healthy
     networks:
@@ -261,6 +172,9 @@ services:
           memory: 1G
         reservations:
           memory: 512M
+    # Acceso a Dolibarr nativo en host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # =============================================================================
   # WORKER CELERY
@@ -283,8 +197,8 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      # Dolibarr (REAL staging)
-      - DOLIBARR_API_URL=http://dolibarr:80
+      # Dolibarr (REAL - host nativo)
+      - DOLIBARR_API_URL=http://host.docker.internal:8080
       - DOLIBARR_API_KEY=${DOLIBARR_API_KEY}
       - DOLIBARR_TIMEOUT=30
       - MOCK_DOLIBARR_ENABLED=false
@@ -369,6 +283,9 @@ services:
           memory: 2G
         reservations:
           memory: 1G
+    # Acceso a Dolibarr nativo en host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # =============================================================================
   # SERVICIO APROBACIONES
@@ -519,6 +436,3 @@ volumes:
   loki-data-staging:
   alertmanager-data-staging:
   ollama-data-staging:
-  dolibarr-db-data-staging:
-  dolibarr-data-staging:
-  dolibarr-documents-staging:

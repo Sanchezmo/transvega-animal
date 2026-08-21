@@ -754,7 +754,7 @@ class SupervisorAgent:
                 draft_id, "REGISTERED", dolibarr_invoice_id=result.get("dolibarr_invoice_id")
             )
 
-            workflow["step"] = WorkflowStep.INVOICE_REGISTERED
+            workflow["step"] = WorkflowStep.INVOICE_COMPLETED
             workflow["status"] = "completed"
             workflow["dolibarr_invoice_id"] = result.get("dolibarr_invoice_id")
 
@@ -1709,7 +1709,7 @@ class SupervisorAgent:
             WorkflowStep.INVOICE_AWAITING_CORRECTION,
             WorkflowStep.INVOICE_AWAITING_SUPPLIER_CONFIRMATION,
             WorkflowStep.INVOICE_CREATING_DOLIBARR,
-            WorkflowStep.INVOICE_REGISTERED,
+            WorkflowStep.INVOICE_COMPLETED,
         ]:
             logger.info(
                 "invoice_processing_already_in_progress_suppressed",

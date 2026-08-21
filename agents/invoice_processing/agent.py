@@ -243,8 +243,8 @@ class InvoiceProcessingAgent:
                     return False
                 data = resp.json()
                 models = {m.get("name") for m in data.get("models", [])}
-                required = {self.ollama_model}
-                return required.issubset(models)
+                required_names = {self.ollama_model, f"{self.ollama_model}:latest"}
+                return bool(required_names & models)
         except Exception as e:
             self.logger.warning("ollama_model_check_failed", error=str(e))
             return False

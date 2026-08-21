@@ -76,3 +76,12 @@ models/
 tmp/
 temp/
 .env.staging
+
+# Dolibarr nativo (descargado por script, no versionado)
+dolibarr/htdocs/
+dolibarr/documents/
+dolibarr/logs/
+dolibarr/conf/conf.php
+# EXCEPCIONES - versionamos nuestras extensiones y template
+!dolibarr/custom/
+!dolibarr/conf/conf.php.template

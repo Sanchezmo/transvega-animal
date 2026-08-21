@@ -48,8 +48,72 @@ def load_fixtures():
         for filename in os.listdir(FIXTURES_PATH):
             if filename.endswith(".json"):
                 key = filename.replace(".json", "")
+                # Skip thirdparties fixture to keep generated data + test entries
+                if key == "thirdparties":
+                    continue
                 with open(os.path.join(FIXTURES_PATH, filename)) as f:
                     mock_data[key] = json.load(f)
+    
+    # Add test supplier and client for staging tests
+
+
+def add_test_supplier():
+    """Add the staging test supplier and client to mock data if not exists."""
+    global mock_data
+    test_vat = "B99999999"
+    exists_supplier = any(t.get("vat_number") == test_vat for t in mock_data.get("thirdparties", []))
+    if not exists_supplier:
+        new_id = max([t["id"] for t in mock_data.get("thirdparties", [])], default=0) + 1
+        test_supplier = {
+            "id": new_id,
+            "ref": f"STAGING-TEST-{new_id:03d}",
+            "name": "STAGING SUPPLIER TEST",
+            "name_alias": "STAGING TEST",
+            "email": "test@staging.com",
+            "phone": "+34911111111",
+            "address": "Calle Test 123, 28001 Madrid",
+            "zip": "28001",
+            "town": "Madrid",
+            "country_id": 195,
+            "country_code": "ES",
+            "client": 0,
+            "supplier": 1,
+            "status": 1,
+            "vat_number": test_vat,
+            "default_lang": "es_ES",
+            "datec": "2026-08-20T21:13:21.149935",
+            "datem": "2026-08-20T21:13:21.149943"
+        }
+        mock_data.setdefault("thirdparties", []).append(test_supplier)
+        print(f"Added test supplier: {test_supplier['name']} (VAT: {test_vat})")
+    
+    # Also add a test client for seed_fake_data
+    test_client_vat = "C88888888"
+    exists_client = any(t.get("vat_number") == test_client_vat for t in mock_data.get("thirdparties", []))
+    if not exists_client:
+        new_id = max([t["id"] for t in mock_data.get("thirdparties", [])], default=0) + 1
+        test_client = {
+            "id": new_id,
+            "ref": f"STAGING-CLIENT-{new_id:03d}",
+            "name": "STAGING CLIENT TEST",
+            "name_alias": "STAGING CLIENT",
+            "email": "client@staging.com",
+            "phone": "+34911111112",
+            "address": "Calle Client 456, 28002 Madrid",
+            "zip": "28002",
+            "town": "Madrid",
+            "country_id": 195,
+            "country_code": "ES",
+            "client": 1,
+            "supplier": 0,
+            "status": 1,
+            "vat_number": test_client_vat,
+            "default_lang": "es_ES",
+            "datec": "2026-08-20T21:13:21.149935",
+            "datem": "2026-08-20T21:13:21.149943"
+        }
+        mock_data.setdefault("thirdparties", []).append(test_client)
+        print(f"Added test client: {test_client['name']} (VAT: {test_client_vat})")
 
 
 load_fixtures()
@@ -598,6 +662,7 @@ async def startup():
     """Inicializar datos de prueba si SEED_FAKE_DATA=true."""
     if os.getenv("SEED_FAKE_DATA", "true").lower() == "true":
         await seed_fake_data()
+        add_test_supplier()
 
 
 async def seed_fake_data():
