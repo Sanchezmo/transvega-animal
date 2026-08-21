@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/configure-cloudflare-dolibarr.sh
-# Configura Cloudflare Tunnel para Dolibarr
+# Configura Cloudflare Tunnel para Dolibarr preservando ingress existentes
 # Requiere .env.local con CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID
 
 set -euo pipefail
@@ -9,16 +9,19 @@ set -euo pipefail
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 log_info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+log_step()  { echo -e "${BLUE}[STEP]${NC} $*"; }
 
 # Cargar variables de entorno
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="${PROJECT_ROOT}/.env.local"
+BACKUP_DIR="${PROJECT_ROOT}/backups/cloudflare"
 
 if [[ ! -f "$ENV_FILE" ]]; then
     log_error "No se encuentra .env.local en $PROJECT_ROOT"
@@ -55,6 +58,24 @@ DOMAIN="${DOMAIN:-mascotalegal.es}"
 DOLIBARR_HOSTNAME="dolibarr-staging.${DOMAIN}"
 TUNNEL_NAME="transvega-dolibarr-staging"
 LOCAL_URL="http://localhost:8080"
+DNS_RECORD_NAME="dolibarr-staging"
+
+# Función para backup de configuración
+backup_config() {
+    local tunnel_id=$1
+    local config=$2
+    mkdir -p "$BACKUP_DIR"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_file="${BACKUP_DIR}/tunnel_${tunnel_id}_config_${timestamp}.json"
+    echo "$config" | jq '.' > "$backup_file"
+    log_info "Backup guardado en: $backup_file"
+}
+
+# Función para mostrar ingress actuales
+show_current_ingress() {
+    local config=$1
+    echo "$config" | jq -r '.ingress[]? | "  - hostname: \(.hostname // "catch-all"), service: \(.service), path: \(.path // "/")"' 2>/dev/null || echo "  (no ingress rules found)"
+}
 
 log_info "=== Configurando Cloudflare Tunnel para Dolibarr (Staging) ==="
 log_info "Dominio: ${DOLIBARR_HOSTNAME}"
@@ -62,7 +83,7 @@ log_info "Destino local: ${LOCAL_URL}"
 log_info "Ruta: / (acceso completo Dolibarr ERP)"
 
 # 1. Listar tunnels existentes
-log_info "Obteniendo tunnels existentes..."
+log_step "1/6: Obteniendo tunnels existentes..."
 tunnels_response=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel" \
     -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     -H "Content-Type: application/json")
@@ -95,7 +116,7 @@ else
 fi
 
 # 2. Obtener configuración actual del tunnel
-log_info "Obteniendo configuración actual del tunnel..."
+log_step "2/6: Obteniendo configuración actual del tunnel..."
 config_response=$(curl -s -X GET "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel/${tunnel_id}/configurations" \
     -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     -H "Content-Type: application/json")
@@ -106,36 +127,75 @@ if ! echo "$config_response" | grep -q '"success":true'; then
 fi
 
 current_config=$(echo "$config_response" | jq -r '.result.config // "{}"')
-log_info "Configuración actual obtenida"
+log_info "Configuración actual del tunnel:"
+show_current_ingress "$current_config"
 
-# 3. Actualizar configuración para incluir Dolibarr
-# La configuración de ingress debe incluir el hostname de Dolibarr
-log_info "Actualizando configuración para ${DOLIBARR_HOSTNAME}..."
+# 3. Backup de configuración actual
+log_step "3/6: Guardando backup de configuración actual..."
+backup_config "$tunnel_id" "$current_config"
 
-# Crear nueva configuración con ingress para Dolibarr
-# Ruta / para acceso completo (API + interfaz web Dolibarr ERP)
+# 4. Construir nueva configuración preservando ingress existentes
+log_step "4/6: Construyendo nueva configuración (preservando ingress existentes)..."
+
+# Extraer ingress actuales
+current_ingress=$(echo "$current_config" | jq -c '.ingress // []')
+
+# Verificar si ya existe ingress para Dolibarr
+has_dolibarr=$(echo "$current_ingress" | jq -r --arg host "${DOLIBARR_HOSTNAME}" '.[] | select(.hostname == $host) | .hostname' | head -1)
+
+# Filtrar ingress existentes para remover cualquier entrada previa de dolibarr-staging
+filtered_ingress=$(echo "$current_ingress" | jq -c --arg host "${DOLIBARR_HOSTNAME}" 'map(select(.hostname != $host))')
+
+# Añadir/modificar ingress para Dolibarr (al principio, antes del catch-all)
+new_ingress=$(echo "$filtered_ingress" | jq -c --arg host "${DOLIBARR_HOSTNAME}" --arg url "${LOCAL_URL}" '
+    # Insertar antes del último elemento si es catch-all, sino al final
+    if length > 0 and (.[length-1].hostname == null or .[length-1].service == "http_status:404") then
+        .[:length-1] + [{"hostname": $host, "service": $url, "path": "/", "originRequest": {"noTLSVerify": true}}] + .[length-1:]
+    else
+        . + [{"hostname": $host, "service": $url, "path": "/", "originRequest": {"noTLSVerify": true}}]
+    end
+')
+
 new_config=$(cat <<EOF
 {
   "config": {
-    "ingress": [
-      {
-        "hostname": "${DOLIBARR_HOSTNAME}",
-        "service": "http://localhost:8080",
-        "path": "/",
-        "originRequest": {
-          "noTLSVerify": true
-        }
-      },
-      {
-        "service": "http_status:404"
-      }
-    ]
+    "ingress": ${new_ingress}
   }
 }
 EOF
 )
 
-# Actualizar configuración del tunnel
+log_info "Nueva configuración de ingress:"
+echo "$new_config" | jq -r '.config.ingress[]? | "  - hostname: \(.hostname // "catch-all"), service: \(.service), path: \(.path // "/")"'
+
+# Verificar que Telegram sigue presente
+telegram_preserved=$(echo "$new_ingress" | jq -r '.[] | select(.hostname | test("telegram")) | .hostname' | head -1)
+if [[ -n "$telegram_preserved" ]]; then
+    log_info "✓ Telegram ingress preservado: $telegram_preserved"
+else
+    log_warn "⚠ No se detectó ingress de Telegram en la nueva configuración"
+fi
+
+# 5. Confirmar antes de aplicar
+log_step "5/6: Confirmación requerida"
+echo ""
+echo "=== RESUMEN DE CAMBIOS ==="
+echo "Tunnel: $TUNNEL_NAME ($tunnel_id)"
+echo "Nuevo hostname: $DOLIBARR_HOSTNAME"
+echo "Destino: $LOCAL_URL"
+echo "Ingress existentes preservados: $(echo "$filtered_ingress" | jq 'length')"
+echo "Telegram preservado: ${telegram_preserved:-NO}"
+echo "Backup guardado en: $BACKUP_DIR"
+echo ""
+read -p "¿Aplicar estos cambios en Cloudflare? (y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    log_info "Operación cancelada por el usuario"
+    exit 0
+fi
+
+# 6. Aplicar nueva configuración
+log_step "6/6: Aplicando nueva configuración en Cloudflare..."
 update_response=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel/${tunnel_id}/configurations" \
     -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     -H "Content-Type: application/json" \
@@ -143,17 +203,14 @@ update_response=$(curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/
 
 if ! echo "$update_response" | grep -q '"success":true'; then
     log_error "Error actualizando configuración del tunnel: $update_response"
+    log_info "Para restaurar: usa el backup en $BACKUP_DIR"
     exit 1
 fi
 
 log_info "✓ Configuración del tunnel actualizada"
 
-# 3. Crear/actualizar registro DNS para Dolibarr
-log_info "Configurando registro DNS para ${DOLIBARR_HOSTNAME}..."
-
-# Verificar si ya existe el registro
-# El nombre DNS debe ser "dolibarr-staging" para dolibarr-staging.mascotalegal.es
-DNS_RECORD_NAME="dolibarr-staging"
+# 6b. Crear/actualizar registro DNS
+log_step "6b/6: Configurando registro DNS..."
 dns_response=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?name=${DNS_RECORD_NAME}&type=CNAME" \
     -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     -H "Content-Type: application/json")
@@ -203,8 +260,8 @@ if echo "$dns_response" | grep -q '"success":true'; then
     fi
 fi
 
-# 4. Verificar conectividad
-log_info "Verificando conectividad..."
+# 7. Verificar conectividad
+log_step "7/7: Verificando conectividad..."
 sleep 3
 
 if curl -sf "https://${DOLIBARR_HOSTNAME}/" >/dev/null 2>&1; then
@@ -213,7 +270,7 @@ else
     log_warn "Dolibarr no accesible aún via HTTPS (puede tardar unos minutos en propagarse)"
 fi
 
-# Resumen
+# Resumen final
 echo ""
 echo "=========================================="
 echo "  CLOUDFLARE TUNNEL DOLIBARR CONFIGURADO"
@@ -227,5 +284,30 @@ echo ""
 echo "Para usar en Hermes/Docker:"
 echo "  DOLIBARR_API_URL=https://${DOLIBARR_HOSTNAME}/api/index.php"
 echo ""
+echo "Backup de configuración anterior:"
+echo "  ${BACKUP_DIR}/tunnel_${tunnel_id}_config_*.json"
+echo ""
+echo "Rollback manual:"
+echo "  curl -X PUT \"https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/cfd_tunnel/${tunnel_id}/configurations\" \\"
+echo "    -H \"Authorization: Bearer \${CLOUDFLARE_API_TOKEN}\" \\"
+echo "    -H \"Content-Type: application/json\" \\"
+echo "    -d \"<backup_json>\""
+echo ""
 echo "Nota: La propagación DNS puede tardar 1-5 minutos."
 echo "      El tunnel debe estar corriendo (cloudflared)."
+
+# Funciones auxiliares al final
+backup_config() {
+    local tunnel_id=$1
+    local config=$2
+    mkdir -p "$BACKUP_DIR"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_file="${BACKUP_DIR}/tunnel_${tunnel_id}_config_${timestamp}.json"
+    echo "$config" | jq '.' > "$backup_file"
+    log_info "Backup guardado en: $backup_file"
+}
+
+show_current_ingress() {
+    local config=$1
+    echo "$config" | jq -r '.ingress[]? | "  - hostname: \(.hostname // "catch-all"), service: \(.service), path: \(.path // "/")"' 2>/dev/null || echo "  (no ingress rules found)"
+}

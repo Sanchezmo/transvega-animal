@@ -90,7 +90,7 @@ enable_modules() {
         fi
     done
     
-    if [[ ${#to_enable[@]} -gt 0 ]]; log_info "Habilitando: ${to_enable[*]}"; fi
+    if [[ ${#to_enable[@]} -gt 0 ]]; then log_info "Habilitando: ${to_enable[*]}"; fi
     for mod in "${to_enable[@]}"; do
         a2enmod "$mod" >/dev/null 2>&1 || log_warn "No se pudo habilitar $mod (puede ya estar habilitado)"
     done

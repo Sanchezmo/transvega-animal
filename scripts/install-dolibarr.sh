@@ -26,9 +26,10 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Versión fijada de Dolibarr (compatible con datos actuales STAGING v20.0.4)
 DOLIBARR_VERSION="20.0.4"
-DOLIBARR_URL="https://downloads.sourceforge.net/project/dolibarr/Dolibarr%20ERP-CRM/${DOLIBARR_VERSION}/dolibarr-${DOLIBARR_VERSION}.tar.gz"
-# Checksum SHA256 verificado
-DOLIBARR_SHA256="d8f7e6c5b4a39281706f5e4d3c2b1a0987654321fedcba9876543210abcdef12"
+DOLIBARR_URL="https://sourceforge.net/projects/dolibarr/files/Dolibarr%20ERP-CRM/${DOLIBARR_VERSION}/dolibarr-${DOLIBARR_VERSION}.tgz/download"
+# Checksum SHA256 verificado (SourceForge: dolibarr-20.0.4.tgz)
+# MD5: 630fe0d332db6c71ee73e49d715f8959 (SourceForge RSS)
+DOLIBARR_SHA256="8af1304c93d202fadf6ff4bc32b0346eb8f1eb358429bc4ab3ee4509ae9fe4cb"
 
 # Rutas destino
 DOLIBARR_ROOT="${PROJECT_ROOT}/dolibarr"
