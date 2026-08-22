@@ -1,444 +1,231 @@
-# Makefile - Transvega Animal
-# Comandos de desarrollo, testing, despliegue y mantenimiento
+# Makefile - Transvega Animal (NATIVO)
+# Interfaz simple para gestión de infraestructura nativa
+# Uso: make help
 
-.PHONY: help up down restart logs status shell-api shell-worker shell-db shell-redis shell-mock shell-approvals test test-unit test-integration test-security test-e2e test-cov lint format type-check security-scan pre-commit seed seed-clean reset-db backup backup-full restore verify-backup staging-up staging-down staging-restart staging-status staging-config staging-logs staging-logs-api staging-logs-cloudflare staging-logs-dolibarr staging-logs-redis staging-logs-db staging-health staging-ollama-models telegram-webhook-configure telegram-webhook-status staging-first-run deploy-staging deploy-prod rotate-secrets verify-secrets audit-permissions clean clean-all docs-serve docs-build metrics grafana alerts dolibarr-install dolibarr-configure dolibarr-backup dolibarr-restore dolibarr-health dolibarr-health-apache dolibarr-health-db dolibarr-health-api dolibarr-health-docs apache-check apache-reload apache-logs
+.PHONY: help install configure start stop restart status check backup restore test lint format type-check clean
 
 # Variables
-COMPOSE_FILE = docker-compose.dev.yml
-COMPOSE_STAGING = docker-compose.staging.yml
-COMPOSE_PROD = docker-compose.prod.yml
-ENV_FILE = .env.local
+SCRIPTS_DIR = ./scripts
+PROJECT_ROOT = $(shell pwd)
 
-# Colores para output
+# Colores
 GREEN = \033[0;32m
 YELLOW = \033[1;33m
 RED = \033[0;31m
+BLUE = \033[0;34m
 NC = \033[0m
 
 help: ## Mostrar esta ayuda
-	@echo "$(GREEN)Transvega Animal - Comandos disponibles$(NC)"
+	@echo "$(GREEN)Transvega Animal - Comandos Disponibles (NATIVO)$(NC)"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-28s$(NC) %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
 
 # =============================================================================
-# DESARROLLO LOCAL
+# INSTALACIÓN Y CONFIGURACIÓN
 # =============================================================================
 
-up: ## Levantar entorno de desarrollo completo
-	@echo "$(GREEN)Levantando entorno de desarrollo...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) --env-file $(ENV_FILE) up -d --build
-	@echo "$(GREEN)Esperando health checks...$(NC)"
-	@sleep 10
-	@make status
+install: ## Instalación completa nativa (requiere root)
+	@echo "$(GREEN)=== Instalación Nativa Transvega ===$(NC)"
+	@sudo $(SCRIPTS_DIR)/install.sh
 
-up-minimal: ## Levantar solo servicios esenciales (api, db, redis, approvals, mock-dolibarr)
-	@echo "$(GREEN)Levantando servicios mínimos...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) --env-file $(ENV_FILE) up -d --build api audit-db redis approvals mock-dolibarr
-	@sleep 5
-	@make status
+install-deps: ## Solo dependencias base del sistema
+	@sudo $(SCRIPTS_DIR)/install/dependencies.sh
 
-down: ## Parar entorno de desarrollo
-	@echo "$(YELLOW)Parando entorno...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) down
+install-db: ## Solo bases de datos (MariaDB, PostgreSQL, Redis)
+	@sudo $(SCRIPTS_DIR)/install/mariadb.sh
+	@sudo $(SCRIPTS_DIR)/install/postgresql.sh
+	@sudo $(SCRIPTS_DIR)/install/redis.sh
 
-restart: ## Reiniciar servicios
-	@make down
-	@make up
+install-php: ## Solo PHP + Apache
+	@sudo $(SCRIPTS_DIR)/install/php.sh
+	@sudo $(SCRIPTS_DIR)/install/apache.sh
 
-logs: ## Ver logs de todos los servicios
-	@docker compose -f $(COMPOSE_FILE) logs -f --tail=100
+install-dolibarr: ## Solo Dolibarr 23.0.4
+	@sudo $(SCRIPTS_DIR)/install/dolibarr.sh
 
-logs-api: ## Ver logs solo de la API
-	@docker compose -f $(COMPOSE_FILE) logs -f api --tail=100
+install-ollama: ## Solo Ollama nativo
+	@sudo $(SCRIPTS_DIR)/install/ollama.sh
 
-logs-worker: ## Ver logs solo del worker
-	@docker compose -f $(COMPOSE_FILE) logs -f worker --tail=100
+install-cloudflare: ## Solo Cloudflare Tunnel
+	@sudo $(SCRIPTS_DIR)/install/cloudflare.sh
 
-logs-approvals: ## Ver logs solo del servicio aprobaciones
-	@docker compose -f $(COMPOSE_FILE) logs -f approvals --tail=100
+install-python: ## Solo Python virtualenv + dependencias
+	@$(SCRIPTS_DIR)/install/python.sh
 
-logs-db: ## Ver logs de base de datos auditoría
-	@docker compose -f $(COMPOSE_FILE) logs -f audit-db --tail=100
+install-hermes: ## Solo Hermes (API + Worker + Approvals)
+	@$(SCRIPTS_DIR)/install/hermes.sh
 
-logs-mock: ## Ver logs de mock Dolibarr
-	@docker compose -f $(COMPOSE_FILE) logs -f mock-dolibarr --tail=100
+configure: ## Configuración post-instalación (requiere root)
+	@echo "$(GREEN)=== Configuración Post-Instalación ===$(NC)"
+	@sudo $(SCRIPTS_DIR)/configure.sh
 
-status: ## Ver estado de todos los contenedores
-	@echo "$(GREEN)Estado de contenedores:$(NC)"
-	@docker compose -f $(COMPOSE_FILE) ps
-	@echo ""
-	@echo "$(GREEN)Health checks:$(NC)"
-	@docker compose -f $(COMPOSE_FILE) ps --format "table {{.Name}}	{{.Status}}	{{.Ports}}"
+configure-apache: ## Configurar Apache VirtualHost Dolibarr
+	@sudo $(SCRIPTS_DIR)/configure/apache.sh
 
-# =============================================================================
-# SHELLS Y DEBUG
-# =============================================================================
+configure-dolibarr: ## Verificar/regenerar conf.php Dolibarr
+	@sudo $(SCRIPTS_DIR)/configure/dolibarr.sh
 
-shell-api: ## Shell en contenedor API
-	@docker compose -f $(COMPOSE_FILE) exec api bash
+configure-cloudflare: ## Configurar Cloudflare Tunnel ingress
+	@$(SCRIPTS_DIR)/configure/cloudflare.sh
 
-shell-worker: ## Shell en contenedor Worker
-	@docker compose -f $(COMPOSE_FILE) exec worker bash
+configure-services: ## Instalar servicios systemd
+	@sudo $(SCRIPTS_DIR)/configure/services.sh
 
-shell-db: ## Shell en PostgreSQL auditoría
-	@docker compose -f $(COMPOSE_FILE) exec audit-db psql -U audit -d audit
-
-shell-redis: ## Shell en Redis
-	@docker compose -f $(COMPOSE_FILE) exec redis redis-cli -a $$REDIS_PASSWORD
-
-shell-mock: ## Shell en Mock Dolibarr
-	@docker compose -f $(COMPOSE_FILE) exec mock-dolibarr bash
-
-shell-approvals: ## Shell en servicio aprobaciones
-	@docker compose -f $(COMPOSE_FILE) exec approvals bash
+configure-hermes: ## Configurar variables entorno para Hermes systemd
+	@$(SCRIPTS_DIR)/configure/hermes.sh
 
 # =============================================================================
-# TESTING
+# GESTIÓN DE SERVICIOS
 # =============================================================================
 
-test: test-unit test-integration test-security ## Ejecutar todos los tests
+start: ## Iniciar todos los servicios (requiere root)
+	@echo "$(GREEN)=== Iniciando Servicios ===$(NC)"
+	@sudo $(SCRIPTS_DIR)/services/start.sh
 
-test-unit: ## Tests unitarios
-	@echo "$(GREEN)Ejecutando tests unitarios...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/unit -v --tb=short
+stop: ## Detener todos los servicios (requiere root)
+	@echo "$(YELLOW)=== Deteniendo Servicios ===$(NC)"
+	@sudo $(SCRIPTS_DIR)/services/stop.sh
 
-test-integration: ## Tests de integración
-	@echo "$(GREEN)Ejecutando tests de integración...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/integration -v --tb=short
+restart: ## Reiniciar todos los servicios (requiere root)
+	@echo "$(BLUE)=== Reiniciando Servicios ===$(NC)"
+	@sudo $(SCRIPTS_DIR)/services/restart.sh
 
-test-security: ## Tests de seguridad
-	@echo "$(GREEN)Ejecutando tests de seguridad...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/security_tests.py -v --tb=short
-
-test-e2e: ## Tests end-to-end
-	@echo "$(GREEN)Ejecutando tests E2E...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/e2e_tests.py -v --tb=short
-
-test-invoice: ## Tests de facturas de proveedor (unit + integration)
-	@echo "$(GREEN)Ejecutando tests de facturas...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T -e PYTHONPATH=/app api pytest tests/integration/test_invoice_processing.py -v --tb=short
+status: ## Ver estado de todos los servicios con health checks
+	@echo "$(GREEN)=== Estado Servicios Transvega ===$(NC)"
+	@$(SCRIPTS_DIR)/services/status.sh
 
 # =============================================================================
-# TESTING LOCAL (infraestructura de test aislada - docker-compose.test.yml)
+# VERIFICACIÓN Y DIAGNÓSTICO
 # =============================================================================
 
-COMPOSE_TEST = docker-compose.test.yml
-ENV_TEST = .env.test
-TEST_PROJECT = transvega-test
+check: ## Verificación profunda del entorno
+	@echo "$(GREEN)=== Verificación Profunda ===$(NC)"
+	@$(SCRIPTS_DIR)/check.sh
 
-COMPOSE_TEST_CMD = docker compose -p $(TEST_PROJECT) -f $(COMPOSE_TEST) --env-file $(ENV_TEST)
+check-dolibarr: ## Healthcheck granular Dolibarr
+	@$(SCRIPTS_DIR)/dolibarr-health.sh
 
-LOAD_ENV = python $(PWD)/scripts/load_env.py $(PWD)/$(ENV_TEST)
-
-test-services-up: ## Levantar servicios de test (PostgreSQL + Redis) en puertos 55432/56379
-	@echo "$(GREEN)Levantando servicios de test...$(NC)"
-	@$(COMPOSE_TEST_CMD) up -d
-	@echo "$(GREEN)Esperando health checks...$(NC)"
-	@for i in $$(seq 1 30); do \
-		if $(COMPOSE_TEST_CMD) ps postgres-test | grep -q "healthy"; then break; fi; \
-		if [ $$i -eq 30 ]; then echo "$(RED)Timeout PostgreSQL$(NC)"; exit 1; fi; \
-		sleep 1; \
-	done
-	@for i in $$(seq 1 15); do \
-		if $(COMPOSE_TEST_CMD) ps redis-test | grep -q "healthy"; then break; fi; \
-		if [ $$i -eq 15 ]; then echo "$(RED)Timeout Redis$(NC)"; exit 1; fi; \
-		sleep 1; \
-	done
-	@echo "$(GREEN)✓ Servicios de test listos$(NC)"
-
-test-services-down: ## Bajar servicios de test
-	@echo "$(YELLOW)Bajando servicios de test...$(NC)"
-	@$(COMPOSE_TEST_CMD) down -v
-
-test-services-logs: ## Ver logs de servicios de test
-	@$(COMPOSE_TEST_CMD) logs -f --tail=100
-
-test-db-init: ## Inicializar schema en base de datos de test
-	@echo "$(GREEN)Inicializando schema de test...$(NC)"
-	@cd services/integration-api && $(LOAD_ENV) python -c 'import asyncio, sys; sys.path.insert(0, "."); from app.core.database import init_db; asyncio.run(init_db()); print("✓ Schema inicializado")'
-
-test-integration-local: test-services-up test-db-init ## Tests de integración local (levanta BD, init schema, ejecuta pytest)
-	@echo "$(GREEN)Ejecutando tests de integración local...$(NC)"
-	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/integration -v --tb=short --asyncio-mode=auto
-	@echo "$(GREEN)Tests de integración: PASARON$(NC)"
-
-test-integration-local-keep: test-services-up test-db-init ## Tests de integración local (mantiene servicios arriba)
-	@echo "$(GREEN)Ejecutando tests de integración local (servicios se mantienen)...$(NC)"
-	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/integration -v --tb=short --asyncio-mode=auto
-	@echo "$(GREEN)Tests de integración: PASARON$(NC)"
-	@echo "$(YELLOW)Servicios de test siguen corriendo. Usa 'make test-services-down' para bajarlos.$(NC)"
-
-test-all-local: test-services-up test-db-init ## Tests unitarios + integración local
-	@echo "$(GREEN)Ejecutando tests unitarios...$(NC)"
-	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/unit -v --tb=short --asyncio-mode=auto
-	@echo "$(GREEN)Ejecutando tests de integración...$(NC)"
-	@PYTHONPATH=$(PWD)/services/integration-api $(LOAD_ENV) python -m pytest tests/integration -v --tb=short --asyncio-mode=auto
-	@make test-services-down
-	@echo "$(GREEN)Todos los tests: PASARON$(NC)"
-
-test-cov: ## Tests con cobertura
-	@docker compose -f $(COMPOSE_FILE) exec -T api pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
-
-# =============================================================================
-# CALIDAD DE CÓDIGO
-# =============================================================================
-
-lint: ## Linting con ruff
-	@echo "$(GREEN)Ejecutando linting...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api ruff check .
-
-format: ## Formateo con ruff
-	@echo "$(GREEN)Formateando código...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api ruff format .
-
-type-check: ## Verificación de tipos con mypy
-	@echo "$(GREEN)Verificando tipos...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api mypy .
-
-security-scan: ## Escaneo de seguridad con bandit
-	@echo "$(GREEN)Escaneando seguridad...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api bandit -r . -f json -o bandit-report.json || true
-
-pre-commit: lint format type-check ## Ejecutar todos los checks pre-commit
-
-# =============================================================================
-# DATOS Y SEEDING
-# =============================================================================
-
-seed: ## Sembrar datos ficticios de prueba
-	@echo "$(GREEN)Sembrando datos de prueba...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T api python scripts/seed_fake_data.py
-
-seed-clean: ## Limpiar y resembrar datos
-	@echo "$(YELLOW)Limpiando y resembrando...$(NC)"
-	@docker compose -f $(COMPOSE_FILE) exec -T audit-db psql -U audit -d audit -c "TRUNCATE TABLE audit_log, approval_requests, task_queue CASCADE;"
-	@make seed
-
-reset-db: ## Resetear base de datos auditoría completamente
-	@echo "$(RED)RESETEANDO BASE DE DATOS AUDITORÍA$(NC)"
-	@docker compose -f $(COMPOSE_FILE) down -v audit-db
-	@docker compose -f $(COMPOSE_FILE) up -d audit-db
-	@sleep 5
-	@make seed
+check-apache: ## Verificar configuración Apache
+	@sudo apache2ctl configtest
 
 # =============================================================================
 # BACKUP Y RESTAURACIÓN
 # =============================================================================
 
-backup: ## Backup de base de datos auditoría
-	@echo "$(GREEN)Creando backup auditoría...$(NC)"
-	@mkdir -p backups
-	@docker compose -f $(COMPOSE_FILE) exec -T audit-db pg_dump -U audit audit | gzip > backups/audit_$(shell date +%Y%m%d_%H%M%S).sql.gz
-	@echo "$(GREEN)Backup guardado en backups/$(NC)"
+backup: ## Backup completo (MariaDB + PostgreSQL + Redis + config)
+	@echo "$(GREEN)=== Backup Completo ===$(NC)"
+	@sudo $(SCRIPTS_DIR)/backup/database.sh
 
-backup-full: ## Backup completo (auditoría + Redis + config)
-	@echo "$(GREEN)Backup completo...$(NC)"
-	@mkdir -p backups/full_$(shell date +%Y%m%d_%H%M%S)
-	@make backup
-	@docker compose -f $(COMPOSE_FILE) exec -T redis redis-cli -a $$REDIS_PASSWORD --rdb /data/dump.rdb
-	@docker cp $$(docker compose -f $(COMPOSE_FILE) ps -q redis):/data/dump.rdb backups/full_$(shell date +%Y%m%d_%H%M%S)/redis.rdb
-	@cp -r config backups/full_$(shell date +%Y%m%d_%H%M%S)/
-	@cp .env.local backups/full_$(shell date +%Y%m%d_%H%M%S)/.env.local.bak
-
-restore: ## Restaurar backup auditoría (especificar BACKUP_FILE=archivo)
-	@if [ -z "$(BACKUP_FILE)" ]; then echo "$(RED)Especificar BACKUP_FILE=archivo.sql.gz$(NC)"; exit 1; fi
-	@echo "$(YELLOW)Restaurando $(BACKUP_FILE)...$(NC)"
-	@gunzip -c $(BACKUP_FILE) | docker compose -f $(COMPOSE_FILE) exec -T audit-db psql -U audit -d audit
-	@echo "$(GREEN)Restauración completada$(NC)"
-
-verify-backup: ## Verificar integridad de backups
-	@echo "$(GREEN)Verificando backups...$(NC)"
-	@ls -la backups/
-	@for f in backups/*.sql.gz; do echo "Verificando $$f..."; gunzip -t $$f && echo "OK" || echo "CORRUPTO"; done
+restore: ## Restaurar backup (especificar BACKUP_FILE=archivo.tar.gz)
+	@if [ -z "$(BACKUP_FILE)" ]; then echo "$(RED)Especificar BACKUP_FILE=archivo.tar.gz$(NC)"; exit 1; fi
+	@sudo $(SCRIPTS_DIR)/backup/restore.sh $(BACKUP_FILE)
 
 # =============================================================================
-# DOLIBARR NATIVO (Host)
+# TESTING Y CALIDAD
 # =============================================================================
 
-dolibarr-install: ## Instalar Dolibarr nativo en host (descarga, extrae, configura, permisos)
-	@./scripts/install-dolibarr.sh
+test: test-unit test-integration ## Ejecutar todos los tests
 
-dolibarr-configure: ## Configurar Apache VirtualHost para Dolibarr (puerto 8080)
-	@sudo ./scripts/configure-apache-dolibarr.sh
+test-unit: ## Tests unitarios (requiere .venv activado)
+	@echo "$(GREEN)=== Tests Unitarios ===$(NC)"
+	@source $(PROJECT_ROOT)/activate.sh && PYTHONPATH=$(PROJECT_ROOT):$(PROJECT_ROOT)/services/integration-api python -m pytest tests/unit -v --tb=short
 
-dolibarr-backup: ## Backup Dolibarr Docker para migración (uso: make dolibarr-backup ENV=staging)
-	@./scripts/backup-dolibarr.sh $(or $(ENV),staging)
+test-integration: ## Tests de integración (requiere BD nativas corriendo)
+	@echo "$(GREEN)=== Tests Integración ===$(NC)"
+	@source $(PROJECT_ROOT)/activate.sh && PYTHONPATH=$(PROJECT_ROOT):$(PROJECT_ROOT)/services/integration-api python -m pytest tests/integration -v --tb=short --asyncio-mode=auto
 
-dolibarr-restore: ## Restaurar backup Dolibarr en host nativo (uso: make dolibarr-restore BACKUP=backups/...)
-	@if [ -z "$(BACKUP)" ]; then echo "$(RED)Especificar BACKUP=directorio$(NC)"; exit 1; fi
-	@./scripts/restore-dolibarr.sh $(BACKUP)
+test-cov: ## Tests con cobertura
+	@source $(PROJECT_ROOT)/activate.sh && PYTHONPATH=$(PROJECT_ROOT):$(PROJECT_ROOT)/services/integration-api python -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=html
 
-dolibarr-health: ## Healthcheck completo Dolibarr nativo (Apache, Dolibarr, MariaDB, REST API, Documents)
-	@./scripts/dolibarr-health.sh
+lint: ## Linting con ruff
+	@source $(PROJECT_ROOT)/activate.sh && ruff check $(PROJECT_ROOT)/services/integration-api/app $(PROJECT_ROOT)/tests/
 
-dolibarr-health-apache: ## Healthcheck solo Apache
-	@./scripts/dolibarr-health.sh apache
+format: ## Formateo con ruff
+	@source $(PROJECT_ROOT)/activate.sh && ruff format $(PROJECT_ROOT)/services/integration-api/app $(PROJECT_ROOT)/tests/
 
-dolibarr-health-db: ## Healthcheck solo MariaDB
-	@./scripts/dolibarr-health.sh db
+type-check: ## Verificación de tipos con mypy
+	@source $(PROJECT_ROOT)/activate.sh && mypy $(PROJECT_ROOT)/services/integration-api/app
 
-dolibarr-health-api: ## Healthcheck solo REST API
-	@./scripts/dolibarr-health.sh api
+pre-commit: lint format type-check ## Ejecutar todos los checks pre-commit
 
-dolibarr-health-docs: ## Healthcheck solo Documents
-	@./scripts/dolibarr-health.sh docs
+# =============================================================================
+# UTILIDADES
+# =============================================================================
 
-apache-check: ## Verificar configuración Apache (configtest)
-	@sudo apache2ctl configtest
+shell: ## Activar virtualenv Transvega (ejecutar: source activate.sh && make shell)
+	@echo "Ejecuta: source $(PROJECT_ROOT)/activate.sh"
 
-apache-reload: ## Recargar Apache
-	@sudo systemctl reload apache2
+logs-hermes: ## Ver logs Hermes API
+	@journalctl -u hermes -f
 
-apache-logs: ## Ver logs Apache Dolibarr
+logs-worker: ## Ver logs Hermes Worker
+	@journalctl -u hermes-worker -f
+
+logs-approvals: ## Ver logs Approvals
+	@journalctl -u approvals -f
+
+logs-apache: ## Ver logs Apache Dolibarr
 	@sudo tail -f /var/log/apache2/transvega-dolibarr-error.log /var/log/apache2/transvega-dolibarr-access.log
 
-# =============================================================================
-# STAGING LOCAL
-# =============================================================================
+logs-ollama: ## Ver logs Ollama
+	@journalctl -u ollama -f
 
-staging-check-env: ## Verificar que existe .env.staging
-	@if [ ! -f .env.staging ]; then \
-		echo "$(RED)ERROR: .env.staging not found.$(NC)"; \
-		echo "Copy .env.staging.example to .env.staging and configure secrets."; \
-		exit 1; \
-	fi
-
-staging-up: staging-check-env ## Levantar staging local (usa docker-compose.staging.yml + .env.staging)
-	@./scripts/staging-up.sh
-
-staging-down: staging-check-env ## Parar staging local
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml down
-
-staging-restart: staging-check-env ## Reiniciar staging local
-	@$(MAKE) staging-down
-	@$(MAKE) staging-up
-
-staging-status: staging-check-env ## Ver estado de servicios staging
-	@./scripts/staging-status.sh
-
-staging-config: staging-check-env ## Validar configuración docker-compose staging
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml config
-
-staging-logs: staging-check-env ## Ver logs completos staging
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f --tail=100
-
-staging-logs-api: staging-check-env ## Ver logs API staging
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f api --tail=100
-
-staging-logs-cloudflare: staging-check-env ## Ver logs Cloudflare Tunnel staging
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f cloudflared --tail=100
-
-staging-logs-dolibarr: staging-check-env ## Ver logs Dolibarr staging
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f dolibarr --tail=100
-
-staging-logs-redis: staging-check-env ## Ver logs Redis staging
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f redis --tail=100
-
-staging-logs-db: staging-check-env ## Ver logs DB auditoría staging
-	@docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f audit-db --tail=100
-
-staging-health: staging-check-env ## Comprobar health/readiness endpoints staging
-	@echo "$(GREEN)Comprobando health endpoints en staging...$(NC)"
-	@API_PORT=$$(docker compose --env-file .env.staging -f docker-compose.staging.yml port api 8000 2>/dev/null | cut -d: -f2); \
-	if [ -z "$$API_PORT" ]; then \
-		echo "$(RED)ERROR: No se pudo obtener puerto de API$(NC)"; \
-		exit 1; \
-	fi; \
-	echo "API puerto local: $$API_PORT"; \
-	if curl -fsS "http://localhost:$$API_PORT/health" >/dev/null; then \
-		echo "$(GREEN)✓ /health OK$(NC)"; \
-	else \
-		echo "$(RED)✗ /health FAIL$(NC)"; \
-		exit 1; \
-	fi; \
-	if curl -fsS "http://localhost:$$API_PORT/health/ready" >/dev/null; then \
-		echo "$(GREEN)✓ /health/ready OK$(NC)"; \
-	else \
-		echo "$(RED)✗ /health/ready FAIL$(NC)"; \
-		exit 1; \
-	fi
-
-telegram-webhook-configure: staging-check-env ## Configurar webhook Telegram para staging
-	@./scripts/configure-telegram-webhook.sh
-
-telegram-webhook-status: staging-check-env ## Ver estado webhook Telegram
-	@./scripts/check-telegram-webhook.sh
-
-staging-first-run: staging-config staging-up staging-status staging-health ## Primera validación completa de staging local
+logs-cloudflare: ## Ver logs Cloudflare Tunnel
+	@journalctl -u cloudflared -f
 
 # =============================================================================
-# DESPLIEGUE STAGING / PROD (VPS)
+# LIMPIEZA (SEGURA - NO DESTRUCTIVA)
 # =============================================================================
 
-deploy-staging: ## Desplegar a staging (requiere VPS configurado)
-	@echo "$(GREEN)Desplegando a staging...$(NC)"
-	@./scripts/deploy-staging.sh
+clean: ## Limpiar archivos temporales y cache (NO borra BD ni datos)
+	@echo "$(YELLOW)=== Limpieza Segura ===$(NC)"
+	@find $(PROJECT_ROOT) -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find $(PROJECT_ROOT) -type f -name "*.pyc" -delete 2>/dev/null || true
+	@find $(PROJECT_ROOT) -type f -name "*.pyo" -delete 2>/dev/null || true
+	@find $(PROJECT_ROOT) -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find $(PROJECT_ROOT) -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find $(PROJECT_ROOT) -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true
+	@find $(PROJECT_ROOT) -type f -name ".coverage" -delete 2>/dev/null || true
+	@rm -rf $(PROJECT_ROOT)/htmlcov 2>/dev/null || true
+	@rm -rf $(PROJECT_ROOT)/.coverage 2>/dev/null || true
+	@echo "$(GREEN)✅ Limpieza completada$(NC)"
 
-deploy-prod: ## Desplegar a producción (requiere confirmación)
-	@echo "$(RED)DESPLIEGUE A PRODUCCIÓN - ¿Estás seguro? (y/N)$(NC)"
-	@read -r confirm && [ "$$confirm" = "y" ] || exit 1
-	@./scripts/deploy-prod.sh
-
-# =============================================================================
-# SECRETOS Y SEGURIDAD
-# =============================================================================
-
-rotate-secrets: ## Rotar secretos (ejecutar cada 90 días)
-	@echo "$(GREEN)Rotando secretos...$(NC)"
-	@./scripts/rotate-secrets.sh
-
-verify-secrets: ## Verificar que no hay secretos en repo
-	@echo "$(GREEN)Verificando secretos...$(NC)"
-	@git secrets --scan || true
-	@trufflehog git file://. --only-verified || true
-
-audit-permissions: ## Auditar permisos de archivos sensibles
-	@echo "$(GREEN)Auditoria de permisos...$(NC)"
-	@find . -name "*.env*" -o -name "*.pem" -o -name "*.key" | xargs ls -la
+clean-logs: ## Limpiar logs systemd (requiere root)
+	@sudo journalctl --vacuum-time=7d
 
 # =============================================================================
-# LIMPIEZA
+# DESARROLLO
 # =============================================================================
 
-clean: ## Limpiar contenedores, volúmenes y redes no usados
-	@echo "$(YELLOW)Limpiando recursos Docker...$(NC)"
-	@docker system prune -f --volumes
+dev-install: install-python install-hermes ## Instalación solo desarrollo (sin BD ni Apache)
 
-clean-all: ## Limpieza completa (CUIDADO: borra todo)
-	@echo "$(RED)LIMPIEZA COMPLETA - ¿Seguro? (y/N)$(NC)"
-	@read -r confirm && [ "$$confirm" = "y" ] || exit 1
-	@docker compose -f $(COMPOSE_FILE) down -v --rmi all
-	@docker system prune -af --volumes
-	@rm -rf backups/* logs/* tmp/*
+dev-start: ## Iniciar solo servicios app (Hermes + Worker + Approvals) - requiere BD corriendo
+	@echo "$(GREEN)=== Iniciando Servicios App ===$(NC)"
+	@sudo systemctl start hermes hermes-worker approvals
 
-# =============================================================================
-# DOCUMENTACIÓN
-# =============================================================================
+dev-stop: ## Detener solo servicios app
+	@echo "$(YELLOW)=== Deteniendo Servicios App ===$(NC)"
+	@sudo systemctl stop hermes hermes-worker approvals
 
-docs-serve: ## Servir documentación localmente
-	@echo "$(GREEN)Sirviendo docs en http://localhost:8080$(NC)"
-	@docker run --rm -p 8080:80 -v $(PWD)/docs:/usr/share/nginx/html:ro nginx:alpine
-
-docs-build: ## Generar documentación estática
-	@echo "$(GREEN)Generando docs...$(NC)"
-	@mkdir -p docs/_build
-	@pandoc docs/*.md -o docs/_build/transvega-animal.pdf --toc --pdf-engine=weasyprint || true
+dev-restart: ## Reiniciar solo servicios app
+	@echo "$(BLUE)=== Reiniciando Servicios App ===$(NC)"
+	@sudo systemctl restart hermes hermes-worker approvals
 
 # =============================================================================
-# MONITORIZACIÓN
+# DOCKER (SOLO PARA TESTS/CI - NO PRODUCCIÓN)
 # =============================================================================
 
-metrics: ## Ver métricas Prometheus
-	@echo "$(GREEN)Métricas en http://localhost:9090$(NC)"
+docker-test-up: ## Levantar PostgreSQL/Redis de test en puertos 55432/56379
+	@docker compose -f docker-compose.test.yml --env-file .env.test up -d
 
-grafana: ## Abrir Grafana
-	@echo "$(GREEN)Grafana en http://localhost:3001$(NC)"
+docker-test-down: ## Bajar servicios de test
+	@docker compose -f docker-compose.test.yml --env-file .env.test down -v
 
-alerts: ## Ver Alertmanager
-	@echo "$(GREEN)Alertmanager en http://localhost:9093$(NC)"
+docker-mock-up: ## Levantar Mock Dolibarr para tests
+	@docker compose -f docker-compose.test.yml --env-file .env.test up -d mock-dolibarr
 
 # =============================================================================
-# COMANDOS POR DEFECTO
+# COMANDO POR DEFECTO
 # =============================================================================
 
 .DEFAULT_GOAL := help

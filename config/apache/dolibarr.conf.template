@@ -1,0 +1,75 @@
+# VirtualHost para Dolibarr - Transvega Animal
+# Template para scripts/configure/apache.sh
+# Variables: {{DOLIBARR_PORT}}, {{SERVER_NAME}}, {{HTDOCS_DIR}}, {{DOCUMENTS_DIR}}, {{APACHE_LOG_DIR}}
+
+<VirtualHost *:{{DOLIBARR_PORT}}>
+    ServerName {{SERVER_NAME}}
+    ServerAlias localhost
+
+    # DocumentRoot apunta directamente al código del proyecto
+    DocumentRoot {{HTDOCS_DIR}}
+
+    # Configuración del directorio web
+    <Directory {{HTDOCS_DIR}}>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+
+        # Seguridad: denegar acceso a archivos sensibles
+        <FilesMatch "^\.">
+            Require all denied
+        </FilesMatch>
+
+        <FilesMatch "(conf\.php|install\.lock|\.sql$|\.log$)">
+            Require all denied
+        </FilesMatch>
+    </Directory>
+
+    # Documentos: NO servir directamente por seguridad
+    # Dolibarr los sirve a través de document.php con autenticación
+    <Directory {{DOCUMENTS_DIR}}>
+        Require all denied
+    </Directory>
+
+    # Logs específicos
+    ErrorLog {{APACHE_LOG_DIR}}/transvega-dolibarr-error.log
+    CustomLog {{APACHE_LOG_DIR}}/transvega-dolibarr-access.log combined
+
+    # Configuración PHP
+    <IfModule mod_php.c>
+        php_value upload_max_filesize 100M
+        php_value post_max_size 100M
+        php_value max_execution_time 300
+        php_value max_input_time 300
+        php_value memory_limit 256M
+        php_value max_input_vars 5000
+        # Seguridad
+        php_flag expose_php Off
+        # Session
+        php_value session.gc_maxlifetime 7200
+    </IfModule>
+
+    # Headers de seguridad
+    <IfModule mod_headers.c>
+        Header always set X-Content-Type-Options "nosniff"
+        Header always set X-Frame-Options "SAMEORIGIN"
+        Header always set X-XSS-Protection "1; mode=block"
+        Header always set Referrer-Policy "strict-origin-when-cross-origin"
+        # CSP básica para Dolibarr
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self';"
+    </IfModule>
+
+    # Rewrite para API REST y URLs limpias
+    <IfModule mod_rewrite.c>
+        RewriteEngine On
+
+        # API REST - pasar a index.php
+        RewriteRule ^api/index\.php/(.*)$ /api/index.php [QSA,L]
+        RewriteRule ^api/(.*)$ /api/index.php [QSA,L]
+
+        # Dolibarr URLs limpias (opcional, requiere config Dolibarr)
+        # RewriteCond %{REQUEST_FILENAME} !-f
+        # RewriteCond %{REQUEST_FILENAME} !-d
+        # RewriteRule ^(.*)$ /index.php [QSA,L]
+    </IfModule>
+</VirtualHost>
